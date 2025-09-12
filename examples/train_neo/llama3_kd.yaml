@@ -1,6 +1,6 @@
 # Model configuration and KD
-model_name_or_path: /apdcephfs_qy3/share_301069248/users/rummyyang/minillm/checkpoints/llama3.2/Llama-3.2-1B
-teacher_model_name_or_path: /apdcephfs_qy3/share_301069248/users/rummyyang/minillm/checkpoints/DeepSeek-R1-Distill-Llama-8B
+model_name_or_path: meta-llama/Llama-3.2-1B-Instruct
+teacher_model_name_or_path: meta-llama/Llama-3.1-8B-Instruct
 kd_ratio: 0.5
 
 # Training methodology
@@ -8,26 +8,25 @@ stage: sft
 do_train: true
 finetuning_type: full
 
-deepspeed: examples/deepspeed/ds_z2_config.json  # options: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
 
 # Dataset configuration
-dataset: BAAI-Infinity-Instruct-0625
+dataset: limo
 template: llama3
-cutoff_len: 2048
-max_samples: 10000
-overwrite_cache: false
+cutoff_len: 4096
+max_samples: 1000
+overwrite_cache: true
 preprocessing_num_workers: 16
 
 # Output configuration
-output_dir: saves/llama3-1b/full/kd
-logging_steps: 10
-save_steps: 100
-plot_loss: false
+output_dir: saves_limo/llama3-1b/full/kd
+logging_steps: 1
+save_steps: 1000
+plot_loss: true
 overwrite_output_dir: true
 
 # Training parameters
-per_device_train_batch_size: 1
-gradient_accumulation_steps: 8
+per_device_train_batch_size: 16
+gradient_accumulation_steps: 4
 learning_rate: 2.0e-05
 num_train_epochs: 1.0
 lr_scheduler_type: cosine

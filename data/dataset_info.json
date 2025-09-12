@@ -1,4 +1,188 @@
 {
+
+
+  "s1k_gptoss20b_think": {
+    "file_name": "s1k_gptoss20b_sharegpt_think.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_think_low": {
+    "file_name": "s1k_gptoss20b_sharegpt_think_low.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_think_middel": {
+    "file_name": "s1k_gptoss20b_sharegpt_think_middel.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_think_high": {
+    "file_name": "s1k_gptoss20b_sharegpt_think_high.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+
+  
+  "s1k_gptoss20b": {
+    "file_name": "s1k_gptoss20b_sharegpt.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "messages" },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_low": {
+    "file_name": "s1k_gptoss20b_sharegpt_low.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "messages" },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_middel": {
+    "file_name": "s1k_gptoss20b_sharegpt_middel.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "messages" },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "s1k_gptoss20b_high": {
+    "file_name": "s1k_gptoss20b_sharegpt_high.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "messages" },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  
+  "Shadow_2k": {
+  "file_name": "Shadow_2k.parquet",
+  "formatting": "sharegpt",
+  "columns": {
+    "messages": "conversations"
+  }
+  },
+  "ChartMoE_SFT": {
+      "hf_hub_url": "Coobiw/ChartMoE-Data",
+      "formatting": "sharegpt",
+      "columns": {
+        "messages": "conversations",
+        "images": "image"
+      },
+      "tags": {
+        "role_tag": "from",
+        "content_tag": "value",
+        "user_tag": "user",
+        "assistant_tag": "assistant"
+      }
+    },
+  "step_math_dpo": {
+    "hf_hub_url": "xinlai/Math-Step-DPO-10K",
+    "ranking": true,
+    "columns": {
+      "prompt": "prompt",
+      "chosen": "full_chosen",
+      "rejected": "full_rejected"
+    }
+  },
+  "limo": {
+    "hf_hub_url": "GAIR/LIMO",
+    "columns": {
+      "prompt": "question",
+      "response": "solution"
+    }
+  },
+  "medical_o1_reasoning": {
+    "hf_hub_url": "FreedomIntelligence/medical-o1-reasoning-SFT",
+    "subset": "en",
+    "columns": {
+      "prompt": "Question",
+      "response": "Response"
+    }
+  },
+  "open_r1_math": {
+    "hf_hub_url": "llamafactory/OpenR1-Math-94k",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "NuminaMath": {
+    "hf_hub_url": "AI-MO/NuminaMath-CoT",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+
+
   "identity": {
     "file_name": "identity.json"
   },
@@ -58,6 +242,21 @@
     "columns": {
       "messages": "messages",
       "videos": "videos"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
+  "mllm_video_audio_demo": {
+    "file_name": "mllm_video_audio_demo.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "videos": "videos",
+      "audios": "audios"
     },
     "tags": {
       "role_tag": "role",
@@ -232,6 +431,7 @@
   "ultrachat_200k": {
     "hf_hub_url": "HuggingFaceH4/ultrachat_200k",
     "ms_hub_url": "AI-ModelScope/ultrachat_200k",
+    "split": "train_sft",
     "formatting": "sharegpt",
     "columns": {
       "messages": "messages"
@@ -319,18 +519,22 @@
     }
   },
   "open_thoughts": {
-    "hf_hub_url": "open-thoughts/OpenThoughts-114k",
+    "hf_hub_url": "llamafactory/OpenThoughts-114k",
     "formatting": "sharegpt",
     "columns": {
-      "messages": "conversations",
-      "system": "system"
+      "messages": "messages"
     },
     "tags": {
-      "role_tag": "from",
-      "content_tag": "value",
+      "role_tag": "role",
+      "content_tag": "content",
       "user_tag": "user",
-      "assistant_tag": "assistant"
+      "assistant_tag": "assistant",
+      "system_tag": "system"
     }
+  },
+  "chinese_r1_distill": {
+    "hf_hub_url": "Congliu/Chinese-DeepSeek-R1-Distill-data-110k-SFT",
+    "ms_hub_url": "liucong/Chinese-DeepSeek-R1-Distill-data-110k-SFT"
   },
   "llava_1k_en": {
     "hf_hub_url": "BUAADreamer/llava-en-zh-2k",
@@ -493,6 +697,16 @@
       "rejected": "rejected"
     }
   },
+  "coig_p": {
+    "hf_hub_url": "m-a-p/COIG-P",
+    "ranking": true,
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations",
+      "chosen": "chosen",
+      "rejected": "rejected"
+    }
+  },
   "rlhf_v": {
     "hf_hub_url": "llamafactory/RLHF-V",
     "ranking": true,
@@ -513,6 +727,16 @@
       "chosen": "chosen",
       "rejected": "rejected",
       "images": "images"
+    }
+  },
+  "rlaif_v": {
+    "hf_hub_url": "openbmb/RLAIF-V-Dataset",
+    "ranking": true,
+    "columns": {
+      "prompt": "question",
+      "chosen": "chosen",
+      "rejected": "rejected",
+      "images": "image"
     }
   },
   "orca_pairs": {
@@ -588,7 +812,7 @@
     }
   },
   "c4_demo": {
-    "file_name": "c4_demo.json",
+    "file_name": "c4_demo.jsonl",
     "columns": {
       "prompt": "text"
     }

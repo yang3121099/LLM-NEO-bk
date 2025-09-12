@@ -1,6 +1,27 @@
 """
 Train config generator with external template files.
 Generates YAML configs and bash scripts for training and merging.
+
+
+
+python3 script_Neo.py \
+  --model_family llama3 \
+  --model_size 1b \
+  --base_model meta-llama/Llama-3.2-1B-Instruct \
+  --teacher_model_name_or_path meta-llama/Llama-3.1-8B-Instruct \
+  --template llama3 \
+  --max_samples 1000 \
+  --cutoff_len 4096 \
+  --batch_size 16 \
+  --grad_accum 4 \
+  --base_lr 2e-5 \
+  --epochs 1 \
+  --kd_ratio 0.5 \
+  --output_root saves_limo \
+  --overwrite_cache \
+  --plot_loss
+
+  
 """
 
 import argparse

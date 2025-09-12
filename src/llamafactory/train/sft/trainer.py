@@ -32,6 +32,7 @@ from ..callbacks import SaveProcessorCallback
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
 from transformers import Seq2SeqTrainer, AutoModelForCausalLM
 from torch.nn import functional as F
+from ..hidden_divergence import HiddenDivergenceMeter  
 
 
 if TYPE_CHECKING:
@@ -90,47 +91,76 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
                 param.requires_grad = False
         else:
             self.teacher_model = None
+            
+            
+        # >>> hidden-probe: 初始化隐藏分歧度量器，并确保两侧输出 hidden_states
+        self.hidden_meter = HiddenDivergenceMeter(
+            layers=None,   # None = 自动均匀抽层；也可手动如 [2,6,10,14]
+            proj_dim=256   # 可设 None 关闭降维；256 能显著省显存/算力
+        )
 
+        # 学生模型输出 hidden_states
+        if hasattr(self.model, "config"):
+            self.model.config.output_hidden_states = True
+
+        # 教师模型输出 hidden_states
+        if self.teacher_model is not None and hasattr(self.teacher_model, "config"):
+            self.teacher_model.config.output_hidden_states = True
+        # <<< hidden-probe
     @override
     def compute_loss(self, model, inputs, return_outputs=False):
         labels = inputs.get("labels")
-        # Forward pass for the student model
-        outputs = model(**inputs)
+
+        # >>> hidden-probe: 学生前向时请求 hidden_states
+        outputs = model(**inputs, output_hidden_states=True, return_dict=True)
+        # <<< hidden-probe
+
         logits = outputs.get("logits")
         student_loss = outputs.get("loss")
 
-        # Compute distillation loss if teacher model is provided
         if self.teacher_model is not None and self.finetuning_args.kd_ratio > 0:
             with torch.no_grad():
-                # Forward pass for the teacher model
-                teacher_outputs = self.teacher_model(**inputs)
+                # >>> hidden-probe: 教师前向也请求 hidden_states
+                teacher_outputs = self.teacher_model(**inputs, output_hidden_states=True, return_dict=True)
+                # <<< hidden-probe
                 teacher_logits = teacher_outputs.get("logits").detach()
 
-            # Efficient computation of distillation loss
-            # Reference to get_distil_loss function
-            # Only compute loss on valid positions
-            mask = labels.ne(IGNORE_INDEX).unsqueeze(-1)  # (batch_size, seq_len, 1)
-            # Convert logits to float32 for numerical stability
+            # ====== 原有 KD loss 计算，保持不变 ======
+            mask = labels.ne(IGNORE_INDEX).unsqueeze(-1)
             student_logits = logits.float()
             teacher_logits = teacher_logits.float()
-
-            # Apply mask
             masked_student_logits = torch.masked_select(student_logits, mask).view(-1, student_logits.size(-1))
             masked_teacher_logits = torch.masked_select(teacher_logits, mask).view(-1, teacher_logits.size(-1))
-
-            # Compute probabilities
             student_log_probs = F.log_softmax(masked_student_logits, dim=-1)
             teacher_probs = F.softmax(masked_teacher_logits, dim=-1)
-
-            # Compute KL divergence loss
             kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction='batchmean')
-
-            # Combine student loss and distillation loss
-            alpha = self.finetuning_args.kd_ratio  # Weight for distillation loss
+            alpha = self.finetuning_args.kd_ratio
             loss = (1 - alpha) * student_loss + alpha * kd_loss
-
-            # Log losses
             logger.info(f"CE loss: {student_loss.detach().item()}, KL loss: {kd_loss.detach().item()}")
+
+            # >>> hidden-probe: 计算 D（每步）
+            try:
+                attn_mask = inputs.get("attention_mask")
+                if attn_mask is None:
+                    attn_mask = torch.ones_like(inputs["input_ids"], dtype=torch.long, device=logits.device)
+
+                meter_out = self.hidden_meter(
+                    hS=list(outputs.hidden_states),           # Student: List[Tensor [B,T,Ds]]
+                    hT=list(teacher_outputs.hidden_states),   # Teacher: List[Tensor [B,T,Dt]]
+                    attn_mask=attn_mask,
+                    use_last_token=False                      # True 用最后 token，False 用 mask-mean
+                )
+
+                # 通过 HF Trainer 的统一接口写日志（W&B/TensorBoard/MLflow 会自动接收）
+                self.log({
+                    "hidden/divergence": meter_out["D"].item(),
+                    "hidden/cka_mean": meter_out["cka_mean"].item(),
+                    "hidden/nmse_mean": meter_out["nmse_mean"].item(),
+                })
+            except Exception as e:
+                logger.info(f"[hidden-probe] skipped due to: {e}")
+            # <<< hidden-probe
+
         else:
             loss = student_loss
             logger.info(f"CE loss: {student_loss.detach().item()}")

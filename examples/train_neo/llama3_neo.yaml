@@ -7,12 +7,11 @@ kd_ratio: 0.5
 stage: sft
 do_train: true
 finetuning_type: lora
-lora_rank: 64
+lora_rank: 128
 lora_target: all
-deepspeed: examples/deepspeed/ds_z2_config.json  # options: [ds_z0_config.json, ds_z2_config.json, ds_z3_config.json]
 
 # Dataset configuration
-dataset: BAAI-Infinity-Instruct-0625
+dataset: limo
 template: llama3
 cutoff_len: 4096
 max_samples: 1000
@@ -21,14 +20,14 @@ preprocessing_num_workers: 16
 
 # Output configuration
 output_dir: saves_limo/llama3-1b/lora/neo
-logging_steps: 10
-save_steps: 100
+logging_steps: 1
+save_steps: 1000
 plot_loss: true
 overwrite_output_dir: true
 
 # Training parameters
-per_device_train_batch_size: 16
-gradient_accumulation_steps: 4
+per_device_train_batch_size: 2
+gradient_accumulation_steps: 16
 learning_rate: 2.0e-04
 num_train_epochs: 1.0
 lr_scheduler_type: cosine

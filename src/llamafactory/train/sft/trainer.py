@@ -108,24 +108,21 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             self.teacher_model.config.output_hidden_states = True
         # <<< hidden-probe
     @override
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.get("labels")
-
-        # >>> hidden-probe: 学生前向时请求 hidden_states
+    
+        # 学生前向（要 hidden_states）
         outputs = model(**inputs, output_hidden_states=True, return_dict=True)
-        # <<< hidden-probe
-
         logits = outputs.get("logits")
         student_loss = outputs.get("loss")
-
+    
         if self.teacher_model is not None and self.finetuning_args.kd_ratio > 0:
             with torch.no_grad():
-                # >>> hidden-probe: 教师前向也请求 hidden_states
+                # 教师前向（要 hidden_states）
                 teacher_outputs = self.teacher_model(**inputs, output_hidden_states=True, return_dict=True)
-                # <<< hidden-probe
                 teacher_logits = teacher_outputs.get("logits").detach()
-
-            # ====== 原有 KD loss 计算，保持不变 ======
+    
+            # ====== 你原来的 KD 计算，保持不变 ======
             mask = labels.ne(IGNORE_INDEX).unsqueeze(-1)
             student_logits = logits.float()
             teacher_logits = teacher_logits.float()
@@ -134,37 +131,35 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
             student_log_probs = F.log_softmax(masked_student_logits, dim=-1)
             teacher_probs = F.softmax(masked_teacher_logits, dim=-1)
             kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction='batchmean')
+    
             alpha = self.finetuning_args.kd_ratio
             loss = (1 - alpha) * student_loss + alpha * kd_loss
             logger.info(f"CE loss: {student_loss.detach().item()}, KL loss: {kd_loss.detach().item()}")
-
-            # >>> hidden-probe: 计算 D（每步）
+    
+            # ====== 每步计算 D 指标并记录 ======
             try:
                 attn_mask = inputs.get("attention_mask")
                 if attn_mask is None:
                     attn_mask = torch.ones_like(inputs["input_ids"], dtype=torch.long, device=logits.device)
-
+    
                 meter_out = self.hidden_meter(
-                    hS=list(outputs.hidden_states),           # Student: List[Tensor [B,T,Ds]]
-                    hT=list(teacher_outputs.hidden_states),   # Teacher: List[Tensor [B,T,Dt]]
+                    hS=list(outputs.hidden_states),          # Student
+                    hT=list(teacher_outputs.hidden_states),  # Teacher
                     attn_mask=attn_mask,
-                    use_last_token=False                      # True 用最后 token，False 用 mask-mean
+                    use_last_token=False
                 )
-
-                # 通过 HF Trainer 的统一接口写日志（W&B/TensorBoard/MLflow 会自动接收）
                 self.log({
                     "hidden/divergence": meter_out["D"].item(),
-                    "hidden/cka_mean": meter_out["cka_mean"].item(),
-                    "hidden/nmse_mean": meter_out["nmse_mean"].item(),
+                    "hidden/cka_mean":   meter_out["cka_mean"].item(),
+                    "hidden/nmse_mean":  meter_out["nmse_mean"].item(),
                 })
             except Exception as e:
                 logger.info(f"[hidden-probe] skipped due to: {e}")
-            # <<< hidden-probe
-
+    
         else:
             loss = student_loss
             logger.info(f"CE loss: {student_loss.detach().item()}")
-
+    
         return (loss, outputs) if return_outputs else loss
 
     @override

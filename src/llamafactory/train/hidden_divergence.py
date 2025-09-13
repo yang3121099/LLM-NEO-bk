@@ -1,5 +1,4 @@
 # src/llamafactory/train/hidden_divergence.py
-# Copyright 2025
 # Utilities to compute hidden-state divergence D between Student and Teacher.
 # D_l = (1 - CKA) + alpha_nmse * NMSE  (pooled per layer)
 # D   = mean_l D_l
@@ -11,14 +10,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 __all__ = [
     "masked_mean_pool",
     "linear_cka",
     "nmse_normed",
     "HiddenDivergenceMeter",
 ]
-
 
 # -----------------------------
 # Basic pooling & similarity
@@ -70,9 +67,14 @@ def linear_cka(X: torch.Tensor, Y: torch.Tensor, eps: float = 1e-8) -> torch.Ten
         cka in [0, 1], scalar tensor
     """
     assert X.dim() == 2 and Y.dim() == 2, f"Expect [B,D], got {list(X.size())}, {list(Y.size())}"
+    # 保证相同 batch 数
     if X.size(0) != Y.size(0):
         B = min(X.size(0), Y.size(0))
         X, Y = X[:B], Y[:B]
+
+    # 统一到 fp32 做数值稳定的矩阵乘法（避免 Half/Float 冲突）
+    X = X.to(torch.float32)
+    Y = Y.to(torch.float32)
 
     X = X - X.mean(0, keepdim=True)
     Y = Y - Y.mean(0, keepdim=True)
@@ -92,10 +94,12 @@ def nmse_normed(S: torch.Tensor, T: torch.Tensor, eps: float = 1e-8) -> torch.Te
     Returns:
         scalar tensor
     """
+    # 统一到 fp32 再做归一化与 MSE
+    S = S.to(torch.float32)
+    T = T.to(torch.float32)
     S = F.normalize(S, dim=-1, eps=eps)
     T = F.normalize(T, dim=-1, eps=eps)
     return F.mse_loss(S, T)
-
 
 # -----------------------------
 # Hidden divergence meter
@@ -137,18 +141,15 @@ class HiddenDivergenceMeter(nn.Module):
 
     # -------- internal helpers --------
     def _pick_layers(self, n_layers: int) -> List[int]:
-        # warn: hidden_states list often includes embeddings at index 0; we keep heuristics robust by sampling inside (1..n-2)
+        # hidden_states 列表通常包含 embedding 在 index 0；这里在 [1..n-2] 采样更稳
         if self.layers:
             return self.layers
         k = min(6, max(3, n_layers // 4))  # pick 3~6 layers
-        # ensure valid range even for small n_layers
         lo = 1 if n_layers >= 3 else 0
         hi = max(0, n_layers - 2)
         if hi <= lo:
-            # fallback: all layers
             return list(range(n_layers))
         idx = torch.linspace(lo, hi, steps=k).round().int().tolist()
-        # deduplicate and sort
         return sorted(set(int(i) for i in idx if 0 <= int(i) < n_layers))
 
     def _maybe_build_projs(self, hS: List[torch.Tensor], hT: List[torch.Tensor]):
@@ -156,8 +157,10 @@ class HiddenDivergenceMeter(nn.Module):
             return
         assert len(hS) > 0 and len(hT) > 0, "hidden_states list cannot be empty"
         device = hS[0].device
+        # 用 student 的 dtype（通常与 teacher 一致；即便不一致，linear 输入/权重 dtype 也会匹配）
+        dtype = hS[0].dtype
 
-        # ensure same number of layers (common for HF CausalLM)
+        # layer count 对齐
         if len(hS) != len(hT):
             n = min(len(hS), len(hT))
             hS = hS[:n]
@@ -168,14 +171,13 @@ class HiddenDivergenceMeter(nn.Module):
             self._inited = True
             return
 
-        # create frozen linear projections
+        # Create projection layers with SAME dtype as hidden states to avoid matmul dtype conflicts
         for lid in self._picked_layers:
             dS = hS[lid].size(-1)
             dT = hT[lid].size(-1)
 
-            linS = nn.Linear(dS, self.proj_dim, bias=False)
-            linT = nn.Linear(dT, self.proj_dim, bias=False)
-            linS.to(device); linT.to(device)
+            linS = nn.Linear(dS, self.proj_dim, bias=False, device=device, dtype=dtype)
+            linT = nn.Linear(dT, self.proj_dim, bias=False, device=device, dtype=dtype)
 
             # freeze projection weights — they are NOT trained
             for p in linS.parameters():
@@ -239,11 +241,15 @@ class HiddenDivergenceMeter(nn.Module):
                 t_pool = masked_mean_pool(t, attn_mask)   # [B, D_t]
 
             if self.proj_dim is not None:
-                s_pool = self.proj_S[str(lid)](s_pool)    # [B, C]
+                s_pool = self.proj_S[str(lid)](s_pool)    # [B, C] (dtype == hidden dtype)
                 t_pool = self.proj_T[str(lid)](t_pool)    # [B, C]
 
-            cka = linear_cka(s_pool, t_pool)              # scalar
-            nmse = nmse_normed(s_pool, t_pool)            # scalar
+            # 统一到 fp32 再计算相似度，避免 Half/Float 冲突
+            s32 = s_pool.to(torch.float32)
+            t32 = t_pool.to(torch.float32)
+
+            cka = linear_cka(s32, t32)                    # scalar
+            nmse = nmse_normed(s32, t32)                  # scalar
             D_l = (1.0 - cka) + self.alpha_nmse * nmse    # scalar
 
             cka_vals.append(cka)

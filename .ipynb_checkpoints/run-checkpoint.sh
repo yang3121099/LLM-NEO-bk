@@ -894,7 +894,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         if [[ "$IS_KD" == "true" ]]; then
           echo "  --teacher_model_name_or_path \"$TEACHER_PATH\" \\"
           echo "  --kd_ratio $KD_RATIO \\"
-          echo "  --kd_temperature $KD_TEMPERATURE \\"
+          # echo "  --kd_temperature $KD_TEMPERATURE \\"
         fi
         
         echo "  --use_fast_tokenizer True"

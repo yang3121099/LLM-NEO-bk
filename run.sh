@@ -865,7 +865,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         else
           echo "  --finetuning_type full \\"
         fi
-        echo "  --deepspeed examples/deepspeed/ds_z3_config.json \\"
+        # echo "  --deepspeed examples/deepspeed/ds_z3_config.json \\"
         echo "  --dataset \"$DATASET\" \\"
         echo "  --template \"$template\" \\"
         echo "  --cutoff_len $cutoff_len \\"

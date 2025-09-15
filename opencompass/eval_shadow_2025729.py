@@ -83,8 +83,8 @@ Baseline_settings = [
     
 # # Qwen3
 # ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo'),
+# ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),
+# ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo'),
 ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
 ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),

@@ -178,11 +178,11 @@ mkdir -p "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-
 #  --template "llama3"
 
 mkdir -p "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B"
-#python3 /workspace/LLM-NEO-bk/src/shadow/merge_lora.py \
-#  --adapter_path "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo" \
-#  --target_base "meta-llama/Llama-3.2-1B" \
-#  --merge_tag "B2B" \
-#  --template "llama3"
+python3 /workspace/LLM-NEO-bk/src/shadow/merge_lora.py \
+ --adapter_path "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo" \
+ --target_base "meta-llama/Llama-3.2-1B" \
+ --merge_tag "B2B" \
+ --template "llama3"
 
 
 ### KD LoRA Merges ###
@@ -208,11 +208,11 @@ mkdir -p "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lo
 #  --template "llama3"
 
 mkdir -p "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B"
-#python3 /workspace/LLM-NEO-bk/src/shadow/merge_lora.py \
-#  --adapter_path "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo" \
-#  --target_base "meta-llama/Llama-3.2-1B" \
-#  --merge_tag "B-kd2B" \
-#  --template "llama3"
+python3 /workspace/LLM-NEO-bk/src/shadow/merge_lora.py \
+ --adapter_path "/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo" \
+ --target_base "meta-llama/Llama-3.2-1B" \
+ --merge_tag "B-kd2B" \
+ --template "llama3"
 
 ##### Evaluation list #####
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),

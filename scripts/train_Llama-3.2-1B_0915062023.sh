@@ -117,7 +117,6 @@ llamafactory-cli train \
   --overwrite_cache false \
   --teacher_model_name_or_path "meta-llama/Llama-3.2-1B-Instruct" \
   --kd_ratio 0.5 \
-  --kd_temperature 1.0 \
   --use_fast_tokenizer True
 
 ###### I with KD  max=1000  lr=0.0002 ######
@@ -153,7 +152,6 @@ llamafactory-cli train \
   --overwrite_cache false \
   --teacher_model_name_or_path "meta-llama/Llama-3.2-1B-Instruct" \
   --kd_ratio 0.5 \
-  --kd_temperature 1.0 \
   --use_fast_tokenizer True
 
 ##### LoRA delta-merge #####

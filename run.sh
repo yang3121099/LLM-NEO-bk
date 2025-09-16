@@ -677,7 +677,8 @@ fi
 # --- KD Parameters -----------------------------------------------------------
 KD_RATIO=0.5                    # Knowledge distillation loss ratio
 KD_TEMPERATURE=1.0              # Temperature for KD softmax
-TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
+# TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
+TEACHER_MODEL="Qwen3-14B"                # Will be set based on training target
 
 # --- Helpers -----------------------------------------------------------------
 # 统一 k 表示：整千 -> 2k，非整千 -> 2.5k（保留一位小数，不使用 2.0k）
@@ -697,12 +698,26 @@ to_decimal() {
 lr_tag_dec() { echo "lr$(to_decimal "$1")"; }
 
 # 生成 eval 列表项；comment_level: 1 -> "#", 2 -> "##"
+# add_eval() {
+#   local abs="$1" comment_level="${2:-1}"
+#   local prefix="#"
+#   [[ "$comment_level" -eq 2 ]] && prefix="##"
+#   EVAL_LINES+=("$prefix ('$abs','$abs'),")
+# }
+
+# 生成 eval 列表项；comment_level: 1 -> "#", 2 -> "##"
 add_eval() {
   local abs="$1" comment_level="${2:-1}"
-  local prefix="#"
-  [[ "$comment_level" -eq 2 ]] && prefix="##"
-  EVAL_LINES+=("$prefix ('$abs','$abs'),")
+  local prefix="#"; [[ "$comment_level" -eq 2 ]] && prefix="##"
+
+  # 取最后三段作为简写（不足三段时就原样返回）
+  local short
+  short=$(awk -F/ '{if (NF>=3) print $(NF-2)"/"$(NF-1)"/"$NF; else print $0}' <<<"${abs%/}")
+
+  # 左边用简写，右边用完整路径
+  EVAL_LINES+=("$prefix ('$short','$abs'),")
 }
+
 
 maybe_rel() { [[ $1 = /* ]] && echo "$1" || echo "../$1"; }
 
@@ -714,10 +729,12 @@ MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 BASE_MODELS=(
   # "Qwen2.5-14B"
   # "Qwen3-0.6B"
+  "Qwen3-4B"
+
   # "Qwen3-8B"
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
-  "Llama3.2-1B"
+  # "Llama3.2-1B"
 )
 
 MODEL_PAIRS=()                  # will contain "<base>||<instruct>"
@@ -810,13 +827,18 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   # suffix_name="s1k_gptoss20b_low"
   # cutoff_len=4096
 
-# limo
-  DATASET="limo"
-  suffix_name="limo"
-  cutoff_len=4096
+# # limo
+#   DATASET="limo"
+#   suffix_name="limo"
+#   cutoff_len=4096
 
+# limo
+  DATASET="Shadow_2k"
+  suffix_name="Shadow_2k"
+  cutoff_len=4096
+  
   # samples=(2000)
-  samples=(1000)
+  samples=(2000)
   logging_steps=1; save_steps=1000; per_device_train_batch_size=2
   gradient_accumulation_steps=16; num_train_epochs=1
   lr_scheduler_type="cosine"; warmup_ratio=0.1; bf16=true

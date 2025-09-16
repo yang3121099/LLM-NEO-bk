@@ -38,14 +38,14 @@ with read_base():
     #######################################################################
     
     # # ######################### Reasoning-9 (general reasoning) #########################
-    # from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
-    # from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import  mmlu_pro_datasets  #mmlu_pro_gen_cdbebf
+    from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
+    from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import  mmlu_pro_datasets  #mmlu_pro_gen_cdbebf
     # from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets # few-shot
     # from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets #0-shot
-    # from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import  drop_datasets
-    # from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets 
-    # from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets # ARC_c   
-    # from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets #noCoT openai_simple and 0-shot
+    from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import  drop_datasets
+    from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets 
+    from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets # ARC_c   
+    from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets #noCoT openai_simple and 0-shot
 
     ######################### Math-7 (mathematical) #########################
     # from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets   # noqa: F401, F403
@@ -65,7 +65,7 @@ with read_base():
 
     # # original OpenCompass may has bug for MBPP and Humaneval+
     # from opencompass.configs.datasets.mbpp.sanitized_mbpp_mdblock_gen_a447ff import sanitized_mbpp_datasets 
-    from opencompass.configs.datasets.humaneval_plus.humaneval_plus_openai_simple_evals_gen_159614 import humaneval_plus_datasets 
+    # from opencompass.configs.datasets.humaneval_plus.humaneval_plus_openai_simple_evals_gen_159614 import humaneval_plus_datasets 
 
     
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
@@ -85,22 +85,24 @@ Baseline_settings = [
 # ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
+('B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
+('I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
+('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
+('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B'),
+('Llama-3.2-1B-Instruct','meta-llama/Llama-3.2-1B-Instruct'),
 
 ]
 
 BASE_settings=[
-    
+('Llama-3.2-1B-Base','meta-llama/Llama-3.2-1B'),
+
     
 # ('Qwen3-8B-Base', 'Qwen/Qwen3-8B-Base'),
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
+('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
 
-('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
+('B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
 
 ]
 models = []

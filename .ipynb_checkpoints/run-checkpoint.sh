@@ -677,7 +677,8 @@ fi
 # --- KD Parameters -----------------------------------------------------------
 KD_RATIO=0.5                    # Knowledge distillation loss ratio
 KD_TEMPERATURE=1.0              # Temperature for KD softmax
-TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
+# TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
+TEACHER_MODEL="Qwen3-14B"                # Will be set based on training target
 
 # --- Helpers -----------------------------------------------------------------
 # 统一 k 表示：整千 -> 2k，非整千 -> 2.5k（保留一位小数，不使用 2.0k）
@@ -728,10 +729,12 @@ MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 BASE_MODELS=(
   # "Qwen2.5-14B"
   # "Qwen3-0.6B"
+  "Qwen3-4B"
+
   # "Qwen3-8B"
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
-  "Llama3.2-1B"
+  # "Llama3.2-1B"
 )
 
 MODEL_PAIRS=()                  # will contain "<base>||<instruct>"
@@ -856,15 +859,11 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 
     # Set teacher model for KD training
     local KD_SUFFIX=""
-    local TEACHER_PATH=""
     if [[ "$IS_KD" == "true" ]]; then
-      KD_SUFFIX="-kd"
-      if [[ "$TAG" == "B" ]]; then
-        TEACHER_PATH="$I_MODEL"  # For base model, use instruct as teacher
-      else
-        TEACHER_PATH="$I_MODEL"  # For instruct model, use itself as teacher (self-distillation)
-      fi
+      KD_SUFFIX="-kd-T-$TEACHER_MODEL"
+      TEACHER_PATH=$TEACHER_MODEL
     fi
+
 
     for MAX in "${samples[@]}"; do
       local K; K="$(format_k "$MAX")"

@@ -837,15 +837,11 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 
     # Set teacher model for KD training
     local KD_SUFFIX=""
-    local TEACHER_PATH=""
     if [[ "$IS_KD" == "true" ]]; then
-      KD_SUFFIX="-kd"
-      if [[ "$TAG" == "B" ]]; then
-        TEACHER_PATH="$I_MODEL"  # For base model, use instruct as teacher
-      else
-        TEACHER_PATH="$I_MODEL"  # For instruct model, use itself as teacher (self-distillation)
-      fi
+      KD_SUFFIX="-kd-T-$TEACHER_MODEL"
+      TEACHER_PATH=$TEACHER_MODEL
     fi
+
 
     for MAX in "${samples[@]}"; do
       local K; K="$(format_k "$MAX")"

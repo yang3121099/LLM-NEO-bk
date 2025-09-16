@@ -85,24 +85,39 @@ Baseline_settings = [
 # ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo'),
-('B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
-('I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
-# ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),
-('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
-('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
-# ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B'),
-('Llama-3.2-1B-Instruct','meta-llama/Llama-3.2-1B-Instruct'),
+# ('B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
+# ('I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
+# # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),
+# ('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
+# ('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
+# # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B'),
+# ('Llama-3.2-1B-Instruct','meta-llama/Llama-3.2-1B-Instruct'),
 
+('Qwen3-4B-Instruct-hf', 'Qwen/Qwen3-4B'),
+('Qwen3-14B-Instruct-hf', 'Qwen/Qwen3-14B'),
+
+    
+# ('0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
+# ('0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
+    
+('result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+('result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+# ('result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+# ('result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+('result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+('result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
+# ('result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B'),
+# ('result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B'),
 ]
 
 BASE_settings=[
-('Llama-3.2-1B-Base','meta-llama/Llama-3.2-1B'),
+# ('Llama-3.2-1B-Base','meta-llama/Llama-3.2-1B'),
 
     
-# ('Qwen3-8B-Base', 'Qwen/Qwen3-8B-Base'),
-('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
+# # ('Qwen3-8B-Base', 'Qwen/Qwen3-8B-Base'),
+# ('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
 
-('B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
+# ('B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
 
 ]
 models = []

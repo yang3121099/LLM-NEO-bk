@@ -97,6 +97,8 @@ Baseline_settings = [
 ('Qwen3-4B-Instruct-hf', 'Qwen/Qwen3-4B'),
 ('Qwen3-14B-Instruct-hf', 'Qwen/Qwen3-14B'),
 
+# ('result-Qwen3-4B-Base-0916/B-kd-T-Qwen/Qwen3-14B-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-T-Qwen/Qwen3-14B-2k-lora-rank128-lr0.0002-Shadow_2k'),
+# ('result-Qwen3-4B-Base-0916/I-kd-T-Qwen/Qwen3-14B-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-T-Qwen/Qwen3-14B-2k-lora-rank128-lr0.0002-Shadow_2k'),
 ('result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
 ('result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
 # ('result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
@@ -130,12 +132,12 @@ for abbr, path in Baseline_settings:  ## classic 4096
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=4),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=2),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=4)
+            run_cfg=dict(num_gpus=2)
         )
     )    
     

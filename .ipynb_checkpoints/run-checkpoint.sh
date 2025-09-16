@@ -678,7 +678,7 @@ fi
 KD_RATIO=0.5                    # Knowledge distillation loss ratio
 KD_TEMPERATURE=1.0              # Temperature for KD softmax
 # TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
-TEACHER_MODEL="Qwen3-14B"                # Will be set based on training target
+TEACHER_MODEL="Qwen/Qwen3-14B"                # Will be set based on training target
 
 # --- Helpers -----------------------------------------------------------------
 # 统一 k 表示：整千 -> 2k，非整千 -> 2.5k（保留一位小数，不使用 2.0k）

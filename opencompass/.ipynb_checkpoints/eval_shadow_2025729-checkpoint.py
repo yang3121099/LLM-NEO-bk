@@ -85,11 +85,11 @@ Baseline_settings = [
 # ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo'),
-('B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
-('I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
-# ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),
-('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
-('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
+# ('B-1k-lora-rank128-lr0.0002-limo/merged-B2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2I'),
+# ('I-1k-lora-rank128-lr0.0002-limo/merged-I2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2I'),
+# # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-1k-lora-rank128-lr0.0002-limo/merged-I2B'),
+# ('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2I'),
+# ('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
 # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B'),
 ('Llama-3.2-1B-Instruct','meta-llama/Llama-3.2-1B-Instruct'),
 
@@ -99,10 +99,10 @@ BASE_settings=[
 ('Llama-3.2-1B-Base','meta-llama/Llama-3.2-1B'),
 
     
-# ('Qwen3-8B-Base', 'Qwen/Qwen3-8B-Base'),
-('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
+# # ('Qwen3-8B-Base', 'Qwen/Qwen3-8B-Base'),
+# ('B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-kd-1k-lora-rank128-lr0.0002-limo/merged-B-kd2B'),
 
-('B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
+# ('B-1k-lora-rank128-lr0.0002-limo/merged-B2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/B-1k-lora-rank128-lr0.0002-limo/merged-B2B'),
 
 ]
 models = []
@@ -118,12 +118,12 @@ for abbr, path in Baseline_settings:  ## classic 4096
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=4),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=1)
+            run_cfg=dict(num_gpus=4)
         )
     )    
     
@@ -156,12 +156,12 @@ for abbr, path in BASE_settings:  ## classic 4096
             type=TurboMindModel,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=4),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=1)
+            run_cfg=dict(num_gpus=4)
         )
     )    
     

@@ -61,7 +61,7 @@ with read_base():
 
     ######################### Code-3 (coding) #########################
     from opencompass.configs.datasets.humaneval.humaneval_gen_8e312c import humaneval_datasets
-    from opencompass.configs.datasets.livecodebench.livecodebench_gen_a4f90b import LCB_datasets  # noqa: F401, F403
+    # from opencompass.configs.datasets.livecodebench.livecodebench_gen_a4f90b import LCB_datasets  # noqa: F401, F403
 
     # # original OpenCompass may has bug for MBPP and Humaneval+
     # from opencompass.configs.datasets.mbpp.sanitized_mbpp_mdblock_gen_a447ff import sanitized_mbpp_datasets 

@@ -655,7 +655,8 @@ SCRIPT_OUTPUT_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_OUTPUT_DIR"
 
 # --- LoRA switch -------------------------------------------------------------
-USE_LORA=true                   # false -> full SFT
+# USE_LORA=true                   # false -> full SFT
+USE_LORA=false                   # false -> full SFT
 is_lora()   { [[ "${USE_LORA,,}" == "true" ]]; }
 
 # --- KD switch ---------------------------------------------------------------
@@ -1003,44 +1004,74 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         merge_lora "$B_MODEL" B "$B_MODEL" B "$LR" "#" true    # B-kd2B（命令 #，evaluation ##）
       done
     fi
-  else
-    echo "##### SFT delta-merge #####" >> "$SCRIPT_FILE"
+      else
+        echo "##### SFT delta-merge #####" >> "$SCRIPT_FILE"
+        
+        # === 统一计算一次用于 SFT 合并/恒等合并的路径基元 ===
+        LR="${learning_rates[0]}"
+        LR_DEC="$(to_decimal "$LR")"
+        LR_TAG="$(lr_tag_dec "$LR")"
+        K="$(format_k "${samples[0]}")"
+        OUT_ROOT="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
     
-    # Standard SFT merge
-    echo "### Standard SFT Merge ###" >> "$SCRIPT_FILE"
-    LR="${learning_rates[0]}"
-    LR_DEC="$(to_decimal "$LR")"
-    LR_TAG="$(lr_tag_dec "$LR")"
-    K="$(format_k "${samples[0]}")"
-    B_DIR="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}/B-${K}-sft-${LR_TAG}-${suffix_name}"
-    MERGED_DIR="$B_DIR/merged-B2I"
-    {
-      echo "mkdir -p \"$MERGED_DIR\""
-      echo "python3 $WORKSPACE_DIR/src/shadow/apply_diff.py \\"
-      echo "  --tuned_model \"$B_DIR\" \\"
-      echo "  --target_model \"$I_MODEL\" \\"
-      echo "  --base_model \"$B_MODEL\""
-      echo ""
-    } >> "$SCRIPT_FILE"
-    add_eval "$MERGED_DIR" 1
+        # ---------------- Standard SFT Merge: B2I (apply diff) ----------------
+        echo "### Standard SFT Merge ###" >> "$SCRIPT_FILE"
+        B_DIR="$OUT_ROOT/B-${K}-sft-${LR_TAG}-${suffix_name}"
+        MERGED_DIR="$B_DIR/merged-B2I"
+        {
+          echo "mkdir -p \"$MERGED_DIR\""
+          echo "python3 $WORKSPACE_DIR/src/shadow/apply_diff.py \\"
+          echo "  --tuned_model \"$B_DIR\" \\"
+          echo "  --target_model \"$I_MODEL\" \\"
+          echo "  --base_model \"$B_MODEL\""
+          echo ""
+        } >> "$SCRIPT_FILE"
+        add_eval "$MERGED_DIR" 1
+    
+        # ---------------- No-op SFT Merge: I2I（恒等合并，占位保持与 LoRA 同形） ----------------
+        echo "### No-op SFT Merge (I2I) ###" >> "$SCRIPT_FILE"
+        I_DIR="$OUT_ROOT/I-${K}-sft-${LR_TAG}-${suffix_name}"
+        MERGED_I2I_DIR="$I_DIR/merged-I2I"
+        {
+          echo "mkdir -p \"$MERGED_I2I_DIR\""
+          # 用软链接指向已训练好的 I 路目录；评测时用 merged-I2I 即可保持与 LoRA 输出一致
+          echo "ln -sfn \"$I_DIR\" \"$MERGED_I2I_DIR/model\""
+          echo "echo 'SFT I2I is identity (no delta to merge)' > \"$MERGED_I2I_DIR/README.txt\""
+          echo ""
+        } >> "$SCRIPT_FILE"
+        add_eval "$MERGED_I2I_DIR" 1
+    
+        # ---------------- KD SFT Merge（若启用 KD）：B-kd2I（已有） + I-kd2I（恒等合并） ----------------
+        if is_kd; then
+          echo "### KD SFT Merge ###" >> "$SCRIPT_FILE"
+    
+          # B-kd2I：已有逻辑，原样保留
+          B_KD_DIR="$OUT_ROOT/B-kd-${K}-sft-${LR_TAG}-${suffix_name}"
+          MERGED_KD_DIR="$B_KD_DIR/merged-B-kd2I"
+          {
+            echo "mkdir -p \"$MERGED_KD_DIR\""
+            echo "python3 $WORKSPACE_DIR/src/shadow/apply_diff.py \\"
+            echo "  --tuned_model \"$B_KD_DIR\" \\"
+            echo "  --target_model \"$I_MODEL\" \\"
+            echo "  --base_model \"$B_MODEL\""
+            echo ""
+          } >> "$SCRIPT_FILE"
+          add_eval "$MERGED_KD_DIR" 1
+    
+          # I-kd2I：补上恒等合并以对齐输出形态
+          echo "### No-op KD SFT Merge (I-kd2I) ###" >> "$SCRIPT_FILE"
+          I_KD_DIR="$OUT_ROOT/I-kd-${K}-sft-${LR_TAG}-${suffix_name}"
+          MERGED_I_KD_I_DIR="$I_KD_DIR/merged-I-kd2I"
+          {
+            echo "mkdir -p \"$MERGED_I_KD_I_DIR\""
+            echo "ln -sfn \"$I_KD_DIR\" \"$MERGED_I_KD_I_DIR/model\""
+            echo "echo 'KD SFT I2I is identity (no delta to merge)' > \"$MERGED_I_KD_I_DIR/README.txt\""
+            echo ""
+          } >> "$SCRIPT_FILE"
+          add_eval "$MERGED_I_KD_I_DIR" 1
+        fi
+      fi
 
-    # KD SFT merge if KD is enabled
-    if is_kd; then
-      echo "" >> "$SCRIPT_FILE"
-      echo "### KD SFT Merge ###" >> "$SCRIPT_FILE"
-      B_KD_DIR="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}/B-kd-${K}-sft-${LR_TAG}-${suffix_name}"
-      MERGED_KD_DIR="$B_KD_DIR/merged-B-kd2I"
-      {
-        echo "mkdir -p \"$MERGED_KD_DIR\""
-        echo "python3 $WORKSPACE_DIR/src/shadow/apply_diff.py \\"
-        echo "  --tuned_model \"$B_KD_DIR\" \\"
-        echo "  --target_model \"$I_MODEL\" \\"
-        echo "  --base_model \"$B_MODEL\""
-        echo ""
-      } >> "$SCRIPT_FILE"
-      add_eval "$MERGED_KD_DIR" 1
-    fi
-  fi
 
   # ================= evaluation list =================
   {

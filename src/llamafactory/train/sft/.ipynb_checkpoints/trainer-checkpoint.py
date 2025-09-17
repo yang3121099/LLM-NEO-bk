@@ -32,6 +32,7 @@ from ..callbacks import SaveProcessorCallback
 from ..trainer_utils import create_custom_optimizer, create_custom_scheduler
 
 from transformers import Seq2SeqTrainer, AutoModelForCausalLM
+from torch.nn import functional as F
 
 if TYPE_CHECKING:
     from torch.utils.data import Dataset

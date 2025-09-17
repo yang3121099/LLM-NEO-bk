@@ -114,7 +114,7 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
 
     @override
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.get("labels")
         # Forward pass for the student model
         outputs = model(**inputs)

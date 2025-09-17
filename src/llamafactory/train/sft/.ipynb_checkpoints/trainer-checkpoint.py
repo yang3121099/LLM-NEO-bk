@@ -112,9 +112,52 @@ class CustomSeq2SeqTrainer(Seq2SeqTrainer):
 
         return super()._get_train_sampler(*args, **kwargs)
 
+
     @override
-    def compute_loss(self, model, inputs, *args, **kwargs):
-        return super().compute_loss(model, inputs, *args, **kwargs)
+    def compute_loss(self, model, inputs, return_outputs=False):
+        labels = inputs.get("labels")
+        # Forward pass for the student model
+        outputs = model(**inputs)
+        logits = outputs.get("logits")
+        student_loss = outputs.get("loss")
+
+        # Compute distillation loss if teacher model is provided
+        if self.teacher_model is not None and self.finetuning_args.kd_ratio > 0:
+            with torch.no_grad():
+                # Forward pass for the teacher model
+                teacher_outputs = self.teacher_model(**inputs)
+                teacher_logits = teacher_outputs.get("logits").detach()
+
+            # Efficient computation of distillation loss
+            # Reference to get_distil_loss function
+            # Only compute loss on valid positions
+            mask = labels.ne(IGNORE_INDEX).unsqueeze(-1)  # (batch_size, seq_len, 1)
+            # Convert logits to float32 for numerical stability
+            student_logits = logits.float()
+            teacher_logits = teacher_logits.float()
+
+            # Apply mask
+            masked_student_logits = torch.masked_select(student_logits, mask).view(-1, student_logits.size(-1))
+            masked_teacher_logits = torch.masked_select(teacher_logits, mask).view(-1, teacher_logits.size(-1))
+
+            # Compute probabilities
+            student_log_probs = F.log_softmax(masked_student_logits, dim=-1)
+            teacher_probs = F.softmax(masked_teacher_logits, dim=-1)
+
+            # Compute KL divergence loss
+            kd_loss = F.kl_div(student_log_probs, teacher_probs, reduction='batchmean')
+
+            # Combine student loss and distillation loss
+            alpha = self.finetuning_args.kd_ratio  # Weight for distillation loss
+            loss = (1 - alpha) * student_loss + alpha * kd_loss
+
+            # Log losses
+            logger.info(f"CE loss: {student_loss.detach().item()}, KL loss: {kd_loss.detach().item()}")
+        else:
+            loss = student_loss
+            logger.info(f"CE loss: {student_loss.detach().item()}")
+
+        return (loss, outputs) if return_outputs else loss
 
     @override
     def prediction_step(

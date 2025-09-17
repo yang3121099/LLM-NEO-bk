@@ -675,7 +675,9 @@ else
 fi
 
 # --- KD Parameters -----------------------------------------------------------
-KD_RATIO=0.5                    # Knowledge distillation loss ratio
+# KD_RATIO=0.5                    # Knowledge distillation loss ratio
+KD_RATIO=0.1                    # Knowledge distillation loss ratio
+
 KD_TEMPERATURE=1.0              # Temperature for KD softmax
 TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
 
@@ -725,6 +727,8 @@ BASE_MODELS=(
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
   "Llama3.2-1B"
+  # "Llama3.2-3B"
+
 )
 
 MODEL_PAIRS=()                  # will contain "<base>||<instruct>"
@@ -817,13 +821,17 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   # suffix_name="s1k_gptoss20b_low"
   # cutoff_len=4096
 
-# limo
-  DATASET="limo"
-  suffix_name="limo"
-  cutoff_len=4096
+# # limo
+#   DATASET="limo"
+#   suffix_name="limo"
+#   cutoff_len=4096
 
-  # samples=(2000)
-  samples=(1000)
+  DATASET="Shadow_2k"
+  suffix_name="Shadow_2k"
+  cutoff_len=4096
+  
+  samples=(2000)
+  # samples=(1000)
   logging_steps=1; save_steps=1000; per_device_train_batch_size=2
   gradient_accumulation_steps=16; num_train_epochs=1
   lr_scheduler_type="cosine"; warmup_ratio=0.1; bf16=true

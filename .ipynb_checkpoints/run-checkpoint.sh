@@ -838,7 +838,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     # Set teacher model for KD training
     local KD_SUFFIX=""
     if [[ "$IS_KD" == "true" ]]; then
-      KD_SUFFIX="-kd-T-$TEACHER_MODEL"
+      KD_SUFFIX="-kd"
       TEACHER_PATH=$TEACHER_MODEL
     fi
 

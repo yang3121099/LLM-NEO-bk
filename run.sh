@@ -697,12 +697,19 @@ to_decimal() {
 lr_tag_dec() { echo "lr$(to_decimal "$1")"; }
 
 # 生成 eval 列表项；comment_level: 1 -> "#", 2 -> "##"
+# 生成 eval 列表项；comment_level: 1 -> "#", 2 -> "##"
 add_eval() {
   local abs="$1" comment_level="${2:-1}"
-  local prefix="#"
-  [[ "$comment_level" -eq 2 ]] && prefix="##"
-  EVAL_LINES+=("$prefix ('$abs','$abs'),")
+  local prefix="#"; [[ "$comment_level" -eq 2 ]] && prefix="##"
+
+  # 取最后三段作为简写（不足三段时就原样返回）
+  local short
+  short=$(awk -F/ '{if (NF>=3) print $(NF-2)"/"$(NF-1)"/"$NF; else print $0}' <<<"${abs%/}")
+
+  # 左边用简写，右边用完整路径
+  EVAL_LINES+=("$prefix ('$short','$abs'),")
 }
+
 
 maybe_rel() { [[ $1 = /* ]] && echo "$1" || echo "../$1"; }
 

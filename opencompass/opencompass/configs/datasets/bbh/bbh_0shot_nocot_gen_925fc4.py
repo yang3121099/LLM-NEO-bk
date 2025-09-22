@@ -39,7 +39,7 @@ bbh_free_form_sets = [
     'web_of_lies',
 ]
 
-bbh_datasets = []
+bbh3_datasets = []
 for _name in bbh_multiple_choice_sets:
     bbh_infer_cfg = dict(
         prompt_template=dict(
@@ -59,12 +59,12 @@ for _name in bbh_multiple_choice_sets:
         pred_postprocessor=dict(type=bbh_mcq_postprocess),
         dataset_postprocessor=dict(type=bbh_mcq_postprocess))
 
-    bbh_datasets.append(
+    bbh3_datasets.append(
         dict(
             type=BBHDataset,
             path='opencompass/bbh',
             name=_name,
-            abbr='bbh-' + _name,
+            abbr='bbh3-' + _name,
             reader_cfg=bbh_reader_cfg,
             infer_cfg=bbh_infer_cfg.copy(),
             eval_cfg=bbh_eval_cfg.copy()))
@@ -85,12 +85,12 @@ for _name in bbh_free_form_sets:
         inferencer=dict(type=GenInferencer, max_out_len=512))
     bbh_eval_cfg = dict(evaluator=dict(type=BBHEvaluator), pred_role='BOT')
 
-    bbh_datasets.append(
+    bbh3_datasets.append(
         dict(
             type=BBHDataset,
             path='opencompass/bbh',
             name=_name,
-            abbr='bbh-' + _name,
+            abbr='bbh3-' + _name,
             reader_cfg=bbh_reader_cfg,
             infer_cfg=bbh_infer_cfg.copy(),
             eval_cfg=bbh_eval_cfg.copy()))

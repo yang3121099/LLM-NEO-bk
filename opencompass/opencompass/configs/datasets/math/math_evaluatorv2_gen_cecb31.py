@@ -27,10 +27,10 @@ math_eval_cfg = dict(
     evaluator=dict(type=MATHEvaluator, version='v2'),
     pred_postprocessor=dict(type=math_postprocess_v2))
 
-math_datasets = [
+minerva_math_datasets = [
     dict(
         type=MATHDataset,
-        abbr='math',
+        abbr='minerva_math',
         path='opencompass/math',
         reader_cfg=math_reader_cfg,
         infer_cfg=math_infer_cfg,

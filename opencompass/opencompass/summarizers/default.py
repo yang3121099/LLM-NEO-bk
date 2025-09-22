@@ -111,6 +111,8 @@ class DefaultSummarizer:
                 _dm = sorted(_dm, key=lambda i: METRIC_WHITELIST.index(i) if i in METRIC_WHITELIST else len(METRIC_WHITELIST))
 
                 if dataset_abbr in dataset_metrics:
+                    #print(dataset_abbr)
+                    #print(dataset_metrics[dataset_abbr])
                     assert tuple(dataset_metrics[dataset_abbr]) == tuple(_dm), \
                     f'{dataset_abbr} has different metrics: {dataset_metrics[dataset_abbr]} vs {_dm}'
                 else:

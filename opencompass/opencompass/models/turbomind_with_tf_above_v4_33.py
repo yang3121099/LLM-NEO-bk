@@ -1,11 +1,7 @@
 # flake8: noqa
 # yapf: disable
 import copy
-import os
-import time
 from typing import Dict, List, Optional, Union
-
-from mmengine.config.config import ConfigDict
 
 from opencompass.models.base import BaseModel
 from opencompass.utils.logging import get_logger
@@ -20,7 +16,7 @@ PromptType = Union[PromptList, str]
 
 
 def valid_str(string, coding='utf-8'):
-    """Decode text according to its encoding type."""
+    """decode text according to its encoding type."""
     invalid_chars = [b'\xef\xbf\xbd']
     bstr = bytes(string, coding)
     for invalid_char in invalid_chars:
@@ -35,7 +31,7 @@ class TurboMindModelwithChatTemplate(BaseModel):
         path: str,
         tokenizer_only: bool = False,
         backend: str = 'turbomind',
-        engine_config: Dict|ConfigDict = {},
+        engine_config: Dict = {},
         gen_config: Dict = {},
         max_seq_len: int = None,
         meta_template: Optional[Dict] = None,
@@ -57,14 +53,7 @@ class TurboMindModelwithChatTemplate(BaseModel):
         if not tokenizer_only:
             DEFAULT_ENGING_CONFIG = {'session_len': self.max_seq_len}
             _engine_config = DEFAULT_ENGING_CONFIG.copy()
-            if isinstance(engine_config, ConfigDict):
-                _engine_config.update(engine_config.to_dict())
-            elif isinstance(engine_config, Dict):
-                _engine_config.update(engine_config)
-            else:
-                raise ValueError(f'expected Dict or ConfigDict engine_config but got {type(engine_config)}')
-
-            _engine_config.update(engine_config.to_dict())
+            _engine_config.update(engine_config)
             self.pipe = self._build_pipe(path, backend, _engine_config)
         else:
             self.pipe = None
@@ -142,7 +131,7 @@ class TurboMindModelwithChatTemplate(BaseModel):
             messages = _format_with_fast_chat_template(messages, self.fastchat_template)
         else:
             # NOTE: DeepSeek-R1 series model's chat template will add <think> after the
-            messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False) for m in messages]
+            messages = [self.tokenizer.apply_chat_template(m, add_generation_prompt=True, tokenize=False, enable_thinking=False) for m in messages]
             # LMDeploy tokenize prompts by AutoTokenizer with its default parameter "add_special_token=True"
             # OC add bos_token in the prompt, which requires tokenizing prompts using "add_speicial_token=False"
             # But LMDeploy doesn't have "add_speicial_token" in the pipeline API. So, we remove bos_token
@@ -177,14 +166,9 @@ class TurboMindModelwithChatTemplate(BaseModel):
         self.logger.info(gen_config)
 
         results = []
-        start = time.perf_counter()
         outputs = self.pipe(messages, gen_config=gen_config, do_preprocess=False)
-        duration = time.perf_counter() - start
-        input_tokens = [output.input_token_len for output in outputs]
-        output_tokens = [output.generate_token_len for output in outputs]
-        results = [output.text for output in outputs]
-        self.logger.info(f'duration {duration:.2f}s, requests {len(inputs)}, input_tokens {sum(input_tokens)}, '
-                         f'output_tokens {sum(output_tokens)}')
+        for output in outputs:
+            results.append(output.text)
 
         for s in stop_words:
             results = [r.split(s)[0] for r in results]
@@ -216,7 +200,4 @@ class TurboMindModelwithChatTemplate(BaseModel):
         else:
             filtered = {k: v for k, v in engine_config.items() if hasattr(PytorchEngineConfig, k)}
             backend_config = PytorchEngineConfig(**filtered)
-
-        log_level = os.getenv('LMDEPLOY_LOG_LEVEL', 'WARNING')
-        max_log_len = os.getenv('LMDEPLOY_MAX_LOG_LEN', 10)
-        return pipeline(model_path, backend_config=backend_config, log_level=log_level, max_log_len=max_log_len)
+        return pipeline(model_path, backend_config=backend_config, log_level='WARNING')

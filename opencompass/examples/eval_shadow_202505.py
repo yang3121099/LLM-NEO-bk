@@ -66,10 +66,10 @@ Baseline_settings = [
 # ('Qwen3-8B-Base_merged_B2B_lora128_lr0.0002_Shadow_2k','/home/ubuntu/Shadow/results/0726/result-Qwen3-8B-Base-0726/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
 # ('Qwen3-8B-Base_merged_I2I_lora128_lr0.0002_Shadow_2k','/home/ubuntu/Shadow/results/0726/result-Qwen3-8B-Base-0726/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
 # ('Qwen3-8B-Base_merged_I2B_lora128_lr0.0002_Shadow_2k','/home/ubuntu/Shadow/results/0726/result-Qwen3-8B-Base-0726/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
-('Qwen3-8B-Base-hf', 'Qwen/Qwen3-8B-Base'),
-('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
-('Qwen3-4B-Base-hf', 'Qwen/Qwen3-4B-Base'),
-('Qwen3-4B-Instruct-hf', 'Qwen/Qwen3-4B'),
+#('Qwen3-8B-Base-hf', 'Qwen/Qwen3-8B-Base'),
+#('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
+#('Qwen3-4B-Base-hf', 'Qwen/Qwen3-4B-Base'),
+#('Qwen3-4B-Instruct-hf', 'Qwen/Qwen3-4B'),
 
 # # Llama3.2
 # ('llama-3.2-1b-instruct-turbomind', '/apdcephfs_qy3/share_301069248/users/rummyyang/minillm/checkpoints/llama3.2/Llama-3.2-1B-Instruct'),    

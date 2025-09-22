@@ -23,7 +23,7 @@ humaneval_plus_infer_cfg = dict(
 humaneval_plus_eval_cfg = dict(
     evaluator=dict(type=HumanEvalPlusEvaluator),
     pred_role='BOT',
-    k=[1, 10, 100],  # the parameter only for humaneval
+    k=[1],  # the parameter only for humaneval
     pred_postprocessor=dict(type=humaneval_postprocess_v2),
 )
 

@@ -279,4 +279,3 @@ def humaneval_internal_v1_postprocess(text: str) -> str:
     else:
         text = '\n'.join(text)
     return text
-

@@ -38,34 +38,34 @@ with read_base():
     #######################################################################
     
     # # ######################### Reasoning-9 (general reasoning) #########################
-    # from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
-    # from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import  mmlu_pro_datasets  #mmlu_pro_gen_cdbebf
-    # from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets # few-shot
-    # from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets #0-shot
+    from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
+    from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import  mmlu_pro_datasets  #mmlu_pro_gen_cdbebf
+    from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets # few-shot
+    from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets #0-shot
     from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import  drop_datasets
     from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets 
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets # ARC_c   
     from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets #noCoT openai_simple and 0-shot
 
     ######################### Math-7 (mathematical) #########################
-    # from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets   # noqa: F401, F403
+    from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets   # noqa: F401, F403
     # from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets # minerva_math
 
     from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import math_datasets as minerva_math_datasets # minerva_math
     from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets # MATH
     from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets # 0-shot
-    # from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets  # noqa: F401, F403
+    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets  # noqa: F401, F403
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets # 0-shot eval_v2
     from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets  # math_500
 
     ######################### Code-3 (coding) #########################
     from opencompass.configs.datasets.humaneval.humaneval_gen_8e312c import humaneval_datasets
-    # from opencompass.configs.datasets.livecodebench.livecodebench_gen_a4f90b import LCB_datasets  # noqa: F401, F403
+    from opencompass.configs.datasets.livecodebench.livecodebench_gen_a4f90b import LCB_datasets  # noqa: F401, F403
 
     # # original OpenCompass may has bug for MBPP and Humaneval+
-    # from opencompass.configs.datasets.mbpp.sanitized_mbpp_mdblock_gen_a447ff import sanitized_mbpp_datasets 
-    # from opencompass.configs.datasets.humaneval_plus.humaneval_plus_openai_simple_evals_gen_159614 import humaneval_plus_datasets 
+    from opencompass.configs.datasets.mbpp.sanitized_mbpp_mdblock_gen_a447ff import sanitized_mbpp_datasets 
+    from opencompass.configs.datasets.humaneval_plus.humaneval_plus_openai_simple_evals_gen_159614 import humaneval_plus_datasets 
 
     
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
@@ -92,7 +92,44 @@ Baseline_settings = [
 # ('I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2I'),
 # # ('/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0915/result-Llama-3.2-1B-0915/I-kd-1k-lora-rank128-lr0.0002-limo/merged-I-kd2B'),
 ('Llama-3.2-1B-Instruct','meta-llama/Llama-3.2-1B-Instruct'),
-# ('Llama-3.2-3B-Instruct','meta-llama/Llama-3.2-3B-Instruct'),
+('Llama-3.2-3B-Instruct','meta-llama/Llama-3.2-3B-Instruct'),
+('Llama-3.1-8B-Instruct','meta-llama/Llama-3.1-8B-Instruct'),
+    #('result-Llama-3.2-1B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+#('result-Llama-3.2-1B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I'),
+#('result-Llama-3.2-1B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I'),
+#('result-Llama-3.2-1B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I'),
+
+#('result-Llama-3.2-3B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+#('result-Llama-3.2-3B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I'),
+#('result-Llama-3.2-3B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I'),
+#('result-Llama-3.2-3B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I'),
+
+
+('result-Llama-3.2-1B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-1B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/I-2k-sft-lr0.00001-Shadow_2k'),
+('result-Llama-3.2-1B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-1B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-1B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k'),
+
+('result-Llama-3.2-3B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/B-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-3B-0921/I-2k-sft-lr0.00001-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/I-2k-sft-lr0.00001-Shadow_2k'),
+('result-Llama-3.2-3B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/B-kd-2k-sft-lr0.00001-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-3B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0921/result-Llama-3.2-3B-0921/I-kd-2k-sft-lr0.00001-Shadow_2k'),
+
+
+
+('result-Llama-3.2-3B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-3B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+# ('result-Llama-3.2-3B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+# ('result-Llama-3.2-3B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+('result-Llama-3.2-3B-0922/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+('result-Llama-3.2-3B-0922/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-3B-0922/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
+
+('result-Llama-3.2-1B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+('result-Llama-3.2-1B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+# ('result-Llama-3.2-1B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+# ('result-Llama-3.2-1B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+('result-Llama-3.2-1B-0922/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+('result-Llama-3.2-1B-0922/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0922/result-Llama-3.2-1B-0922/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
 
 
 #     ##### Evaluation list #####
@@ -120,19 +157,19 @@ Baseline_settings = [
 
 # ('0917/result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
 # ('0917/result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
-('result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
-('result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+#('result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+#('result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
 # ('result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
 # ('result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
-('result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
-('result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
+#('result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+#('result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
 # ('result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B'),
 # ('result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0917/result-Llama-3.2-1B-0917/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B'),
 
-    
+#('Qwen3-0.6B-Instruct-hf', 'Qwen/Qwen3-0.6B'),    
 # ('Qwen3-4B-Instruct-hf', 'Qwen/Qwen3-4B'),
 # ('Qwen3-14B-Instruct-hf', 'Qwen/Qwen3-14B'),
-
+# ('Qwen3-32B-Instruct-hf', 'Qwen/Qwen3-32B'),
     
 # # ('0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
 # # ('0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k'),
@@ -145,6 +182,26 @@ Baseline_settings = [
 # ('result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
 # # ('result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B'),
 # # ('result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B','/workspace/LLM-NEO-bk/results/0916/result-Qwen3-4B-Base-0916/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B'),
+# ('result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+# ('result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+## ('result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+## ('result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+# ('result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+# ('result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
+## ('result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2B'),
+## ('result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2B'),
+#('result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+#('result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+# ('result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+# ('result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+#('result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+#('result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0919/result-Qwen3-0.6B-Base-0919/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
+#('result-Qwen3-4B-Base-0920/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+#('result-Qwen3-4B-Base-0920/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+# ('result-Qwen3-4B-Base-0920/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+# ('result-Qwen3-4B-Base-0920/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+#('result-Qwen3-4B-Base-0920/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/B-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B-kd2I'),
+#('result-Qwen3-4B-Base-0920/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I','/dockerdata/LLM-NEO-bk/results/0920/result-Qwen3-4B-Base-0920/I-kd-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I-kd2I'),
 ]
 
 BASE_settings=[
@@ -170,12 +227,12 @@ for abbr, path in Baseline_settings:  ## classic 4096
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=4),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=1)
+            run_cfg=dict(num_gpus=4)
         )
     )    
     

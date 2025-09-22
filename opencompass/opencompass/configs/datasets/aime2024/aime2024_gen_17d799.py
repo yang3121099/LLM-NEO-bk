@@ -25,7 +25,7 @@ aime2024_infer_cfg = dict(
 )
 
 aime2024_eval_cfg = dict(
-    evaluator=dict(type=MATHEvaluator)
+    evaluator=dict(type='MATHEvaluator')
 )
 
 aime2024_datasets = [

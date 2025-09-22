@@ -3,16 +3,15 @@ import shutil
 import argparse
 import torch
 from safetensors import safe_open
-from safetensors.torch import save_file  # kept for compatibility; not used directly
+from safetensors.torch import save_file
 import re
 import json
 
 # NEW: use the official helper from huggingface_hub that supersedes
 # transformers.modeling_utils.shard_checkpoint
-from huggingface_hub import save_torch_state_dict, snapshot_download
+from huggingface_hub import save_torch_state_dict
 
 # Optional accelerate-based loading removed; use manual shard loading instead
-
 
 def is_linear_param(name):
     """Return True if the parameter belongs to a linear/projection layer."""
@@ -21,44 +20,6 @@ def is_linear_param(name):
         r"o_proj", r"up_proj", r"gate_proj", r"down_proj"
     ]
     return any(re.search(pattern, name.lower()) for pattern in patterns)
-
-
-def resolve_model_path(path_or_repo: str) -> str:
-    """
-    Resolve a local directory or a Hugging Face repo_id to a local directory.
-    - If path_or_repo is an existing directory, return it.
-    - If it looks like a repo_id (contains "/") and local path doesn't exist, snapshot_download to local dir.
-    - Otherwise, raise FileNotFoundError.
-    """
-    if os.path.isdir(path_or_repo):
-        return path_or_repo
-
-    # Treat strings like "org/name" as HF repo IDs if no local path exists
-    if "/" in path_or_repo and not os.path.exists(path_or_repo):
-        cache_root = os.environ.get("HF_DOWNLOAD_DIR", "/dockerdata/models")
-        local_dir = os.path.join(cache_root, path_or_repo.replace("/", "__"))
-        os.makedirs(local_dir, exist_ok=True)
-        print(f"[HF] snapshot_download {path_or_repo} -> {local_dir}")
-
-        # allow common weight/config/tokenizer files only (faster, enough for apply_diff)
-        allow_patterns = [
-            "*.safetensors", "*.safetensors.index.json",
-            "pytorch_model.bin", "pytorch_model-*.bin", "pytorch_model.bin.index.json",
-            "model.safetensors.index.json",
-            "tokenizer.*", "config.*", "*.json", "*.md", "*.py", "generation_config.json",
-            "special_tokens_map.json", "vocab.*", "merges.txt"
-        ]
-
-        snapshot_download(
-            repo_id=path_or_repo,
-            local_dir=local_dir,
-            local_dir_use_symlinks=False,
-            resume_download=True,
-            allow_patterns=allow_patterns,
-        )
-        return local_dir
-
-    raise FileNotFoundError(f"Path or repo not found: {path_or_repo}")
 
 
 def load_weights(model_path):
@@ -100,8 +61,7 @@ def load_weights(model_path):
             weights.update(shard_dict)
     else:
         raise FileNotFoundError(
-            f"No .safetensors or pytorch_model.bin found in {model_path}"
-        )
+            f"No .safetensors or pytorch_model.bin found in {model_path}")
 
     return weights
 
@@ -130,7 +90,8 @@ def copy_tokenizer_and_config(src_dir, dst_dir):
     for filename in os.listdir(src_dir):
         if filename.endswith(".safetensors.index.json"):
             continue
-        if filename.startswith(("config", "tokenizer", "special", "generation")) \
+        if filename.startswith((
+                "config", "tokenizer", "special", "generation")) \
            or filename.endswith(('.md', '.json', '.py')):
             src_file = os.path.join(src_dir, filename)
             dst_file = os.path.join(dst_dir, filename)
@@ -164,17 +125,12 @@ def print_debug_info(a_weights, b_weights, c_weights, new_weights):
     print("==============================================")
 
 
-def process_single_model(tuned_model, target_model, base_model, max_shard_size="2GB"):
+def process_single_model(tuned_model, target_model, base_model):
     print(f"\n[+] Processing tuned model: {tuned_model}")
 
-    # NEW: resolve HF repo ids to local dirs (or pass through existing local dirs)
-    tuned_dir = resolve_model_path(tuned_model)
-    target_dir = resolve_model_path(target_model)
-    base_dir = resolve_model_path(base_model)
-
-    a_weights = load_weights(tuned_dir)
-    b_weights = load_weights(target_dir)
-    c_weights = load_weights(base_dir)
+    a_weights = load_weights(tuned_model)
+    b_weights = load_weights(target_model)
+    c_weights = load_weights(base_model)
 
     delta_weights = {k: a_weights[k] - c_weights[k]
                      for k in a_weights if k in c_weights and is_linear_param(k)}
@@ -182,15 +138,15 @@ def process_single_model(tuned_model, target_model, base_model, max_shard_size="
     new_weights = {k: (b_weights[k] + delta_weights[k]) if k in delta_weights else v
                    for k, v in b_weights.items()}
 
-    delta_dir = os.path.join(tuned_dir, "merged-B2I")
+    delta_dir = os.path.join(tuned_model, "merged-B2I")
     os.makedirs(delta_dir, exist_ok=True)
 
     print_debug_info(a_weights, b_weights, c_weights, new_weights)
 
     print(f"[+] Saving merged weights to {delta_dir} (sharded safetensors…)")
-    save_safetensor_weights(delta_dir, new_weights, max_shard_size=max_shard_size)
-    copy_tokenizer_and_config(target_dir, delta_dir)
-    print(f"[✓] Finished processing {tuned_dir} → {delta_dir}")
+    save_safetensor_weights(delta_dir, new_weights)
+    copy_tokenizer_and_config(target_model, delta_dir)
+    print(f"[✓] Finished processing {tuned_model} → {delta_dir}")
 
 
 def find_model_paths(parent_dir):
@@ -210,15 +166,15 @@ if __name__ == "__main__":
     parser.add_argument("--tuned_model", type=str, required=True,
                         help="Parent dir containing fine-tuned (a) model(s) or a single a-model dir.")
     parser.add_argument("--target_model", type=str, required=True,
-                        help="Path to the Instruct (b) model directory or HF repo_id.")
+                        help="Path to the Instruct (b) model directory.")
     parser.add_argument("--base_model", type=str, required=True,
-                        help="Path to the Base (c) model directory or HF repo_id.")
+                        help="Path to the Base (c) model directory.")
     parser.add_argument("--max_shard_size", type=str, default="2GB",
                         help="Max size per shard, e.g. 2GB, 1_500_000_000. Default 2GB.")
 
     args = parser.parse_args()
 
-    model_paths = find_model_paths(args.tuned_model) if os.path.isdir(args.tuned_model) else [args.tuned_model]
+    model_paths = find_model_paths(args.tuned_model)
     print(f"Found {len(model_paths)} model path(s): {model_paths}")
 
     for model_path in model_paths:
@@ -226,5 +182,4 @@ if __name__ == "__main__":
             tuned_model=model_path,
             target_model=args.target_model,
             base_model=args.base_model,
-            max_shard_size=args.max_shard_size,
         )

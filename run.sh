@@ -655,8 +655,8 @@ SCRIPT_OUTPUT_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_OUTPUT_DIR"
 
 # --- LoRA switch -------------------------------------------------------------
-# USE_LORA=true                   # false -> full SFT
-USE_LORA=false                   # false -> full SFT
+USE_LORA=true                   # false -> full SFT
+#USE_LORA=false                   # false -> full SFT
 is_lora()   { [[ "${USE_LORA,,}" == "true" ]]; }
 
 # --- KD switch ---------------------------------------------------------------
@@ -728,7 +728,7 @@ BASE_MODELS=(
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
   "Llama3.2-1B"
-  # "Llama3.2-3B"
+   "Llama3.2-3B"
 
 )
 

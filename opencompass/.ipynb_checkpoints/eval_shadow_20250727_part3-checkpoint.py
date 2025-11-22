@@ -30,8 +30,8 @@ with read_base():
     from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets # minerva_math
 
     # from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import math_datasets as minerva_math_datasets # minerva_math
-    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets # MATH
-    # from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets # 0-shot
+    # from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets # MATH
+    from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets # 0-shot
     # from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets  # noqa: F401, F403
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets # 0-shot eval_v2
@@ -73,14 +73,9 @@ Base_settings = [
 # input .sh output, for B2I and I2I only
 Instruct_settings =[
 ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),   
-# ('result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
-# ('result-Qwen3-8B-Base-1122/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
-
-('result-Qwen3-8B-Base-1122/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I'),
-('result-Qwen3-8B-Base-1122/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I'),
-('result-Qwen3-8B-Base-1122/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch1/merged-B2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch1/merged-B2I'),
-('result-Qwen3-8B-Base-1122/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch1/merged-I2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch1/merged-I2I'),
-    
+('result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+('result-Qwen3-8B-Base-1122/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/workspace/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+ 
 ]
 
 models = []

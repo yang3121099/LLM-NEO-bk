@@ -34,7 +34,21 @@ class HumanevalDataset(BaseDataset):
 
     @staticmethod
     def load(path: str, num_repeats: int = 1, local_mode: bool = False):
-        """Load humaneval dataset for pass k mode."""
+        """Load humaneval dataset for pass k mode.
+
+        Note that you can use num_repeats > 1 when your model does not support
+        `num_return_sequence` in generation, otherwise use the raw
+        humaneval dataset and set `num_return_sequence` in model config to
+        generate multiple responses for testing pass@k>1.
+
+        It better to change your dataset abbr correspondingly if you want to
+        change num_repeats>1, otherwise the number in
+        `.cache/dataset_size.json` might be inconsistent.
+
+        Args:
+            num_repeats(int): Number of repetition for this dataset to get
+        multiple responses in special cases.
+        """
         path = get_data_path(path, local_mode=local_mode)
         if environ.get('DATASET_SOURCE') == 'ModelScope':
             from modelscope import MsDataset
@@ -58,7 +72,7 @@ class HumanEvalEvaluator(BaseEvaluator):
 
     def __init__(self, k: List[int] = [1, 10, 100]) -> None:
         try:
-            import human_eval  # noqa: F401
+            import human_eval
         except ImportError:
             raise ImportError(HUMANEVAL_IMPORT_ERROR)
 
@@ -74,7 +88,11 @@ class HumanEvalEvaluator(BaseEvaluator):
 
         prompts = [item['prompt'] for item in test_set]
         humaneval_preds = []
+        # create json file in human_eval format
         for preds, refer in zip(predictions, references):
+            # suits for two case
+            # 1. use repeated dataset
+            # 2. use `num_return_sequences` to generate multiple responses
             if not isinstance(preds, list):
                 preds = [preds]
             for pred in preds:
@@ -99,13 +117,11 @@ class HumanEvalEvaluator(BaseEvaluator):
 
 
 class HumanEvalPlusEvaluator(BaseEvaluator):
-    """Evaluator for HumanEvalPlus (EvalPlus). Robust to evalplus versions
-    where evaluate(...) may return None and dump results to JSON.
-    """
+    """Evaluator for HumanEval or EvalPlus."""
 
     def __init__(self, k: List[int] = [1, 10, 100]) -> None:
         try:
-            import evalplus  # noqa: F401
+            import evalplus
         except ImportError:
             raise ImportError(HUMANEVAL_PLUS_IMPORT_ERROR)
 
@@ -126,7 +142,6 @@ class HumanEvalPlusEvaluator(BaseEvaluator):
                 preds = [preds]
             for pred in preds:
                 humaneval_preds.append({'task_id': refer, 'solution': prompt + pred})
-
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_dir = osp.join(tmp_dir, 'human_eval.jsonl')
             write_jsonl(out_dir, humaneval_preds)
@@ -141,68 +156,28 @@ class HumanEvalPlusEvaluator(BaseEvaluator):
                 gt_time_limit_factor=4.0,
                 mini=None,
             )
-
-            score = evaluate(**flags)  # Newer evalplus may return None (and write JSON)
-
-            # Prefer reading from the results JSON that evalplus writes
+            score = evaluate(**flags)
             results_path = osp.join(tmp_dir, 'human_eval_eval_results.json')
             with open(results_path, 'r') as f:
-                res_json = json.load(f)
+                results = json.load(f)
+            # details = {}
+            # for index in range(len(predictions)):
+            #     r = results['eval'][references[index]]
 
-        # Helper to extract pass@k from various JSON shapes
-        def _get_pass_at_k(blob, k):
-            if not isinstance(blob, dict):
-                return None
-            key = f'pass@{k}'
-            if key in blob and isinstance(blob[key], (int, float)):
-                return float(blob[key])
-            if 'pass@k' in blob and isinstance(blob['pass@k'], dict):
-                v = blob['pass@k'].get(str(k)) or blob['pass@k'].get(k)
-                if isinstance(v, (int, float)):
-                    return float(v)
-            if k in blob and isinstance(blob[k], (int, float)):
-                return float(blob[k])
-            if str(k) in blob and isinstance(blob[str(k)], (int, float)):
-                return float(blob[str(k)])
-            return None
-
-        out = {}
-        candidates = []
-        if isinstance(res_json, dict):
-            if 'plus' in res_json:
-                candidates.append(res_json['plus'])
-            if 'base' in res_json:
-                candidates.append(res_json['base'])
-            candidates.append(res_json)
-
-        for k_val in self.k:
-            val = None
-            for c in candidates:
-                val = _get_pass_at_k(c, k_val)
-                if val is not None:
-                    break
-            if val is None and isinstance(score, dict):
-                v = None
-                if f'pass@{k_val}' in score:
-                    v = score[f'pass@{k_val}']
-                elif k_val in score:
-                    v = score[k_val]
-                elif str(k_val) in score:
-                    v = score[str(k_val)]
-                if isinstance(v, (int, float)):
-                    val = float(v)
-            if val is not None:
-                # ★ 关键改动：输出键名改为 humaneval_plus_pass@{k}
-                out[f'humaneval_plus_pass@{k_val}'] = val * 100
-
-        if not out:
-            keys = list(res_json.keys()) if isinstance(res_json, dict) else type(res_json).__name__
-            raise RuntimeError(
-                f'Failed to extract pass@k from evalplus results. Available keys: {keys}. '
-                f'Got score type: {type(score).__name__}'
-            )
-
-        return out
+            #     details[str(index)] = {
+            #         'prompt': prompts[index],
+            #         'prediction': predictions[index],
+            #         'reference': references[index],
+            #         'base_result': r['base'][0][0],
+            #         'plus_result': r['plus'][0][0],
+            #         'is_correct': r['base'][0][0] == 'success' and r['plus'][0][0] == 'success',
+            #     }
+            #     if r['nfiles'] > 1:
+            #         details[str(index)]['warning'] = 'Multiple files in the solution. Details may be wrong.'
+        print(score)
+        results = {f'humaneval_plus_{k}': score[k] * 100 for k in score}
+        # results['details'] = details
+        return results
 
 
 def humaneval_postprocess_v2(text: str) -> str:
@@ -234,6 +209,7 @@ def humaneval_internal_v1_postprocess(text: str) -> str:
     """This is an advanced version of previous postprocess to handle more
     situations, better to use this one."""
     try:
+        # for chatGLM related text
         eval_text = eval(text)
     except Exception:
         pass
@@ -244,25 +220,28 @@ def humaneval_internal_v1_postprocess(text: str) -> str:
     if '```' in text:
         blocks = re.findall(r'```(.*?)```', text, re.DOTALL)
         if len(blocks) == 0:
-            text = text.split('```')[1]
+            text = text.split('```')[1]  # fall back to default strategy
         else:
-            text = blocks[0]
-            if not text.startswith('\n'):
+            text = blocks[0]  # fetch the first code block
+            if not text.startswith('\n'):  # in case starting with ```python
                 text = text[max(text.find('\n') + 1, 0) :]
     if text.strip().startswith('from') or text.strip().startswith('import'):
         def_idx = text.find('def')
         if def_idx != -1:
             text = text[max(text.find('\n', def_idx) + 1, 0) :]
+    # remove empty lines
     text = '\n'.join([line for line in text.split('\n') if line != ''])
     text = text.lstrip('\n')
     if text.strip().startswith('def'):
         text = '\n'.join(text.split('\n')[1:])
+    # deal with the indentation error
     if text.startswith(' '):
         text = '    ' + text.lstrip()
     else:
         text = '\n'.join(['    ' + line for line in text.split('\n')])
     text = text.split('\n')
 
+    # If number of leading space reduces, we assume that the code block ends.
     min_leading_space = None
     end_index = None
     for index, line in enumerate(text):
@@ -279,4 +258,3 @@ def humaneval_internal_v1_postprocess(text: str) -> str:
     else:
         text = '\n'.join(text)
     return text
-

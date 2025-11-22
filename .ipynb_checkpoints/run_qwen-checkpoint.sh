@@ -659,7 +659,8 @@ USE_LORA=true                   # false -> full SFT
 is_lora()   { [[ "${USE_LORA,,}" == "true" ]]; }
 
 # --- KD switch ---------------------------------------------------------------
-USE_KD=true                     # false -> standard training, true -> knowledge distillation
+# USE_KD=true                     # false -> standard training, true -> knowledge distillation
+USE_KD=false                     # false -> standard training, true -> knowledge distillation
 is_kd()     { [[ "${USE_KD,,}" == "true" ]]; }
 
 lora_ranks=(128)
@@ -675,11 +676,11 @@ else
 fi
 
 # --- KD Parameters -----------------------------------------------------------
-KD_RATIO=0.5                    # Knowledge distillation loss ratio
+KD_RATIO=0.1                    # Knowledge distillation loss ratio
 KD_TEMPERATURE=1.0              # Temperature for KD softmax
 # TEACHER_MODEL="meta-llama/Llama-3.1-8B-Instruct"                # Will be set based on training target
 TEACHER_MODEL="Qwen/Qwen3-14B"                # Will be set based on training target
-
+TEACHER_MODEL="Qwen/Qwen3-32B"                # Will be set based on training target
 # --- Helpers -----------------------------------------------------------------
 # 统一 k 表示：整千 -> 2k，非整千 -> 2.5k（保留一位小数，不使用 2.0k）
 format_k() {
@@ -728,10 +729,10 @@ MODEL_DIR="" # ""→HF
 MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 BASE_MODELS=(
   # "Qwen2.5-14B"
-  # "Qwen3-0.6B"
-  "Qwen3-4B"
+#  "Qwen3-0.6B"
+   # "Qwen3-4B"
 
-  # "Qwen3-8B"
+  "Qwen3-8B"
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
   # "Llama3.2-1B"

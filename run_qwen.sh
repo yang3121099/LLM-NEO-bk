@@ -659,7 +659,8 @@ USE_LORA=true                   # false -> full SFT
 is_lora()   { [[ "${USE_LORA,,}" == "true" ]]; }
 
 # --- KD switch ---------------------------------------------------------------
-USE_KD=true                     # false -> standard training, true -> knowledge distillation
+# USE_KD=true                     # false -> standard training, true -> knowledge distillation
+USE_KD=false                     # false -> standard training, true -> knowledge distillation
 is_kd()     { [[ "${USE_KD,,}" == "true" ]]; }
 
 lora_ranks=(128)
@@ -729,9 +730,9 @@ MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 BASE_MODELS=(
   # "Qwen2.5-14B"
 #  "Qwen3-0.6B"
-   "Qwen3-4B"
+   # "Qwen3-4B"
 
-  # "Qwen3-8B"
+  "Qwen3-8B"
 # "Qwen3-4B-Thinking-2507"
   # "Llama3.1-8B"
   # "Llama3.2-1B"

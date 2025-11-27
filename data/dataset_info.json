@@ -1,5 +1,48 @@
 {
 
+"medical_o1_reasoning_2k": {
+  "file_name": "medical_o1_reasoning_2k.json",
+  "columns": {
+    "prompt": "Question",
+    "response": "Response"
+  }
+},
+"shadow_medical_mix_sharegpt_4k": {
+    "file_name": "shadow_medical_mix_sharegpt_4k.normalized.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+},
+"mgsm_2k": {
+  "file_name": "mgsm_2k.json",
+  "columns": {
+    "prompt": "question",
+    "response": "answer"
+  }
+},
+
+"medical_mgsm_mix_4k": {
+  "file_name": "medical_mgsm_mix_4k.json",
+  "columns": {
+    "prompt": "prompt",
+    "response": "response"
+  }
+},
+  "mgsm": {
+    "file_name": "mgsm.json",
+    "columns": {
+      "prompt": "question",
+      "response": "answer"
+    }
+  },
 
   "s1k_gptoss20b_think": {
     "file_name": "s1k_gptoss20b_sharegpt_think.json",

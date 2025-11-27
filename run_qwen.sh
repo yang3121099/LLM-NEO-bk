@@ -829,17 +829,20 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   # cutoff_len=4096
 
 # # limo
-#   DATASET="limo"
-#   suffix_name="limo"
+   #DATASET="medical_o1_reasoning"
+   #suffix_name="medical_o1_reasoning"
 #   cutoff_len=4096
-
+  DATASET="shadow_medical_mix_sharegpt_4k"
+  suffix_name="shadow_medical_mix_sharegpt_4k"
+  #DATASET="mgsm"
+  #suffix_name="mgsm"
 # limo
-  DATASET="Shadow_2k"
-  suffix_name="Shadow_2k"
+  #DATASET="Shadow_2k"
+  #suffix_name="Shadow_2k"
   cutoff_len=4096
   
   # samples=(2000)
-  samples=(2000)
+  samples=(4000)
   logging_steps=1; save_steps=1000; per_device_train_batch_size=2
   gradient_accumulation_steps=16; num_train_epochs=1
   lr_scheduler_type="cosine"; warmup_ratio=0.1; bf16=true

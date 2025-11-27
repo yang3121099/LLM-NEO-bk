@@ -12,7 +12,6 @@ with read_base():
     from .groups.bbh import bbh_summary_groups, bbh_0shot_summary_groups
     from .groups.mmlu import mmlu_summary_groups
     from .groups.mmlu_pro import mmlu_pro_summary_groups
-    from .groups.mgsm import mgsm_summary_groups
 
 # ---------------------------------------------------------------------------
 # Section definitions
@@ -141,25 +140,6 @@ dataset_abbrs = [
 
     "",  # blank line
 
-    # MGSM (Multilingual Grade School Math)
-    "--------- MGSM ---------",
-    ["mgsm_bn", "accuracy"],
-    ["mgsm_de", "accuracy"],
-    ["mgsm_en", "accuracy"],
-    ["mgsm_es", "accuracy"],
-    ["mgsm_fr", "accuracy"],
-    ["mgsm_ja", "accuracy"],
-    ["mgsm_ru", "accuracy"],
-    ["mgsm_sw", "accuracy"],
-    ["mgsm_te", "accuracy"],
-    ["mgsm_th", "accuracy"],
-    ["mgsm_zh", "accuracy"],
-    ["mgsm_latin", "naive_average"],
-    ["mgsm_non_latin", "naive_average"],
-    ["mgsm", "naive_average"],
-
-    "",  # blank line
-
     # LiveCodeBench
     "--------- LiveCodeBench ---------",
     ["lcb_code_execution", "pass@1"],
@@ -193,7 +173,6 @@ summary_groups = (
     + mmlu_pro_summary_groups
     + math_groups
     + code_groups
-    + mgsm_summary_groups
     + livecodebench_groups
     + code_v1_groups
     + general_v2_groups

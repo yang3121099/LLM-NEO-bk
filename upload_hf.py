@@ -13,7 +13,9 @@ api = HfApi()
 # ✅ 本地模型文件夹列表（可以根据实际路径添加）
 model_paths = [
     # "./opencompass/outputs/Rebuttal-0729"
-    "/workspace/LLM-NEO-bk/opencompass/outputs/Rebuttal-0729/shadow-example/20250727200010"
+    #"/workspace/LLM-NEO-bk/opencompass/outputs/Rebuttal-0729/shadow-example/20250727200010"
+    #"/dockerdata/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I"
+    "/dockerdata/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I"
     # "/workspace/LLM-NEO-bk/results/0917"
 ]
 
@@ -27,8 +29,8 @@ for path in model_paths:
     # model_name="ICASSP-0915_OC-H200-kd-d1"
 
     # model_name="ICASSP-0917_MD-H200-llama-3B-kd-d3"
-    model_name="ICASSP-0917_OC-H200-llama-3B-kd-d3"
-
+#    model_name="ICASSP-0917_OC-H200-ll/dockerdata/LLM-NEO-bk/results/1122/result-Qwen3-8B-Base-1122/B-2k-lora-rank128-lr0.0002-Shadow_2k/meama-3B-kd-d3"
+    model_name="ICLR-1125-MD-H20-Qwen3-8B-I2I-d3"
 
     repo_id = f"{HF_USERNAME}/{model_name}"
     print(f"🚀 正在上传 {model_name} 到 {repo_id} ...")

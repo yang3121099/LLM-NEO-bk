@@ -1,18 +1,11 @@
 from mmengine.config import read_base
 
-"""Benchmark configuration
-
-This file cleans up the original configuration by:
-1. Removing all commented‑out code sections.
-2. Dropping GPQA statistics/aggregation, keeping only the **GPQA_diamond** subset.
-3. Converting remaining comments to concise, open‑source‑friendly English.
-"""
-
 with read_base():
     from .groups.bbh import bbh_summary_groups, bbh_0shot_summary_groups
     from .groups.mmlu import mmlu_summary_groups
     from .groups.mmlu_pro import mmlu_pro_summary_groups
-    from .groups.mgsm import mgsm_summary_groups
+    from .groups.mgsm import mgsm_summary_groups   # 新增：MGSM 汇总
+
 
 # ---------------------------------------------------------------------------
 # Section definitions
@@ -62,6 +55,38 @@ general_v2_groups = [
 ]
 
 # ---------------------------------------------------------------------------
+# MedQA_all group: average over three MedQA subsets
+# ---------------------------------------------------------------------------
+
+medqa_all_group = [
+    dict(
+        name="MedQA_all",
+        subsets=[
+            ["MedQA_Mainland", "accuracy"],
+            ["MedQA_Taiwan", "accuracy"],
+            ["MedQA_US", "accuracy"],
+        ],
+    )
+]
+
+# ---------------------------------------------------------------------------
+# Medical Section
+# ---------------------------------------------------------------------------
+
+medical_groups = [
+    dict(
+        name="Medical",
+        subsets=[
+            # 在 Medical 的 avg 里，把 MedQA 三个子集作为一个整体 MedQA_all
+            ["MedQA_all", "naive_average"],
+            ["medbullets", "accuracy"],
+            ["ProteinLMBench", "accuracy"],
+            # 按要求：不包含 medmcqa / MedCalc_Bench
+        ],
+    )
+]
+
+# ---------------------------------------------------------------------------
 # Aggregations
 # ---------------------------------------------------------------------------
 
@@ -95,18 +120,20 @@ average_groups2 = [
     {"name": "average_math2", "subsets": [["Math", "naive_average"]]},
     {"name": "average_code1", "subsets": [["Code_v1", "naive_average"]]},
     {"name": "average_general2", "subsets": [["General_v2", "naive_average"]]},
+    {"name": "average_medical", "subsets": [["Medical", "naive_average"]]},
     {
         "name": "average2",
         "subsets": [
             ["average_math2", "naive_average"],
             ["average_code1", "naive_average"],
             ["average_general2", "naive_average"],
+            ["average_medical", "naive_average"],
         ],
     },
 ]
 
 # ---------------------------------------------------------------------------
-# Dataset abbreviations (used by the summarizer)
+# Dataset abbreviations (table display)
 # ---------------------------------------------------------------------------
 
 dataset_abbrs = [
@@ -141,6 +168,17 @@ dataset_abbrs = [
 
     "",  # blank line
 
+    # Medical
+    "--------- Medical ---------",
+    ["MedQA_Mainland", "accuracy"],
+    ["MedQA_Taiwan", "accuracy"],
+    ["MedQA_US", "accuracy"],
+    ["MedQA_all", "naive_average"],
+    ["medbullets", "accuracy"],
+    ["ProteinLMBench", "accuracy"],
+
+    "",  # blank line
+
     # MGSM (Multilingual Grade School Math)
     "--------- MGSM ---------",
     ["mgsm_bn", "accuracy"],
@@ -169,15 +207,16 @@ dataset_abbrs = [
 
     "",  # blank line
 
-    # Section AVG v2
+    # Section AVG
     "--------- Section AVG ---------",
     ["Math", "naive_average"],
     ["Code_v1", "naive_average"],
     ["General_v2", "naive_average"],
+    ["Medical", "naive_average"],
 
     "",  # blank line
 
-    # Overall AVG v2
+    # Overall AVG
     "--------- Overall AVG ---------",
     ["average2", "naive_average"],
 ]
@@ -193,7 +232,9 @@ summary_groups = (
     + mmlu_pro_summary_groups
     + math_groups
     + code_groups
-    + mgsm_summary_groups
+    + medqa_all_group      # 先算 MedQA_all
+    + medical_groups       # 再算 Medical
+    + mgsm_summary_groups  # MGSM 各语言 + mgsm_latin / non_latin / mgsm
     + livecodebench_groups
     + code_v1_groups
     + general_v2_groups
@@ -201,10 +242,11 @@ summary_groups = (
 )
 
 # ---------------------------------------------------------------------------
-# Summarizer configuration
+# Summarizer
 # ---------------------------------------------------------------------------
 
 summarizer = dict(
     dataset_abbrs=dataset_abbrs,
     summary_groups=summary_groups,
 )
+

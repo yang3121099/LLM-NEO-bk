@@ -1,5 +1,3 @@
-
-
 #!/usr/bin/env bash
 ###############################################################################
 ##### 0. Globals                                                             #####
@@ -19,7 +17,7 @@ is_lora()   { [[ "${USE_LORA,,}" == "true" ]]; }
 USE_KD=false                     # false -> standard training, true -> knowledge distillation
 is_kd()     { [[ "${USE_KD,,}" == "true" ]]; }
 
-lora_ranks=(64)
+lora_ranks=(128)
 # ratios=(0.5)
 learning_rates_lora=(2e-4)
 # learning_rates_lora=(5e-6 1e-5 2e-5 5e-4 1e-4 2e-4 5e-4 1e-3 2e-3)
@@ -190,16 +188,14 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 #   cutoff_len=4096
 
 # limo
-#  DATASET="Shadow_2k"
-#  suffix_name="Shadow_2k_re_adapt_epoch1"
   DATASET="mgsm"
-  suffix_name="mgsm_re_adapt_epoch3"
+  suffix_name="mgsm"
   cutoff_len=4096
   
   # samples=(2000)
   samples=(2000)
-  logging_steps=1; save_steps=1000; per_device_train_batch_size=20
-  gradient_accumulation_steps=1; num_train_epochs=3
+  logging_steps=1; save_steps=1000; per_device_train_batch_size=2
+  gradient_accumulation_steps=16; num_train_epochs=1
   lr_scheduler_type="cosine"; warmup_ratio=0.1; bf16=true
   val_size=0.01; per_device_eval_batch_size=1
   eval_strategy="steps"; eval_steps=10000; overwrite_cache=false
@@ -238,7 +234,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         echo "  --stage sft \\"
         echo "  --do_train true \\"
         if is_lora; then
-          echo "  --finetuning_type lora --lora_rank ${lora_ranks[0]} --lora_dropout 0.05 --use_dora True --optim adamw_torch\\"
+          echo "  --finetuning_type lora --lora_rank ${lora_ranks[0]} \\"
         else
           echo "  --finetuning_type full \\"
         fi

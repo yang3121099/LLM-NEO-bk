@@ -52,13 +52,13 @@ with read_base():
     from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets # minerva_math
 
     # from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import math_datasets as minerva_math_datasets # minerva_math
-    # from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets # MATH
+    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets # MATH
     # from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets # 0-shot
     # from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets  # noqa: F401, F403
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets # 0-shot eval_v2
-    # from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets  # math_500
-
+    from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets  # math_500
+    # from opencompass.configs.datasets.mgsm.mgsm_gen import mgsm_datasets
     ######################### Code-3 (coding) #########################
     # from opencompass.configs.datasets.humaneval.humaneval_gen_8e312c import humaneval_datasets
     # from opencompass.configs.datasets.livecodebench.livecodebench_gen_a4f90b import LCB_datasets  # noqa: F401, F403
@@ -86,6 +86,54 @@ Baseline_settings = [
 # ('Meta-Llama-3.1-8b-Instruct', 'meta-llama/Meta-Llama-3-8B-Instruct'),    
 # ('Llama-3.2-1B-Instruct', 'meta-llama/Llama-3.2-1B-Instruct'),    
 
+  ('result-Qwen3-8B-Base-1124/B-2k-lora-rank128-lr0.0002-mgsm/merged-B2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/B-2k-lora-rank128-lr0.0002-mgsm/merged-B2I'),
+('result-Qwen3-8B-Base-1124/I-2k-lora-rank128-lr0.0002-mgsm/merged-I2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/I-2k-lora-rank128-lr0.0002-mgsm/merged-I2I'),
+
+
+
+('result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-B2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-B2I'),
+('result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-I2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-I2I'),
+
+('result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-B2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-B2I'),
+('result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-I2I','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-I2I'),
+
+('Qwen3-8B-Instruct-LoRE', 'yang31210999/ICLR-1123_OC-H200-Qwen3-LoRE-Adapt-d1'),
+('result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-B2I-LoRE','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-B2I-LoRE'),
+('result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-I2I-LoRE','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch1/merged-I2I-LoRE'),
+
+('result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-B2I-LoRE','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/B-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-B2I-LoRE'),
+('result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-I2I-LoRE','/dockerdata/LLM-NEO-bk/results/1124/result-Qwen3-8B-Base-1124/I-2k-lora-rank64-lr0.0002-mgsm_re_adapt_epoch3/merged-I2I-LoRE'),
+
+
+
+
+
+    ('CodeZ1_Single_ModelA_AttnOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelA_AttnOnly/merged-CodeZ1_Single_ModelA_AttnOnly'),
+    ('CodeZ1_Single_ModelA_MlpOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelA_MlpOnly/merged-CodeZ1_Single_ModelA_MlpOnly'),
+    ('CodeZ1_Single_ModelA_Shallow', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelA_Shallow/merged-CodeZ1_Single_ModelA_Shallow'),
+    ('CodeZ1_Single_ModelA_Deep', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelA_Deep/merged-CodeZ1_Single_ModelA_Deep'),
+    ('CodeZ1_Single_ModelB_AttnOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelB_AttnOnly/merged-CodeZ1_Single_ModelB_AttnOnly'),
+    ('CodeZ1_Single_ModelB_MlpOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelB_MlpOnly/merged-CodeZ1_Single_ModelB_MlpOnly'),
+    ('CodeZ1_Single_ModelB_Shallow', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelB_Shallow/merged-CodeZ1_Single_ModelB_Shallow'),
+    ('CodeZ1_Single_ModelB_Deep', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Single_ModelB_Deep/merged-CodeZ1_Single_ModelB_Deep'),
+    ('CodeZ1_Hybrid_Attn-A_Mlp-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Hybrid_Attn-A_Mlp-B/merged-CodeZ1_Hybrid_Attn-A_Mlp-B'),
+    ('CodeZ1_Hybrid_Mlp-A_Attn-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Hybrid_Mlp-A_Attn-B/merged-CodeZ1_Hybrid_Mlp-A_Attn-B'),
+    ('CodeZ1_Hybrid_Shallow-A_Deep-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Hybrid_Shallow-A_Deep-B/merged-CodeZ1_Hybrid_Shallow-A_Deep-B'),
+    ('CodeZ1_Hybrid_Deep-A_Shallow-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/CodeZ1_Hybrid_Deep-A_Shallow-B/merged-CodeZ1_Hybrid_Deep-A_Shallow-B'),
+    ('Shadow2k_Single_ModelA_AttnOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelA_AttnOnly/merged-Shadow2k_Single_ModelA_AttnOnly'),
+    ('Shadow2k_Single_ModelA_MlpOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelA_MlpOnly/merged-Shadow2k_Single_ModelA_MlpOnly'),
+    ('Shadow2k_Single_ModelA_Shallow', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelA_Shallow/merged-Shadow2k_Single_ModelA_Shallow'),
+    ('Shadow2k_Single_ModelA_Deep', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelA_Deep/merged-Shadow2k_Single_ModelA_Deep'),
+    ('Shadow2k_Single_ModelB_AttnOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelB_AttnOnly/merged-Shadow2k_Single_ModelB_AttnOnly'),
+    ('Shadow2k_Single_ModelB_MlpOnly', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelB_MlpOnly/merged-Shadow2k_Single_ModelB_MlpOnly'),
+    ('Shadow2k_Single_ModelB_Shallow', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelB_Shallow/merged-Shadow2k_Single_ModelB_Shallow'),
+    ('Shadow2k_Single_ModelB_Deep', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Single_ModelB_Deep/merged-Shadow2k_Single_ModelB_Deep'),
+    ('Shadow2k_Hybrid_Attn-A_Mlp-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Hybrid_Attn-A_Mlp-B/merged-Shadow2k_Hybrid_Attn-A_Mlp-B'),
+    ('Shadow2k_Hybrid_Mlp-A_Attn-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Hybrid_Mlp-A_Attn-B/merged-Shadow2k_Hybrid_Mlp-A_Attn-B'),
+    ('Shadow2k_Hybrid_Shallow-A_Deep-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Hybrid_Shallow-A_Deep-B/merged-Shadow2k_Hybrid_Shallow-A_Deep-B'),
+    ('Shadow2k_Hybrid_Deep-A_Shallow-B', '/dockerdata/LLM-NEO-bk/results/1123/result-Qwen3-8B-Base-1123/analysis_suite_1124/Shadow2k_Hybrid_Deep-A_Shallow-B/merged-Shadow2k_Hybrid_Deep-A_Shallow-B'),
+
+
 ]
 
 BASE_settings=[
@@ -111,12 +159,12 @@ for abbr, path in Baseline_settings:  ## classic 4096
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=8),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=1)
+            run_cfg=dict(num_gpus=8)
         )
     )    
     

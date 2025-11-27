@@ -834,13 +834,21 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 #   cutoff_len=4096
 
 # limo
-  DATASET="Shadow_2k"
-  suffix_name="Shadow_2k"
+#  DATASET="Shadow_2k"
+#  suffix_name="Shadow_2k"
   cutoff_len=4096
-  
+
+  #DATASET="Code_Z1"
+  #suffix_name="Code_Z1"
+
+  #DATASET="BAAI-Infinity-7M-core"
+  #suffix_name="BAAI-Infinity-7M-core"
+ 
+  DATASET="BAAI-Infinity-0625"
+  suffix_name="BAAI-Infinity-0625"
   # samples=(2000)
-  samples=(2000)
-  logging_steps=1; save_steps=1000; per_device_train_batch_size=2
+  samples=(10000)
+  logging_steps=1; save_steps=10; per_device_train_batch_size=2
   gradient_accumulation_steps=16; num_train_epochs=1
   lr_scheduler_type="cosine"; warmup_ratio=0.1; bf16=true
   val_size=0.01; per_device_eval_batch_size=1
@@ -884,7 +892,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         else
           echo "  --finetuning_type full \\"
         fi
-        # echo "  --deepspeed examples/deepspeed/ds_z3_config.json \\"
+        echo "  --deepspeed examples/deepspeed/ds_z3_config.json \\"
         echo "  --dataset \"$DATASET\" \\"
         echo "  --template \"$template\" \\"
         echo "  --cutoff_len $cutoff_len \\"

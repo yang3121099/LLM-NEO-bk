@@ -1,5 +1,43 @@
 {
 
+"BAAI-Infinity-0625": {
+  "hf_hub_url": "BAAI/Infinity-Instruct",
+  "subset": "0625",
+  "formatting": "sharegpt",
+  "columns": {
+    "messages": "conversations"
+  },
+  "tags": {
+    "role_tag": "from",
+    "content_tag": "value",
+    "user_tag": "human",
+    "assistant_tag": "gpt"
+  }
+},
+
+
+"BAAI-Infinity-7M-core": {
+  "hf_hub_url": "BAAI/Infinity-Instruct",
+  "subset": "7M_core",
+  "formatting": "sharegpt",
+  "columns": {
+    "messages": "conversations"
+  },
+  "tags": {
+    "role_tag": "from",
+    "content_tag": "value",
+    "user_tag": "human",
+    "assistant_tag": "gpt"
+  }
+},
+
+  "Code_Z1": {
+    "hf_hub_url": "efficientscaling/Z1-Code-Reasoning-107K",
+    "columns": {
+      "prompt": "question",
+      "response": "response"
+    }
+  },
 
   "s1k_gptoss20b_think": {
     "file_name": "s1k_gptoss20b_sharegpt_think.json",

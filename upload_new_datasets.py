@@ -12,14 +12,13 @@ api = HfApi()
 
 # ✅ 数据集文件夹路径
 dataset_paths = [
-    "/home/ubuntu/.cache/huggingface/hub/models--yang31210999--gptoss-0807_BenchMark-H100-d1/snapshots/4fa933c4c2dd4c61e92a84e7ca01d4f76ace0320"
-]
-
-# ✅ HF 用户名或组织名
+       "/dockerdata/LLM-NEO-bk/opencompass/outputs/Subjective-Evaluation/shadow-comprehensive/", 
+        ]
+        # ✅ HF 用户名或组织名
 HF_USERNAME = "yang31210999"
 
 for path in dataset_paths:
-    dataset_name = "gptoss-0808_BenchMark-H100-d2"
+    dataset_name = "ICLR-1127_BenchMark-H20-d6"
     repo_id = f"{HF_USERNAME}/{dataset_name}"
     print(f"🚀 正在上传数据集 {dataset_name} 到 {repo_id} ...")
 

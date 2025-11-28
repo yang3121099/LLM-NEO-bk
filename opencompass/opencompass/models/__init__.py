@@ -49,3 +49,14 @@ from .yayi_api import Yayi  # noqa: F401
 from .yi_api import YiAPI  # noqa: F401
 from .zhipuai_api import ZhiPuAI  # noqa: F401
 from .zhipuai_v2_api import ZhiPuV2AI  # noqa: F401
+from .proxy_tuned import ProxyTunedHuggingFace
+
+# opencompass/models/__init__.py
+
+# ... 其他 import ...
+from .proxy_qwen import ProxyQwen  # <--- 新增这行
+
+# ... 在 __all__ 列表里加上它 ...
+__all__ = [
+    'ProxyQwen' # <--- 新增这行
+]

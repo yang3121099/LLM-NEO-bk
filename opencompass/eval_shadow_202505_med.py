@@ -118,6 +118,24 @@ Baseline_settings = [
 ('result-Qwen3-8B-Base-1127/B-4k-lora-rank128-lr0.0002-shadow_medical_mix_sharegpt_4k/merged-B2I','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/B-4k-lora-rank128-lr0.0002-shadow_medical_mix_sharegpt_4k/merged-B2I'),
 ('result-Qwen3-8B-Base-1127/I-4k-lora-rank128-lr0.0002-shadow_medical_mix_sharegpt_4k/merged-I2I','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/I-4k-lora-rank128-lr0.0002-shadow_medical_mix_sharegpt_4k/merged-I2I'),
 
+
+('result-Qwen3-8B-Base-1127/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I'),
+('result-Qwen3-8B-Base-1127/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I'),
+
+
+('result-Qwen3-8B-Base-1127/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I-LoRE','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/B-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-B2I-LoRE'),
+('result-Qwen3-8B-Base-1127/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I-LoRE','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/I-2k-lora-rank64-lr0.0002-Shadow_2k_re_adapt_epoch3/merged-I2I-LoRE'),
+
+
+('result-Qwen3-8B-Base-1127/merged-B2I-Shadow_2k+medical_o1_reasoning-1.0','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-B2I-Shadow_2k+medical_o1_reasoning-1.0'),
+('result-Qwen3-8B-Base-1127/merged-B2I-Shadow_2k+medical_o1_reasoning-0.5','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-B2I-Shadow_2k+medical_o1_reasoning-0.5'),
+('result-Qwen3-8B-Base-1127/merged-B2B-Shadow_2k+medical_o1_reasoning-1.0','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-B2B-Shadow_2k+medical_o1_reasoning-1.0'),
+('result-Qwen3-8B-Base-1127/merged-B2B-Shadow_2k+medical_o1_reasoning-0.5','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-B2B-Shadow_2k+medical_o1_reasoning-0.5'),
+('result-Qwen3-8B-Base-1127/merged-I2I-Shadow_2k+medical_o1_reasoning-1.0','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-I2I-Shadow_2k+medical_o1_reasoning-1.0'),
+('result-Qwen3-8B-Base-1127/merged-I2I-Shadow_2k+medical_o1_reasoning-0.5','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-I2I-Shadow_2k+medical_o1_reasoning-0.5'),
+
+('merged-RE-Adapt-Shadow_2k_re_adapt-0.5+0.5','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-RE-Adapt-Shadow_2k_re_adapt-0.5+0.5'),
+('merged-LoRE-Shadow_2k_re_adapt-0.5+0.5','/dockerdata/LLM-NEO-bk/results/1127/result-Qwen3-8B-Base-1127/merged-LoRE-Shadow_2k_re_adapt-0.5+0.5'),
 ]
 
 BASE_settings=[

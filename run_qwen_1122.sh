@@ -190,10 +190,10 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 #   cutoff_len=4096
 
 # limo
-#  DATASET="Shadow_2k"
-#  suffix_name="Shadow_2k_re_adapt_epoch1"
-  DATASET="mgsm"
-  suffix_name="mgsm_re_adapt_epoch3"
+  DATASET="Shadow_2k"
+  suffix_name="Shadow_2k_re_adapt_epoch3"
+#  DATASET="mgsm"
+#  suffix_name="mgsm_re_adapt_epoch3"
   cutoff_len=4096
   
   # samples=(2000)

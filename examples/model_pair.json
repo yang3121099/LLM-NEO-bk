@@ -1,6 +1,21 @@
 [
 
   {
+    "name": "Qwen3.5-0.8B",
+    "hf_base_path": "Qwen/Qwen3.5-0.8B-Base",
+    "hf_instruct_path": "Qwen/Qwen3.5-0.8B"
+  },
+  {
+    "name": "Qwen3.5-2B",
+    "hf_base_path": "Qwen/Qwen3.5-2B-Base",
+    "hf_instruct_path": "Qwen/Qwen3.5-2B"
+  },
+  {
+    "name": "Qwen3.5-4B",
+    "hf_base_path": "Qwen/Qwen3.5-4B-Base",
+    "hf_instruct_path": "Qwen/Qwen3.5-4B"
+  },
+  {
     "name": "Qwen3-4B-Thinking-2507",
     "hf_base_path": "Qwen/Qwen3-4B-Thinking-2507",
     "hf_instruct_path": "Qwen/Qwen3-4B-Instruct-2507"

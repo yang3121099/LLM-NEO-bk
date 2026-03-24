@@ -98,8 +98,9 @@ MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 
 # >>>  Edit this list to choose which models to train  <<<
 BASE_MODELS=(
-  "Llama3.2-1B"
-  "Llama3.2-3B"
+  "Qwen3.5-0.8B"
+  "Qwen3.5-2B"
+  "Qwen3.5-4B"
 )
 
 MODEL_PAIRS=()  # will hold "base_path||instruct_path"

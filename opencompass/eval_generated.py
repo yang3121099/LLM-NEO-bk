@@ -3,10 +3,15 @@
 #   cd opencompass
 #   python3 ./run.py ./eval_generated.py -r <TIMESTAMP>
 
+import os
 from mmengine.config import read_base
 from opencompass.partitioners import NaivePartitioner, NumWorkerPartitioner
 from opencompass.runners import LocalRunner, VOLCRunner
 from opencompass.tasks import OpenICLEvalTask, OpenICLInferTask
+
+# Resolve RESULTS_DIR relative to this config file
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), 'results')
 
 with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
@@ -24,31 +29,34 @@ datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
 from opencompass.models import TurboMindModelwithChatTemplate, TurboMindModel
 
-work_dir = 'outputs/shadow-ft-0324154403/'
+work_dir = 'outputs/shadow-ft-0325075759/'
 
 # ======= Instruct-type models (B2I Shadow-FT, I2I baseline) =======
 Baseline_settings = [
-    ('result-Qwen3.5-0.8B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-0.8B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
-    ('result-Qwen3.5-0.8B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-0.8B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
-    ('result-Qwen3.5-2B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-2B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
-    ('result-Qwen3.5-2B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-2B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
-    ('result-Qwen3.5-4B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-4B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
-    ('result-Qwen3.5-4B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-4B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+    ('result-Qwen3.5-0.8B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','$RESULTS_DIR/0325/result-Qwen3.5-0.8B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+    ('result-Qwen3.5-0.8B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','$RESULTS_DIR/0325/result-Qwen3.5-0.8B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+    ('result-Qwen3.5-2B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','$RESULTS_DIR/0325/result-Qwen3.5-2B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+    ('result-Qwen3.5-2B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','$RESULTS_DIR/0325/result-Qwen3.5-2B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
+    ('result-Qwen3.5-4B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I','$RESULTS_DIR/0325/result-Qwen3.5-4B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2I'),
+    ('result-Qwen3.5-4B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I','$RESULTS_DIR/0325/result-Qwen3.5-4B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2I'),
 ]
 
 # ======= Base-type models (B2B, I2B — usually commented out) =======
 BASE_settings = [
-    ('result-Qwen3.5-0.8B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-0.8B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
-    ('result-Qwen3.5-0.8B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-0.8B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
-    ('result-Qwen3.5-2B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-2B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
-    ('result-Qwen3.5-2B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-2B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
-    ('result-Qwen3.5-4B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-4B-Base-0324/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
-    ('result-Qwen3.5-4B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','/home/user/LLM-NEO-bk/results/0324/result-Qwen3.5-4B-Base-0324/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+    ('result-Qwen3.5-0.8B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','$RESULTS_DIR/0325/result-Qwen3.5-0.8B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+    ('result-Qwen3.5-0.8B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','$RESULTS_DIR/0325/result-Qwen3.5-0.8B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+    ('result-Qwen3.5-2B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','$RESULTS_DIR/0325/result-Qwen3.5-2B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+    ('result-Qwen3.5-2B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','$RESULTS_DIR/0325/result-Qwen3.5-2B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
+    ('result-Qwen3.5-4B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B','$RESULTS_DIR/0325/result-Qwen3.5-4B-Base-0325/I-2k-lora-rank128-lr0.0002-Shadow_2k/merged-I2B'),
+    ('result-Qwen3.5-4B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B','$RESULTS_DIR/0325/result-Qwen3.5-4B-Base-0325/B-2k-lora-rank128-lr0.0002-Shadow_2k/merged-B2B'),
 ]
 
 models = []
 
 for abbr, path in Baseline_settings:
+    # Resolve $RESULTS_DIR references
+    if '$RESULTS_DIR' in path:
+        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
             type=TurboMindModelwithChatTemplate,
@@ -64,6 +72,8 @@ for abbr, path in Baseline_settings:
     )
 
 for abbr, path in BASE_settings:
+    if '$RESULTS_DIR' in path:
+        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
             type=TurboMindModel,

@@ -60,7 +60,6 @@ EVAL_STEPS=10000
 OVERWRITE_CACHE=false
 
 # --- Helpers -----------------------------------------------------------------
-# Format sample count: 2000 -> "2k", 1500 -> "1.5k"
 format_k() {
   local num=$1
   if (( num % 1000 == 0 )); then
@@ -70,24 +69,20 @@ format_k() {
   fi
 }
 
-# Scientific notation -> decimal string (no trailing zeros)
 to_decimal() {
   LC_NUMERIC=C printf "%.12f" "$1" | sed -E 's/0+$//; s/\.$/.0/'
 }
 
-# Unified lr tag: "lr0.0002"
 lr_tag_dec() { echo "lr$(to_decimal "$1")"; }
 
-# Collect eval entries: add_eval <abs_path> [comment_level]
-#   comment_level=1 -> "#" (enabled), 2 -> "##" (commented-out)
+# Collect eval entries: add_eval <rel_path> [comment_level]
 EVAL_LINES=()
 add_eval() {
-  local abs="$1" comment_level="${2:-1}"
+  local rel="$1" comment_level="${2:-1}"
   local prefix="#"; [[ "$comment_level" -eq 2 ]] && prefix="##"
-  # Short name = last 3 path segments
   local short
-  short=$(awk -F/ '{if(NF>=3) print $(NF-2)"/"$(NF-1)"/"$NF; else print $0}' <<< "${abs%/}")
-  EVAL_LINES+=("$prefix ('$short','$abs'),")
+  short=$(awk -F/ '{if(NF>=3) print $(NF-2)"/"$(NF-1)"/"$NF; else print $0}' <<< "${rel%/}")
+  EVAL_LINES+=("$prefix ('$short','\$RESULTS_DIR/$rel'),")
 }
 
 ###############################################################################
@@ -103,7 +98,7 @@ BASE_MODELS=(
   "Qwen3.5-4B"
 )
 
-MODEL_PAIRS=()  # will hold "base_path||instruct_path"
+MODEL_PAIRS=()
 
 for NAME in "${BASE_MODELS[@]}"; do
   BLOCK=$(awk -v n="\"$NAME\"" '
@@ -136,9 +131,8 @@ done
 MONTHDAY=$(date +%m%d)
 TIMESTAMP=$(date +%m%d%H%M%S)
 
-# Collect all eval entries across models for the final eval config
-ALL_EVAL_INSTRUCT=()   # (abbr, path) for Instruct-type models (B2I, I2I, I-SFT)
-ALL_EVAL_BASE=()       # (abbr, path) for Base-type models (B2B, I2B)
+ALL_EVAL_INSTRUCT=()
+ALL_EVAL_BASE=()
 
 for PAIR in "${MODEL_PAIRS[@]}"; do
   B_MODEL="${PAIR%%||*}"
@@ -164,6 +158,9 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     *) echo "ERROR: unknown template for $B_MODEL"; exit 1 ;;
   esac
 
+  # Relative path prefix for this model's results (no leading $RESULTS_DIR)
+  REL_ROOT="${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
+
   # --------------- Header ---------------
   {
     echo "#!/usr/bin/env bash"
@@ -173,6 +170,11 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     echo "# Model     : $MODEL_BASE"
     echo "# LoRA mode : $USE_LORA"
     echo "# Template  : $template"
+    echo ""
+    # Paths resolved at RUNTIME (where this script is located = scripts/)
+    echo '##### Paths (resolved at runtime) #####'
+    echo 'WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"'
+    echo 'RESULTS_DIR="$WORKSPACE_DIR/results"'
     echo ""
   } >> "$SCRIPT_FILE"
 
@@ -199,17 +201,17 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     local LR_DEC LR_TAG
     LR_DEC="$(to_decimal "$LR")"
     LR_TAG="$(lr_tag_dec "$LR")"
-    local OUT_ROOT="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
 
     for MAX in "${SAMPLES[@]}"; do
       local K; K="$(format_k "$MAX")"
       local DIR="${TAG}-${K}-$(is_lora && echo lora-rank${lora_ranks[0]} || echo sft)-${LR_TAG}-${SUFFIX_NAME}"
-      local OUTDIR="$OUT_ROOT/$DIR"
+      # Relative path from $RESULTS_DIR
+      local REL_OUTDIR="${REL_ROOT}/$DIR"
 
       {
         echo "###### ${TAG}  max=${MAX}  lr=${LR_DEC} ######"
-        echo "mkdir -p \"$OUTDIR\""
-        echo "cd \"$WORKSPACE_DIR\""
+        echo "mkdir -p \"\$RESULTS_DIR/${REL_OUTDIR}\""
+        echo 'cd "$WORKSPACE_DIR"'
         echo "llamafactory-cli train \\"
         echo "  --model_name_or_path \"$M_PATH\" \\"
         echo "  --stage sft \\"
@@ -223,7 +225,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         echo "  --template \"$template\" \\"
         echo "  --cutoff_len $CUTOFF_LEN \\"
         echo "  --max_samples $MAX \\"
-        echo "  --output_dir \"$OUTDIR\" \\"
+        echo "  --output_dir \"\$RESULTS_DIR/${REL_OUTDIR}\" \\"
         echo "  --per_device_train_batch_size $PER_DEVICE_TRAIN_BS \\"
         echo "  --gradient_accumulation_steps $GRAD_ACCUM_STEPS \\"
         echo "  --learning_rate $LR_DEC \\"
@@ -246,9 +248,8 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         echo ""
       } >> "$SCRIPT_FILE"
 
-      # For full SFT, I-path models are directly evaluable
       if ! is_lora && [[ $TAG == I ]]; then
-        add_eval "$OUTDIR" 1
+        add_eval "$REL_OUTDIR" 1
       fi
     done
   }
@@ -271,26 +272,24 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   echo "" >> "$SCRIPT_FILE"
 
   if is_lora; then
-    # merge_lora <src_model> <src_tag> <tgt_model> <tgt_tag> <lr> [comment_prefix]
     merge_lora() {
       local SRC=$1 SRC_TAG=$2 TGT=$3 TGT_TAG=$4 LR=$5 COMMENT_PREFIX=${6:-}
       local LR_DEC LR_TAG
       LR_DEC="$(to_decimal "$LR")"
       LR_TAG="$(lr_tag_dec "$LR")"
-      local SRC_ROOT="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
 
       for RANK in "${lora_ranks[@]}"; do
         for MAX in "${SAMPLES[@]}"; do
           local K; K="$(format_k "$MAX")"
-          local ADAP="$SRC_ROOT/${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX_NAME}"
+          local REL_ADAP="${REL_ROOT}/${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX_NAME}"
           local TAG="${SRC_TAG}2${TGT_TAG}"
-          local MERGED_DIR="$ADAP/merged-${TAG}"
+          local REL_MERGED="${REL_ADAP}/merged-${TAG}"
 
           {
             echo "### Merge: ${TAG} (adapter=${SRC_TAG}, target=${TGT_TAG}) ###"
-            echo "${COMMENT_PREFIX}mkdir -p \"$MERGED_DIR\""
-            echo "${COMMENT_PREFIX}python3 $WORKSPACE_DIR/src/shadow/merge_lora.py \\"
-            echo "${COMMENT_PREFIX}  --adapter_path \"$ADAP\" \\"
+            echo "${COMMENT_PREFIX}mkdir -p \"\$RESULTS_DIR/${REL_MERGED}\""
+            echo "${COMMENT_PREFIX}python3 \"\$WORKSPACE_DIR/src/shadow/merge_lora.py\" \\"
+            echo "${COMMENT_PREFIX}  --adapter_path \"\$RESULTS_DIR/${REL_ADAP}\" \\"
             echo "${COMMENT_PREFIX}  --target_base \"$TGT\" \\"
             echo "${COMMENT_PREFIX}  --merge_tag \"$TAG\" \\"
             echo "${COMMENT_PREFIX}  --template \"$template\""
@@ -298,49 +297,46 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
           } >> "$SCRIPT_FILE"
 
           if [[ -z "$COMMENT_PREFIX" ]]; then
-            add_eval "$MERGED_DIR" 1
+            add_eval "$REL_MERGED" 1
           else
-            add_eval "$MERGED_DIR" 2
+            add_eval "$REL_MERGED" 2
           fi
         done
       done
     }
 
     for LR in "${learning_rates[@]}"; do
-      merge_lora "$B_MODEL" B "$I_MODEL" I "$LR"          # B2I  — Shadow-FT (enabled)
-      merge_lora "$I_MODEL" I "$I_MODEL" I "$LR"          # I2I  — ordinary SFT baseline (enabled)
+      merge_lora "$B_MODEL" B "$I_MODEL" I "$LR"          # B2I  — Shadow-FT
+      merge_lora "$I_MODEL" I "$I_MODEL" I "$LR"          # I2I  — baseline
       merge_lora "$I_MODEL" I "$B_MODEL" B "$LR" "# "     # I2B  (commented out)
       merge_lora "$B_MODEL" B "$B_MODEL" B "$LR" "# "     # B2B  (commented out)
     done
 
   else
-    # Full SFT: apply weight diff B2I
     LR="${learning_rates[0]}"
     LR_DEC="$(to_decimal "$LR")"
     LR_TAG="$(lr_tag_dec "$LR")"
     K="$(format_k "${SAMPLES[0]}")"
-    OUT_ROOT="$RESULTS_DIR/${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
 
     # B2I via apply_diff (Shadow-FT for full SFT)
-    B_DIR="$OUT_ROOT/B-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
-    MERGED_DIR="$B_DIR/merged-B2I"
+    REL_B_DIR="${REL_ROOT}/B-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
+    REL_MERGED="${REL_B_DIR}/merged-B2I"
     {
       echo "### SFT Merge: B2I (Shadow-FT) ###"
-      echo "mkdir -p \"$MERGED_DIR\""
-      echo "python3 $WORKSPACE_DIR/src/shadow/apply_diff.py \\"
-      echo "  --tuned_model \"$B_DIR\" \\"
+      echo "mkdir -p \"\$RESULTS_DIR/${REL_MERGED}\""
+      echo "python3 \"\$WORKSPACE_DIR/src/shadow/apply_diff.py\" \\"
+      echo "  --tuned_model \"\$RESULTS_DIR/${REL_B_DIR}\" \\"
       echo "  --target_model \"$I_MODEL\" \\"
       echo "  --base_model \"$B_MODEL\""
       echo ""
     } >> "$SCRIPT_FILE"
-    add_eval "$MERGED_DIR" 1
+    add_eval "$REL_MERGED" 1
 
-    # I2I for full SFT is a no-op (the I-trained model is already an Instruct model)
-    I_DIR="$OUT_ROOT/I-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
-    add_eval "$I_DIR" 1
+    REL_I_DIR="${REL_ROOT}/I-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
+    add_eval "$REL_I_DIR" 1
   fi
 
-  # --------------- Evaluation list (printed in script for reference) ---------------
+  # --------------- Evaluation list ---------------
   {
     echo "###############################################################################"
     echo "##### Evaluation list (model paths for OpenCompass)                       #####"
@@ -354,7 +350,6 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
 
   # --------------- Collect for global eval config ---------------
   for line in "${EVAL_LINES[@]}"; do
-    # Parse: lines starting with # (single) are enabled Instruct-type
     if [[ "$line" == "## "* ]]; then
       ALL_EVAL_BASE+=("$line")
     else
@@ -375,10 +370,15 @@ cat > "$EVAL_CONFIG" << 'EVAL_HEADER'
 #   cd opencompass
 #   python3 ./run.py ./eval_generated.py -r <TIMESTAMP>
 
+import os
 from mmengine.config import read_base
 from opencompass.partitioners import NaivePartitioner, NumWorkerPartitioner
 from opencompass.runners import LocalRunner, VOLCRunner
 from opencompass.tasks import OpenICLEvalTask, OpenICLInferTask
+
+# Resolve RESULTS_DIR relative to this config file
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), 'results')
 
 with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
@@ -405,7 +405,7 @@ EVAL_HEADER
   echo "Baseline_settings = ["
 
   for line in "${ALL_EVAL_INSTRUCT[@]}"; do
-    # Strip the leading "# " to get the tuple
+    # Strip the leading "# " prefix, keep the tuple
     echo "    ${line#\# }"
   done
 
@@ -426,6 +426,9 @@ cat >> "$EVAL_CONFIG" << 'EVAL_FOOTER'
 models = []
 
 for abbr, path in Baseline_settings:
+    # Resolve $RESULTS_DIR references
+    if '$RESULTS_DIR' in path:
+        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
             type=TurboMindModelwithChatTemplate,
@@ -441,6 +444,8 @@ for abbr, path in Baseline_settings:
     )
 
 for abbr, path in BASE_settings:
+    if '$RESULTS_DIR' in path:
+        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
             type=TurboMindModel,

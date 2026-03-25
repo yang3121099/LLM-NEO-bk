@@ -51,15 +51,14 @@ LR_TAG="lr${LR_DEC}"
 # --- Dataset definitions: name | suffix | samples | save_steps --------------
 #     Format: "dataset_name|suffix|max_samples|save_steps"
 EXPERIMENTS=(
-  # Dolci Instruct Mix
-  "dolci_instruct_mix|dolci_mix|100000|1000"
-  "dolci_instruct_mix|dolci_mix|20000|1000"
-  # Dolci Instruct Tool Use
-  "dolci_instruct_tool_use|dolci_tool|100000|1000"
-  "dolci_instruct_tool_use|dolci_tool|20000|1000"
-  # Nemotron IF Chat
-  "nemotron_if_chat_v1|nemotron_if|100000|1000"
-  "nemotron_if_chat_v1|nemotron_if|20000|1000"
+  # --- 2k samples for all 4 datasets ---
+  "opus_reasoning_3k|opus3k|2000|1000"
+  "openr1_math_220k|openr1|2000|1000"
+  "dolci_instruct_mix|dolci_mix|2000|1000"
+  "nemotron_if_chat_v1|nemotron_if|2000|1000"
+  # --- 200k samples for OpenR1-Math (save ckpt every ~2k samples) ---
+  # 2000 / (bs16 * accum16) = ~8 steps per 2k samples
+  "openr1_math_220k|openr1|200000|8"
 )
 
 # --- Resolve model pairs -----------------------------------------------------
@@ -95,6 +94,9 @@ done
 # --- Generate scripts --------------------------------------------------------
 MONTHDAY=$(date +%m%d)
 TIMESTAMP=$(date +%m%d%H%M%S)
+
+# Collect eval entries for 2k experiments only
+ALL_EVAL_ENTRIES=()
 
 for EXP in "${EXPERIMENTS[@]}"; do
   IFS='|' read -r DATASET SUFFIX MAX_SAMPLES EXP_SAVE_STEPS <<< "$EXP"
@@ -202,10 +204,124 @@ ${PREFIX}  --template "${template}"
 MERGE_CMD
     done
 
+    # Collect eval entries for 2k experiments (not 200k)
+    if [[ "$MAX_SAMPLES" -le 10000 ]]; then
+      B2I_REL="${REL_ROOT}/B-${K}-lora-rank${LORA_RANK}-${LR_TAG}-${SUFFIX}/merged-B2I"
+      I2I_REL="${REL_ROOT}/I-${K}-lora-rank${LORA_RANK}-${LR_TAG}-${SUFFIX}/merged-I2I"
+      B2I_SHORT="${MODEL_BASE}-${SUFFIX}-${K}-B2I"
+      I2I_SHORT="${MODEL_BASE}-${SUFFIX}-${K}-I2I"
+      ALL_EVAL_ENTRIES+=("    ('${B2I_SHORT}','\$RESULTS_DIR/${B2I_REL}'),")
+      ALL_EVAL_ENTRIES+=("    ('${I2I_SHORT}','\$RESULTS_DIR/${I2I_REL}'),")
+    fi
+
     chmod +x "$SCRIPT_FILE"
     echo "INFO  Generated: $SCRIPT_FILE"
   done
 done
+
+###############################################################################
+##### Generate OpenCompass evaluation config                               #####
+###############################################################################
+EVAL_CONFIG="$WORKSPACE_DIR/opencompass/eval_generated.py"
+cat > "$EVAL_CONFIG" << 'EVAL_HEADER'
+# Auto-generated evaluation config for Shadow-FT
+# Usage:
+#   cd opencompass
+#   python3 ./run.py ./eval_generated.py -r 20250727200010
+
+import os as _os
+from mmengine.config import read_base
+from opencompass.partitioners import NaivePartitioner, NumWorkerPartitioner
+from opencompass.runners import LocalRunner, VOLCRunner
+from opencompass.tasks import OpenICLEvalTask, OpenICLInferTask
+
+# Resolve RESULTS_DIR relative to this config file
+_SCRIPT_DIR = _os.path.dirname(_os.path.abspath(__file__))
+RESULTS_DIR = _os.path.join(_os.path.dirname(_SCRIPT_DIR), 'results')
+del _os, _SCRIPT_DIR
+
+with read_base():
+    from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
+
+    ######################### Math #########################
+    # from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
+    # from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
+    # from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets
+    from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
+    # from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
+    from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
+    from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
+
+datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
+
+from opencompass.models import TurboMindModelwithChatTemplate
+
+EVAL_HEADER
+
+{
+  echo "work_dir = 'outputs/Rebuttal-0729/shadow-example/'"
+  echo ""
+
+  # --- Original Instruct baselines ---
+  echo "# ======= Original Instruct baselines (lmdeploy) ======="
+  echo "HF_baselines = ["
+  for i in "${!MODEL_PAIRS[@]}"; do
+    PAIR="${MODEL_PAIRS[$i]}"
+    I_MODEL="${PAIR##*||}"
+    I_NAME=$(basename "$I_MODEL")
+    echo "    ('${I_NAME}-Instruct-hf', '${I_MODEL}'),"
+  done
+  echo "]"
+  echo ""
+
+  # --- Trained models (B2I + I2I from 2k experiments) ---
+  echo "# ======= Trained models (B2I Shadow-FT, I2I baseline) ======="
+  echo "Baseline_settings = ["
+  for entry in "${ALL_EVAL_ENTRIES[@]}"; do
+    echo "$entry"
+  done
+  echo "]"
+  echo ""
+} >> "$EVAL_CONFIG"
+
+cat >> "$EVAL_CONFIG" << 'EVAL_FOOTER'
+models = []
+
+# Original Instruct baselines
+for abbr, path in HF_baselines:
+    models.append(
+        dict(
+            type=TurboMindModelwithChatTemplate,
+            abbr=abbr,
+            path=path,
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            max_seq_len=16384,
+            max_out_len=4096,
+            batch_size=2048,
+            run_cfg=dict(num_gpus=1),
+        )
+    )
+
+for abbr, path in Baseline_settings:
+    if '$RESULTS_DIR' in path:
+        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
+    models.append(
+        dict(
+            type=TurboMindModelwithChatTemplate,
+            abbr=abbr,
+            path=path,
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            max_seq_len=16384,
+            max_out_len=4096,
+            batch_size=2048,
+            run_cfg=dict(num_gpus=1),
+        )
+    )
+EVAL_FOOTER
+
+echo "INFO  Generated eval config: $EVAL_CONFIG"
 
 echo ""
 echo "========================================"
@@ -214,10 +330,26 @@ echo "========================================"
 echo ""
 echo "Generated scripts in: $SCRIPT_OUTPUT_DIR/"
 echo ""
-echo "Run examples:"
+echo "=== 2k experiments (train + merge + eval) ==="
 for EXP in "${EXPERIMENTS[@]}"; do
   IFS='|' read -r DATASET SUFFIX MAX_SAMPLES _ <<< "$EXP"
+  [[ "$MAX_SAMPLES" -gt 10000 ]] && continue
   K="$(format_k "$MAX_SAMPLES")"
-  echo "  bash scripts/train_${SUFFIX}_${K}_${MODEL_NAMES[0]}_${TIMESTAMP}.sh"
+  for M in "${MODEL_NAMES[@]}"; do
+    echo "  bash scripts/train_${SUFFIX}_${K}_${M}_${TIMESTAMP}.sh"
+  done
 done
+echo ""
+echo "=== 200k experiments (train only, merge on demand) ==="
+for EXP in "${EXPERIMENTS[@]}"; do
+  IFS='|' read -r DATASET SUFFIX MAX_SAMPLES _ <<< "$EXP"
+  [[ "$MAX_SAMPLES" -le 10000 ]] && continue
+  K="$(format_k "$MAX_SAMPLES")"
+  for M in "${MODEL_NAMES[@]}"; do
+    echo "  bash scripts/train_${SUFFIX}_${K}_${M}_${TIMESTAMP}.sh"
+  done
+done
+echo ""
+echo "=== Evaluation ==="
+echo "  cd opencompass && python3 ./run.py ./eval_generated.py -r 20250727200010"
 echo ""

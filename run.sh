@@ -47,8 +47,8 @@ SAMPLES=(2000)
 # --- Training constants ------------------------------------------------------
 LOGGING_STEPS=1
 SAVE_STEPS=1000
-PER_DEVICE_TRAIN_BS=2
-GRAD_ACCUM_STEPS=8
+PER_DEVICE_TRAIN_BS=16
+GRAD_ACCUM_STEPS=16
 NUM_EPOCHS=1
 LR_SCHEDULER="cosine"
 WARMUP_RATIO=0.1

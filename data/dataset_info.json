@@ -231,6 +231,56 @@
       "assistant_tag": "assistant"
     }
   },
+  "dolci_instruct_mix": {
+    "hf_hub_url": "allenai/Dolci-Instruct-SFT-No-Tools",
+    "subset": "default",
+    "split": "train",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
+  "dolci_instruct_tool_use": {
+    "file_name": "dolci_instruct_tool_use_converted.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages",
+      "system": "system",
+      "tools": "tools"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "observation_tag": "observation",
+      "function_tag": "function_call",
+      "system_tag": "system"
+    }
+  },
+  "nemotron_if_chat_v1": {
+    "hf_hub_url": "nvidia/Nemotron-Instruction-Following-Chat-v1",
+    "subset": "default",
+    "split": "chat_if",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant",
+      "system_tag": "system"
+    }
+  },
   "NuminaMath": {
     "hf_hub_url": "AI-MO/NuminaMath-CoT",
     "formatting": "sharegpt",

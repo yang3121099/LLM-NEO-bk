@@ -62,12 +62,12 @@ for abbr, path in Baseline_settings:
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=8),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
             gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
             batch_size=2048,
-            run_cfg=dict(num_gpus=8),
+            run_cfg=dict(num_gpus=1),
         )
     )
 

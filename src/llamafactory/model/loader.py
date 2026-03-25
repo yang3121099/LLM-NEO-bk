@@ -21,10 +21,14 @@ from transformers import (
     AutoModelForCausalLM,
     AutoModelForSeq2SeqLM,
     AutoModelForTextToWaveform,
-    AutoModelForVision2Seq,
     AutoProcessor,
     AutoTokenizer,
 )
+
+try:
+    from transformers import AutoModelForVision2Seq
+except ImportError:
+    AutoModelForVision2Seq = None
 from trl import AutoModelForCausalLMWithValueHead
 
 from ..extras import logging
@@ -147,7 +151,7 @@ def load_model(
         if model_args.mixture_of_depths == "load":
             model = load_mod_pretrained_model(**init_kwargs)
         else:
-            if type(config) in AutoModelForVision2Seq._model_mapping.keys():  # image-text
+            if AutoModelForVision2Seq is not None and type(config) in AutoModelForVision2Seq._model_mapping.keys():  # image-text
                 load_class = AutoModelForVision2Seq
             elif (
                 is_transformers_version_greater_than("4.46.0")

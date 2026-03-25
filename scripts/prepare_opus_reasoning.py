@@ -17,14 +17,9 @@ def main():
     max_len = 0
     for row in ds:
         # Combine thinking + solution as assistant response
-        thinking = row.get("thinking", "").strip()
         solution = row.get("solution", "").strip()
         problem = row.get("problem", "").strip()
-
-        if thinking:
-            response = f"<think>\n{thinking}\n</think>\n\n{solution}"
-        else:
-            response = solution
+        response = solution
 
         total_len = len(problem) + len(response)
         if total_len > max_len:

@@ -37,14 +37,10 @@ USAGE = (
 
 def main():
     from . import launcher
-    from .api.app import run_api
-    from .chat.chat_model import run_chat
-    from .eval.evaluator import run_eval
     from .extras import logging
     from .extras.env import VERSION, print_env
     from .extras.misc import find_available_port, get_device_count, is_env_enabled, use_ray
     from .train.tuner import export_model, run_exp
-    from .webui.interface import run_web_demo, run_web_ui
 
     logger = logging.get_logger(__name__)
 
@@ -60,15 +56,36 @@ def main():
         + "-" * 58
     )
 
+    # Lazy loaders for commands that pull in heavy optional deps (e.g. vllm)
+    def _run_api():
+        from .api.app import run_api
+        return run_api()
+
+    def _run_chat():
+        from .chat.chat_model import run_chat
+        return run_chat()
+
+    def _run_eval():
+        from .eval.evaluator import run_eval
+        return run_eval()
+
+    def _run_web_demo():
+        from .webui.interface import run_web_demo
+        return run_web_demo()
+
+    def _run_web_ui():
+        from .webui.interface import run_web_ui
+        return run_web_ui()
+
     COMMAND_MAP = {
-        "api": run_api,
-        "chat": run_chat,
+        "api": _run_api,
+        "chat": _run_chat,
         "env": print_env,
-        "eval": run_eval,
+        "eval": _run_eval,
         "export": export_model,
         "train": run_exp,
-        "webchat": run_web_demo,
-        "webui": run_web_ui,
+        "webchat": _run_web_demo,
+        "webui": _run_web_ui,
         "version": partial(print, WELCOME),
         "help": partial(print, USAGE),
     }

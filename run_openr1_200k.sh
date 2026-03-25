@@ -1,30 +1,21 @@
 #!/usr/bin/env bash
 ###############################################################################
-# run.sh — Shadow-FT pipeline script generator
+# run_openr1_200k.sh — Shadow-FT pipeline for OpenR1-Math-220k (200k samples)
 #
-# Usage:  bash run.sh
+# Usage:  bash run_openr1_200k.sh
 #
-# This script auto-generates a training shell script under ./scripts/ that:
-#   1) Trains LoRA on the Base model  (B)
-#   2) Trains LoRA on the Instruct model (I)  — as the baseline
-#   3) Merges the Base-trained LoRA delta onto Instruct  (B2I = Shadow-FT)
-#   4) Merges the Instruct-trained LoRA onto Instruct    (I2I = ordinary SFT baseline)
-#   5) Outputs an evaluation config (eval_generated.py) for OpenCompass
-#
-# After generation, run the training script, then launch evaluation.
+# Saves LoRA checkpoints every ~2k samples for on-demand merge + eval.
+# Storage-friendly: does NOT auto-merge all checkpoints.
 ###############################################################################
 set -euo pipefail
 
-###############################################################################
-##### 0. Global Configuration                                              #####
-###############################################################################
 WORKSPACE_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESULTS_DIR="$WORKSPACE_DIR/results"
 SCRIPT_OUTPUT_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_OUTPUT_DIR"
 
 # --- Training mode -----------------------------------------------------------
-USE_LORA=true                   # true -> LoRA, false -> full SFT
+USE_LORA=true
 is_lora() { [[ "${USE_LORA,,}" == "true" ]]; }
 
 # --- Hyperparameters ---------------------------------------------------------
@@ -39,21 +30,22 @@ else
 fi
 
 # --- Dataset -----------------------------------------------------------------
-DATASET="opus_reasoning_3k"
-SUFFIX_NAME="opus3k"
+DATASET="openr1_math_220k"
+SUFFIX_NAME="openr1_200k"
 CUTOFF_LEN=16384
-SAMPLES=(2000)
+SAMPLES=(200000)
 
 # --- Training constants ------------------------------------------------------
-LOGGING_STEPS=1
-SAVE_STEPS=1000
+LOGGING_STEPS=10
+# Save every ~2k samples: 2000 / (bs=2 * grad_accum=8) = 125 steps
+SAVE_STEPS=125
 PER_DEVICE_TRAIN_BS=2
 GRAD_ACCUM_STEPS=8
 NUM_EPOCHS=1
 LR_SCHEDULER="cosine"
-WARMUP_RATIO=0.1
+WARMUP_RATIO=0.05
 BF16=true
-VAL_SIZE=0.01
+VAL_SIZE=0.005
 PER_DEVICE_EVAL_BS=1
 EVAL_STRATEGY="steps"
 EVAL_STEPS=10000
@@ -75,7 +67,6 @@ to_decimal() {
 
 lr_tag_dec() { echo "lr$(to_decimal "$1")"; }
 
-# Collect eval entries: add_eval <rel_path> [comment_level]
 EVAL_LINES=()
 add_eval() {
   local rel="$1" comment_level="${2:-1}"
@@ -88,10 +79,9 @@ add_eval() {
 ###############################################################################
 ##### 1. Base-model resolution                                             #####
 ###############################################################################
-MODEL_DIR=""  # empty = use HuggingFace hub IDs directly
+MODEL_DIR=""
 MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 
-# >>>  Edit this list to choose which models to train  <<<
 BASE_MODELS=(
   "Llama3.1-8B"
   "Qwen3-8B"
@@ -137,7 +127,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   B_MODEL="${PAIR%%||*}"
   I_MODEL="${PAIR##*||}"
   MODEL_BASE=$(basename "$B_MODEL")
-  SCRIPT_FILE="$SCRIPT_OUTPUT_DIR/train_${MODEL_BASE}_${TIMESTAMP}.sh"
+  SCRIPT_FILE="$SCRIPT_OUTPUT_DIR/train_openr1_200k_${MODEL_BASE}_${TIMESTAMP}.sh"
   : > "$SCRIPT_FILE"
 
   # --------------- Resolve chat template ---------------
@@ -157,7 +147,6 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     *) echo "ERROR: unknown template for $B_MODEL"; exit 1 ;;
   esac
 
-  # Relative path prefix for this model's results (no leading $RESULTS_DIR)
   REL_ROOT="${MONTHDAY}/result-${MODEL_BASE}-${MONTHDAY}"
 
   # --------------- Header ---------------
@@ -165,12 +154,13 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     echo "#!/usr/bin/env bash"
     echo "set -euo pipefail"
     echo ""
-    echo "##### Auto-generated $(date '+%F %T') #####"
+    echo "##### Auto-generated $(date '+%F %T') — OpenR1-Math-220k 200k #####"
     echo "# Model     : $MODEL_BASE"
     echo "# LoRA mode : $USE_LORA"
     echo "# Template  : $template"
+    echo "# Dataset   : $DATASET (${SAMPLES[0]} samples)"
+    echo "# Save ckpt every $SAVE_STEPS steps (~2k samples)"
     echo ""
-    # Paths resolved at RUNTIME (where this script is located = scripts/)
     echo '##### Paths (resolved at runtime) #####'
     echo 'WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"'
     echo 'RESULTS_DIR="$WORKSPACE_DIR/results"'
@@ -189,7 +179,6 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     echo ""
   } >> "$SCRIPT_FILE"
 
-  # --------------- Reset eval entries for this model ---------------
   EVAL_LINES=()
 
   # ===================================================================
@@ -204,7 +193,6 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     for MAX in "${SAMPLES[@]}"; do
       local K; K="$(format_k "$MAX")"
       local DIR="${TAG}-${K}-$(is_lora && echo lora-rank${lora_ranks[0]} || echo sft)-${LR_TAG}-${SUFFIX_NAME}"
-      # Relative path from $RESULTS_DIR
       local REL_OUTDIR="${REL_ROOT}/$DIR"
 
       {
@@ -253,9 +241,9 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     done
   }
 
-  # --------------- Step 1: Training ---------------
+  # --------------- Training ---------------
   echo "###############################################################################" >> "$SCRIPT_FILE"
-  echo "##### Step 1: Training (Base + Instruct with LoRA)                        #####" >> "$SCRIPT_FILE"
+  echo "##### Training (Base + Instruct with LoRA) — OpenR1-Math 200k             #####" >> "$SCRIPT_FILE"
   echo "###############################################################################" >> "$SCRIPT_FILE"
   echo "" >> "$SCRIPT_FILE"
 
@@ -264,9 +252,9 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     generate_train "$I_MODEL" I "$LR"
   done
 
-  # --------------- Step 2: Delta Merge ---------------
+  # --------------- Merge helper (only final checkpoint) ---------------
   echo "###############################################################################" >> "$SCRIPT_FILE"
-  echo "##### Step 2: LoRA Delta Merge                                            #####" >> "$SCRIPT_FILE"
+  echo "##### LoRA Delta Merge (final checkpoint only — merge others on demand)   #####" >> "$SCRIPT_FILE"
   echo "###############################################################################" >> "$SCRIPT_FILE"
   echo "" >> "$SCRIPT_FILE"
 
@@ -310,32 +298,23 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
       merge_lora "$I_MODEL" I "$B_MODEL" B "$LR" "# "     # I2B  (commented out)
       merge_lora "$B_MODEL" B "$B_MODEL" B "$LR" "# "     # B2B  (commented out)
     done
-
-  else
-    LR="${learning_rates[0]}"
-    LR_DEC="$(to_decimal "$LR")"
-    LR_TAG="$(lr_tag_dec "$LR")"
-    K="$(format_k "${SAMPLES[0]}")"
-
-    # B2I via apply_diff (Shadow-FT for full SFT)
-    REL_B_DIR="${REL_ROOT}/B-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
-    REL_MERGED="${REL_B_DIR}/merged-B2I"
-    {
-      echo "### SFT Merge: B2I (Shadow-FT) ###"
-      echo "mkdir -p \"\$RESULTS_DIR/${REL_MERGED}\""
-      echo "python3 \"\$WORKSPACE_DIR/src/shadow/apply_diff.py\" \\"
-      echo "  --tuned_model \"\$RESULTS_DIR/${REL_B_DIR}\" \\"
-      echo "  --target_model \"$I_MODEL\" \\"
-      echo "  --base_model \"$B_MODEL\""
-      echo ""
-    } >> "$SCRIPT_FILE"
-    add_eval "$REL_MERGED" 1
-
-    REL_I_DIR="${REL_ROOT}/I-${K}-sft-${LR_TAG}-${SUFFIX_NAME}"
-    add_eval "$REL_I_DIR" 1
   fi
 
-  # --------------- Evaluation list ---------------
+  # --------------- Checkpoint merge helper ---------------
+  {
+    echo "###############################################################################"
+    echo "##### Merge a specific checkpoint (run manually)                          #####"
+    echo "###############################################################################"
+    echo "# To merge an intermediate checkpoint, e.g. checkpoint-250 (~4k samples):"
+    echo "#   python3 \$WORKSPACE_DIR/src/shadow/merge_lora.py \\"
+    echo "#     --adapter_path \$RESULTS_DIR/<path>/checkpoint-250 \\"
+    echo "#     --target_base <instruct_model_path> \\"
+    echo "#     --merge_tag B2I-ckpt250 \\"
+    echo "#     --template $template"
+    echo ""
+  } >> "$SCRIPT_FILE"
+
+  # --------------- Eval list ---------------
   {
     echo "###############################################################################"
     echo "##### Evaluation list (model paths for OpenCompass)                       #####"
@@ -347,7 +326,6 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     echo ""
   } >> "$SCRIPT_FILE"
 
-  # --------------- Collect for global eval config ---------------
   for line in "${EVAL_LINES[@]}"; do
     if [[ "$line" == "## "* ]]; then
       ALL_EVAL_BASE+=("$line")
@@ -359,146 +337,13 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
   echo "INFO  Generated: $SCRIPT_FILE"
 done
 
-###############################################################################
-##### 3. Generate OpenCompass evaluation config                            #####
-###############################################################################
-EVAL_CONFIG="$WORKSPACE_DIR/opencompass/eval_generated.py"
-cat > "$EVAL_CONFIG" << 'EVAL_HEADER'
-# Auto-generated evaluation config for Shadow-FT
-# Usage:
-#   cd opencompass
-#   python3 ./run.py ./eval_generated.py -r <TIMESTAMP>
-
-import os as _os
-from mmengine.config import read_base
-from opencompass.partitioners import NaivePartitioner, NumWorkerPartitioner
-from opencompass.runners import LocalRunner, VOLCRunner
-from opencompass.tasks import OpenICLEvalTask, OpenICLInferTask
-
-# Resolve RESULTS_DIR relative to this config file
-_SCRIPT_DIR = _os.path.dirname(_os.path.abspath(__file__))
-RESULTS_DIR = _os.path.join(_os.path.dirname(_SCRIPT_DIR), 'results')
-del _os, _SCRIPT_DIR
-
-with read_base():
-    from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
-
-    ######################### Math #########################
-    from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
-    from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
-    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets
-    from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
-    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
-    from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
-    from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
-
-datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
-
-from opencompass.models import HuggingFacewithChatTemplate, HuggingFaceBaseModel
-
-EVAL_HEADER
-
-{
-  echo "work_dir = 'outputs/shadow-ft-${TIMESTAMP}/'"
-  echo ""
-
-  # --- Original Instruct models as baselines ---
-  echo "# ======= Original Instruct baselines (HuggingFace hub) ======="
-  echo "HF_baselines = ["
-  for PAIR in "${MODEL_PAIRS[@]}"; do
-    local_I="${PAIR##*||}"
-    local_B="${PAIR%%||*}"
-    local_name_I=$(basename "$local_I")
-    local_name_B=$(basename "$local_B")
-    echo "    ('${local_name_I}-Instruct-hf', '${local_I}'),"
-    echo "    ('${local_name_B}-Base-hf', '${local_B}'),"
-  done
-  echo "]"
-  echo ""
-
-  echo "# ======= Instruct-type models (B2I Shadow-FT, I2I baseline) ======="
-  echo "Baseline_settings = ["
-
-  for line in "${ALL_EVAL_INSTRUCT[@]}"; do
-    # Strip the leading "# " prefix, keep the tuple
-    echo "    ${line#\# }"
-  done
-
-  echo "]"
-  echo ""
-  echo "# ======= Base-type models (B2B, I2B — usually commented out) ======="
-  echo "BASE_settings = ["
-
-  for line in "${ALL_EVAL_BASE[@]}"; do
-    echo "    ${line#\#\# }"
-  done
-
-  echo "]"
-  echo ""
-} >> "$EVAL_CONFIG"
-
-cat >> "$EVAL_CONFIG" << 'EVAL_FOOTER'
-models = []
-
-# Original HF baselines (Instruct + Base)
-for abbr, path in HF_baselines:
-    models.append(
-        dict(
-            type=HuggingFacewithChatTemplate,
-            abbr=abbr,
-            path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
-            max_seq_len=16384,
-            max_out_len=4096,
-            batch_size=8,
-            run_cfg=dict(num_gpus=1),
-        )
-    )
-
-for abbr, path in Baseline_settings:
-    # Resolve $RESULTS_DIR references
-    if '$RESULTS_DIR' in path:
-        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
-    models.append(
-        dict(
-            type=HuggingFacewithChatTemplate,
-            abbr=abbr,
-            path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
-            max_seq_len=16384,
-            max_out_len=4096,
-            batch_size=8,
-            run_cfg=dict(num_gpus=1),
-        )
-    )
-
-for abbr, path in BASE_settings:
-    if '$RESULTS_DIR' in path:
-        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
-    models.append(
-        dict(
-            type=HuggingFaceBaseModel,
-            abbr=abbr,
-            path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
-            max_seq_len=16384,
-            max_out_len=4096,
-            batch_size=8,
-            run_cfg=dict(num_gpus=1),
-        )
-    )
-EVAL_FOOTER
-
 echo ""
 echo "========================================"
-echo "  Generation complete!"
+echo "  OpenR1-Math-220k 200k script generation complete!"
 echo "========================================"
 echo ""
-echo "Generated files:"
-echo "  Training scripts: $SCRIPT_OUTPUT_DIR/train_*_${TIMESTAMP}.sh"
-echo "  Eval config:      $EVAL_CONFIG"
+echo "Generated training scripts: $SCRIPT_OUTPUT_DIR/train_openr1_200k_*_${TIMESTAMP}.sh"
 echo ""
-echo "Next steps:"
-echo "  1. Run training:  bash $SCRIPT_OUTPUT_DIR/train_<MODEL>_${TIMESTAMP}.sh"
-echo "  2. Run eval:      cd opencompass && python3 ./run.py ./eval_generated.py -r <TIMESTAMP>"
+echo "Checkpoints saved every $SAVE_STEPS steps (~2k samples)."
+echo "Merge specific checkpoints on demand to save disk space."
 echo ""

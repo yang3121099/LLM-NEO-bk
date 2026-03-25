@@ -210,6 +210,33 @@
       "system_tag": "system"
     }
   },
+  "opus_reasoning_3k": {
+    "hf_hub_url": "nohurry/Opus-4.6-Reasoning-3000x-filtered",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "human",
+      "assistant_tag": "gpt"
+    }
+  },
+  "openr1_math_220k": {
+    "hf_hub_url": "open-r1/OpenR1-Math-220k",
+    "subset": "all",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "messages"
+    },
+    "tags": {
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
+    }
+  },
   "NuminaMath": {
     "hf_hub_url": "AI-MO/NuminaMath-CoT",
     "formatting": "sharegpt",

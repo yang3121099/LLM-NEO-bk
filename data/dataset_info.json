@@ -211,10 +211,10 @@
     }
   },
   "opus_reasoning_3k": {
-    "hf_hub_url": "nohurry/Opus-4.6-Reasoning-3000x-filtered",
+    "file_name": "opus_reasoning_3k.json",
     "formatting": "sharegpt",
     "columns": {
-      "messages": "messages"
+      "messages": "conversations"
     },
     "tags": {
       "role_tag": "role",

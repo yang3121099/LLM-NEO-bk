@@ -85,39 +85,108 @@ def save_merged_adapter(merged_weights, output_path, reference_adapter_path):
     print(f"[saved] Merged adapter saved to {output_path}")
 
 
+def _parse_lora_key(key):
+    """Parse a LoRA checkpoint key to extract the base module path and LoRA component.
+
+    Handles keys like:
+      base_model.model.model.layers.0.self_attn.q_proj.lora_A.default.weight
+    Returns:
+      ("model.layers.0.self_attn.q_proj", "lora_A")  or None if not a LoRA key.
+    """
+    # Strip leading "base_model.model." prefix (may be absent)
+    k = key
+    for prefix in ("base_model.model.", ):
+        if k.startswith(prefix):
+            k = k[len(prefix):]
+
+    if ".lora_A." in k:
+        module_path = k.split(".lora_A.")[0]
+        return module_path, "lora_A"
+    elif ".lora_B." in k:
+        module_path = k.split(".lora_B.")[0]
+        return module_path, "lora_B"
+    return None
+
+
 def merge_and_export(base_model_path, merged_adapter_path, output_path, template="llama3"):
-    """将合并后的adapter融合到基座模型并导出"""
+    """将合并后的adapter融合到基座模型并导出（手动应用 LoRA delta，避免 PEFT 加载兼容性问题）"""
     print(f"[loading] Base model from {base_model_path}")
-    
-    # 加载基座模型
+
     model = AutoModelForCausalLM.from_pretrained(
         base_model_path,
         torch_dtype=torch.float16,
-        device_map="auto",
-        trust_remote_code=True
+        device_map="cpu",
+        trust_remote_code=True,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         base_model_path,
-        trust_remote_code=True
+        trust_remote_code=True,
     )
-    
-    print(f"[loading] Merged adapter from {merged_adapter_path}")
-    # 加载合并后的adapter
-    model = PeftModel.from_pretrained(model, merged_adapter_path)
-    
-    print("[merging] Merging adapter into base model...")
-    # 融合并卸载adapter
-    model = model.merge_and_unload()
-    
+
+    # Load adapter config for scaling factor
+    adapter_cfg_path = Path(merged_adapter_path) / "adapter_config.json"
+    lora_alpha = 16  # default
+    lora_rank = 8    # default
+    if adapter_cfg_path.exists():
+        with open(adapter_cfg_path) as f:
+            cfg = json.load(f)
+        lora_alpha = cfg.get("lora_alpha", lora_alpha)
+        lora_rank = cfg.get("r", lora_rank)
+    scaling = lora_alpha / lora_rank
+    print(f"[info] LoRA scaling = {lora_alpha} / {lora_rank} = {scaling}")
+
+    # Load adapter weights
+    print(f"[loading] Adapter weights from {merged_adapter_path}")
+    adapter_weights = load_lora_weights(merged_adapter_path)
+
+    # Group by module path: {module_path: {"lora_A": tensor, "lora_B": tensor}}
+    lora_pairs = {}
+    for key, tensor in adapter_weights.items():
+        parsed = _parse_lora_key(key)
+        if parsed is None:
+            continue
+        module_path, component = parsed
+        lora_pairs.setdefault(module_path, {})[component] = tensor
+
+    # Apply LoRA delta: W_new = W + scaling * (B @ A)
+    state_dict = model.state_dict()
+    applied, skipped = 0, 0
+    for module_path, parts in tqdm(lora_pairs.items(), desc="Applying LoRA deltas"):
+        if "lora_A" not in parts or "lora_B" not in parts:
+            print(f"  [skip] Incomplete pair for {module_path}")
+            skipped += 1
+            continue
+
+        weight_key = f"{module_path}.weight"
+        if weight_key not in state_dict:
+            print(f"  [skip] Target model has no parameter: {weight_key}")
+            skipped += 1
+            continue
+
+        A = parts["lora_A"].float()  # (rank, in_features)
+        B = parts["lora_B"].float()  # (out_features, rank)
+        W = state_dict[weight_key].float()
+
+        delta = (B @ A) * scaling
+        if delta.shape != W.shape:
+            print(f"  [skip] Shape mismatch for {weight_key}: W={W.shape}, delta={delta.shape}")
+            skipped += 1
+            continue
+
+        state_dict[weight_key] = (W + delta).to(torch.float16)
+        applied += 1
+
+    print(f"[info] Applied LoRA to {applied} modules, skipped {skipped}")
+    model.load_state_dict(state_dict)
+
     print(f"[saving] Saving merged model to {output_path}")
-    # 保存合并后的完整模型
     model.save_pretrained(
         output_path,
         safe_serialization=True,
-        max_shard_size="5GB"
+        max_shard_size="5GB",
     )
     tokenizer.save_pretrained(output_path)
-    
+
     print(f"[done] Model exported to {output_path}")
 
 

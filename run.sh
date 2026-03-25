@@ -367,7 +367,7 @@ cat > "$EVAL_CONFIG" << 'EVAL_HEADER'
 # Auto-generated evaluation config for Shadow-FT
 # Usage:
 #   cd opencompass
-#   python3 ./run.py ./eval_generated.py -r <TIMESTAMP>
+#   python3 ./run.py ./eval_generated.py -r 20250727200010
 
 import os as _os
 from mmengine.config import read_base
@@ -384,34 +384,31 @@ with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
 
     ######################### Math #########################
-    from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
-    from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
-    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets
+    # from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
+    # from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
+    # from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets
     from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
-    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
+    # from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
-from opencompass.models import HuggingFacewithChatTemplate, HuggingFaceBaseModel
+from opencompass.models import TurboMindModelwithChatTemplate
 
 EVAL_HEADER
 
 {
-  echo "work_dir = 'outputs/shadow-ft-${TIMESTAMP}/'"
+  echo "work_dir = 'outputs/Rebuttal-0729/shadow-example/'"
   echo ""
 
-  # --- Original Instruct models as baselines ---
-  echo "# ======= Original Instruct baselines (HuggingFace hub) ======="
+  # --- Original Instruct models as baselines (only Instruct, no Base) ---
+  echo "# ======= Original Instruct baselines (lmdeploy) ======="
   echo "HF_baselines = ["
   for PAIR in "${MODEL_PAIRS[@]}"; do
     local_I="${PAIR##*||}"
-    local_B="${PAIR%%||*}"
     local_name_I=$(basename "$local_I")
-    local_name_B=$(basename "$local_B")
     echo "    ('${local_name_I}-Instruct-hf', '${local_I}'),"
-    echo "    ('${local_name_B}-Base-hf', '${local_B}'),"
   done
   echo "]"
   echo ""
@@ -420,17 +417,7 @@ EVAL_HEADER
   echo "Baseline_settings = ["
 
   for line in "${ALL_EVAL_INSTRUCT[@]}"; do
-    # Strip the leading "# " prefix, keep the tuple
     echo "    ${line#\# }"
-  done
-
-  echo "]"
-  echo ""
-  echo "# ======= Base-type models (B2B, I2B — usually commented out) ======="
-  echo "BASE_settings = ["
-
-  for line in "${ALL_EVAL_BASE[@]}"; do
-    echo "    ${line#\#\# }"
   done
 
   echo "]"
@@ -440,50 +427,35 @@ EVAL_HEADER
 cat >> "$EVAL_CONFIG" << 'EVAL_FOOTER'
 models = []
 
-# Original HF baselines (Instruct + Base)
+# Original Instruct baselines
 for abbr, path in HF_baselines:
     models.append(
         dict(
-            type=HuggingFacewithChatTemplate,
+            type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
-            batch_size=8,
+            batch_size=2048,
             run_cfg=dict(num_gpus=1),
         )
     )
 
 for abbr, path in Baseline_settings:
-    # Resolve $RESULTS_DIR references
     if '$RESULTS_DIR' in path:
         path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
-            type=HuggingFacewithChatTemplate,
+            type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
             max_seq_len=16384,
             max_out_len=4096,
-            batch_size=8,
-            run_cfg=dict(num_gpus=1),
-        )
-    )
-
-for abbr, path in BASE_settings:
-    if '$RESULTS_DIR' in path:
-        path = path.replace('$RESULTS_DIR', RESULTS_DIR)
-    models.append(
-        dict(
-            type=HuggingFaceBaseModel,
-            abbr=abbr,
-            path=path,
-            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
-            max_seq_len=16384,
-            max_out_len=4096,
-            batch_size=8,
+            batch_size=2048,
             run_cfg=dict(num_gpus=1),
         )
     )

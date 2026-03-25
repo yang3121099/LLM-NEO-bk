@@ -266,7 +266,7 @@ def main():
     if args.output_dir:
         output_base = Path(args.output_dir)
     else:
-        output_base = Path(args.adapter_path).parent
+        output_base = Path(args.adapter_path)
     
     merged_dir = output_base / f"merged-{args.merge_tag}"
     

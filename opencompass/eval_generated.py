@@ -3,15 +3,16 @@
 #   cd opencompass
 #   python3 ./run.py ./eval_generated.py -r <TIMESTAMP>
 
-import os
+import os as _os
 from mmengine.config import read_base
 from opencompass.partitioners import NaivePartitioner, NumWorkerPartitioner
 from opencompass.runners import LocalRunner, VOLCRunner
 from opencompass.tasks import OpenICLEvalTask, OpenICLInferTask
 
 # Resolve RESULTS_DIR relative to this config file
-_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), 'results')
+_SCRIPT_DIR = _os.path.dirname(_os.path.abspath(__file__))
+RESULTS_DIR = _os.path.join(_os.path.dirname(_SCRIPT_DIR), 'results')
+del _os, _SCRIPT_DIR
 
 with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer

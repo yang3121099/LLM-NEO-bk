@@ -29,7 +29,14 @@ from transformers import HfArgumentParser
 from transformers.integrations import is_deepspeed_zero3_enabled
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.training_args import ParallelMode
-from transformers.utils import is_torch_bf16_gpu_available, is_torch_npu_available
+try:
+    from transformers.utils import is_torch_bf16_gpu_available, is_torch_npu_available
+except ImportError:
+    import torch
+    def is_torch_bf16_gpu_available():
+        return torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+    def is_torch_npu_available():
+        return False
 
 from ..extras import logging
 from ..extras.constants import CHECKPOINT_NAMES, EngineName

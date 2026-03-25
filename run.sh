@@ -394,7 +394,7 @@ with read_base():
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
-from opencompass.models import TurboMindModelwithChatTemplate, TurboMindModel
+from opencompass.models import HuggingFacewithChatTemplate, HuggingFaceBaseModel
 
 EVAL_HEADER
 
@@ -431,14 +431,13 @@ for abbr, path in Baseline_settings:
         path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
-            type=TurboMindModelwithChatTemplate,
+            type=HuggingFacewithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
-            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
             max_seq_len=16384,
             max_out_len=4096,
-            batch_size=2048,
+            batch_size=8,
             run_cfg=dict(num_gpus=1),
         )
     )
@@ -448,14 +447,13 @@ for abbr, path in BASE_settings:
         path = path.replace('$RESULTS_DIR', RESULTS_DIR)
     models.append(
         dict(
-            type=TurboMindModel,
+            type=HuggingFaceBaseModel,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
-            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            model_kwargs=dict(device_map='auto', torch_dtype='auto', trust_remote_code=True),
             max_seq_len=16384,
             max_out_len=4096,
-            batch_size=2048,
+            batch_size=8,
             run_cfg=dict(num_gpus=1),
         )
     )

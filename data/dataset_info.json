@@ -211,16 +211,10 @@
     }
   },
   "opus_reasoning_3k": {
-    "file_name": "opus_reasoning_3k.json",
-    "formatting": "sharegpt",
+    "hf_hub_url": "nohurry/Opus-4.6-Reasoning-3000x-filtered",
     "columns": {
-      "messages": "conversations"
-    },
-    "tags": {
-      "role_tag": "role",
-      "content_tag": "content",
-      "user_tag": "user",
-      "assistant_tag": "assistant"
+      "prompt": "problem",
+      "response": "solution"
     }
   },
   "openr1_math_220k": {

@@ -108,6 +108,22 @@ def _parse_lora_key(key):
     return None
 
 
+def _build_suffix_map(state_dict_keys):
+    """Build a mapping from suffix (e.g. 'layers.0.self_attn.q_proj.weight') to full key.
+
+    This allows matching LoRA module paths against target model keys even when
+    there is a prefix difference (e.g. 'model.layers...' vs 'model.language_model.layers...').
+    """
+    suffix_map = {}
+    for key in state_dict_keys:
+        # Try progressively shorter suffixes starting from 'layers.'
+        idx = key.find("layers.")
+        if idx >= 0:
+            suffix = key[idx:]
+            suffix_map[suffix] = key
+    return suffix_map
+
+
 def merge_and_export(base_model_path, merged_adapter_path, output_path, template="llama3"):
     """将合并后的adapter融合到基座模型并导出（手动应用 LoRA delta，避免 PEFT 加载兼容性问题）"""
     print(f"[loading] Base model from {base_model_path}")
@@ -148,8 +164,25 @@ def merge_and_export(base_model_path, merged_adapter_path, output_path, template
         module_path, component = parsed
         lora_pairs.setdefault(module_path, {})[component] = tensor
 
-    # Apply LoRA delta: W_new = W + scaling * (B @ A)
+    # Build suffix map for flexible key matching (handles prefix differences
+    # between Base and Instruct models, e.g. 'model.layers.' vs 'model.language_model.layers.')
     state_dict = model.state_dict()
+    suffix_map = _build_suffix_map(state_dict.keys())
+
+    def _resolve_weight_key(module_path):
+        """Try exact match first, then fall back to suffix-based matching."""
+        exact = f"{module_path}.weight"
+        if exact in state_dict:
+            return exact
+        # Extract suffix from 'layers.' onward
+        idx = module_path.find("layers.")
+        if idx >= 0:
+            suffix = f"{module_path[idx:]}.weight"
+            if suffix in suffix_map:
+                return suffix_map[suffix]
+        return None
+
+    # Apply LoRA delta: W_new = W + scaling * (B @ A)
     applied, skipped = 0, 0
     for module_path, parts in tqdm(lora_pairs.items(), desc="Applying LoRA deltas"):
         if "lora_A" not in parts or "lora_B" not in parts:
@@ -157,9 +190,9 @@ def merge_and_export(base_model_path, merged_adapter_path, output_path, template
             skipped += 1
             continue
 
-        weight_key = f"{module_path}.weight"
-        if weight_key not in state_dict:
-            print(f"  [skip] Target model has no parameter: {weight_key}")
+        weight_key = _resolve_weight_key(module_path)
+        if weight_key is None:
+            print(f"  [skip] Target model has no parameter matching: {module_path}")
             skipped += 1
             continue
 

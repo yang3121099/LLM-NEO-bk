@@ -14,20 +14,7 @@
 
 from typing import TYPE_CHECKING
 
-try:
-    from transformers.utils import is_flash_attn_2_available, is_torch_sdpa_available
-except ImportError:
-    # Removed in newer transformers; provide fallbacks
-    def is_flash_attn_2_available():
-        try:
-            import flash_attn  # noqa: F401
-            return True
-        except ImportError:
-            return False
-
-    def is_torch_sdpa_available():
-        import torch
-        return hasattr(torch.nn.functional, "scaled_dot_product_attention")
+from ...extras.compat import is_flash_attn_2_available, is_torch_sdpa_available
 
 from ...extras import logging
 from ...extras.constants import AttentionFunction

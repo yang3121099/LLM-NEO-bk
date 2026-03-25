@@ -26,11 +26,9 @@ import transformers
 from peft import PeftModel
 from transformers import PreTrainedModel, ProcessorMixin, TrainerCallback
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR, has_length
-from transformers.utils import (
-    SAFE_WEIGHTS_NAME,
-    WEIGHTS_NAME,
-    is_safetensors_available,
-)
+from transformers.utils import SAFE_WEIGHTS_NAME, WEIGHTS_NAME
+
+from ..extras.compat import is_safetensors_available
 from typing_extensions import override
 
 from ..extras import logging

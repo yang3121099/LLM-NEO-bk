@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING, Any, Callable, Optional, Union
 import torch
 from transformers import Trainer
 from transformers.integrations import is_deepspeed_zero3_enabled
-from transformers.modeling_utils import is_fsdp_enabled
+from ..extras.compat import is_fsdp_enabled
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import ALL_LAYERNORM_LAYERS
 from transformers.trainer_pt_utils import get_parameter_names

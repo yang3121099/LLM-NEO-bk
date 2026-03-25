@@ -24,7 +24,7 @@ import torch
 from datasets import load_dataset
 from transformers import BitsAndBytesConfig, EetqConfig, GPTQConfig, HqqConfig
 from transformers.integrations import is_deepspeed_zero3_enabled
-from transformers.modeling_utils import is_fsdp_enabled
+from ...extras.compat import is_fsdp_enabled
 
 from ...extras import logging
 from ...extras.constants import FILEEXT2TYPE, QuantizationMethod

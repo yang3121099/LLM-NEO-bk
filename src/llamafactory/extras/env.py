@@ -23,14 +23,7 @@ import peft
 import torch
 import transformers
 import trl
-try:
-    from transformers.utils import is_torch_cuda_available, is_torch_npu_available
-except ImportError:
-    import torch
-    def is_torch_cuda_available():
-        return torch.cuda.is_available()
-    def is_torch_npu_available():
-        return False
+from .compat import is_torch_cuda_available, is_torch_npu_available
 
 
 VERSION = "0.9.3.dev0"

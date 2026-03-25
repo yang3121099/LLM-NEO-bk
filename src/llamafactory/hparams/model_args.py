@@ -143,7 +143,7 @@ class BaseModelArguments:
         default="offload",
         metadata={"help": "Path to offload model weights."},
     )
-    use_cache: bool = field(
+    infer_use_cache: bool = field(
         default=True,
         metadata={"help": "Whether or not to use KV cache in generation."},
     )

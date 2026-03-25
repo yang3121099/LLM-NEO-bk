@@ -214,13 +214,13 @@
     "hf_hub_url": "nohurry/Opus-4.6-Reasoning-3000x-filtered",
     "formatting": "sharegpt",
     "columns": {
-      "messages": "conversations"
+      "messages": "messages"
     },
     "tags": {
-      "role_tag": "from",
-      "content_tag": "value",
-      "user_tag": "human",
-      "assistant_tag": "gpt"
+      "role_tag": "role",
+      "content_tag": "content",
+      "user_tag": "user",
+      "assistant_tag": "assistant"
     }
   },
   "openr1_math_220k": {

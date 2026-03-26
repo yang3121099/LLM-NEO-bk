@@ -2,7 +2,7 @@
 """
 Preprocess DeepMath-103K for LlamaFactory SFT training.
 
-Each sample has 3 R1 solutions in `r1_solutions`. This script expands
+Each sample has 3 R1 solutions (`r1_solution_1/2/3`). This script expands
 them into separate training examples (question → r1_solution), tripling
 the dataset to ~309K examples in sharegpt format.
 
@@ -60,10 +60,11 @@ def main():
         print(f"  Using first {len(ds)} questions")
 
     records = []
+    sol_keys = [f"r1_solution_{i}" for i in range(1, args.max_solutions + 1)]
     for row in ds:
         question = row["question"]
-        solutions = row["r1_solutions"]
-        for sol in solutions[: args.max_solutions]:
+        for key in sol_keys:
+            sol = row.get(key, "")
             if not sol or not sol.strip():
                 continue
             records.append({

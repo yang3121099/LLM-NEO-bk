@@ -178,14 +178,15 @@ HEADER
 mkdir -p "\$RESULTS_DIR/${REL_OUTDIR}"
 cd "\$WORKSPACE_DIR"
 
-# Use torchrun for multi-GPU, llamafactory-cli for single-GPU
+# Multi-GPU: FORCE_TORCHRUN lets llamafactory-cli handle torchrun internally
 if [[ "\$NUM_GPUS" -gt 1 ]]; then
-    LAUNCH_CMD="torchrun --nproc_per_node=\$NUM_GPUS --master_port=\$(( RANDOM % 10000 + 20000 )) -m llamafactory.train"
-else
-    LAUNCH_CMD="llamafactory-cli train"
+    export FORCE_TORCHRUN=1
+    export NNODES=1
+    export NPROC_PER_NODE=\$NUM_GPUS
+    export MASTER_PORT=\$(( RANDOM % 10000 + 20000 ))
 fi
 
-\$LAUNCH_CMD \\
+llamafactory-cli train \\
   --model_name_or_path "${M_PATH}" \\
   --stage sft \\
   --do_train true \\

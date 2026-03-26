@@ -16,10 +16,15 @@ class SVAMPDataset(BaseDataset):
         path = get_data_path(path, local_mode=True)
         dataset = []
         with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                line = json.loads(line.strip())
-                question = line['Body'] + ' ' + line['Question']
-                answer = str(int(line['Answer']))
-                dataset.append({'question': question, 'answer': answer})
+            raw = f.read().strip()
+        # Support both JSON array and JSONL formats
+        if raw.startswith('['):
+            items = json.loads(raw)
+        else:
+            items = [json.loads(line) for line in raw.splitlines() if line.strip()]
+        for item in items:
+            question = item['Body'] + ' ' + item['Question']
+            answer = str(int(item['Answer']))
+            dataset.append({'question': question, 'answer': answer})
         dataset = Dataset.from_list(dataset)
         return dataset

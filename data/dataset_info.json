@@ -217,6 +217,19 @@
       "response": "solution"
     }
   },
+  "deepmath_103k": {
+    "file_name": "deepmath_103k_sft.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "human",
+      "assistant_tag": "gpt"
+    }
+  },
   "openr1_math_220k": {
     "hf_hub_url": "open-r1/OpenR1-Math-220k",
     "subset": "all",

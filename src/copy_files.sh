@@ -1,8 +1,8 @@
 #!/bin/bash
-# Sync local opencompass source to the pip-installed site-packages.
+# Sync the ENTIRE local opencompass package over the pip-installed version.
 #
-# Instead of chasing individual file mismatches, this script syncs
-# entire subdirectories that are known to diverge.
+# This replaces the installed opencompass with the local source to avoid
+# endless version-mismatch errors (JSONToolkit, extract_role_pred, etc.).
 #
 # Usage:
 #   bash src/copy_files.sh /venv/factory/lib/python3.10/site-packages
@@ -33,34 +33,21 @@ echo "Source:  $OC_SRC"
 echo "Target:  $OC_DST"
 echo ""
 
-# --- Sync entire directories (rsync-style, preserving structure) ---
+# Full sync: copy all .py files recursively, preserving directory structure.
+# This is the only reliable way to keep local source and installed package in sync.
+echo "Syncing entire opencompass package ..."
 
-# tasks/ — extract_role_pred, openicl_eval, etc.
-echo "=== tasks/ ==="
-cp -v "$OC_SRC/tasks/"*.py "$OC_DST/tasks/"
-
-# openicl/icl_evaluator/ — BaseEvaluator.evaluate(), TEvalEvaluator, etc.
-echo ""
-echo "=== openicl/icl_evaluator/ ==="
-cp -v "$OC_SRC/openicl/icl_evaluator/"*.py "$OC_DST/openicl/icl_evaluator/"
-
-# datasets/ — mbpp, humaneval, IFEval, teval, etc.
-echo ""
-echo "=== datasets/ (top-level .py) ==="
-cp -v "$OC_SRC/datasets/"*.py "$OC_DST/datasets/"
-
-# datasets/IFEval/
-if [ -d "$OC_SRC/datasets/IFEval" ]; then
-    echo ""
-    echo "=== datasets/IFEval/ ==="
-    mkdir -p "$OC_DST/datasets/IFEval"
-    cp -v "$OC_SRC/datasets/IFEval/"*.py "$OC_DST/datasets/IFEval/"
+if command -v rsync &> /dev/null; then
+    rsync -av --include='*/' --include='*.py' --exclude='*' \
+        "$OC_SRC/" "$OC_DST/"
+else
+    # Fallback without rsync: find + cp
+    cd "$OC_SRC"
+    find . -name '*.py' | while read -r f; do
+        mkdir -p "$OC_DST/$(dirname "$f")"
+        cp "$f" "$OC_DST/$f"
+    done
 fi
 
-# models/ — turbomind, etc.
 echo ""
-echo "=== models/ (top-level .py) ==="
-cp -v "$OC_SRC/models/"*.py "$OC_DST/models/"
-
-echo ""
-echo "Done. Synced local opencompass to: $TARGET_PATH"
+echo "Done. Synced entire opencompass package to: $OC_DST"

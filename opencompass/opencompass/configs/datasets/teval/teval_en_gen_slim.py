@@ -1,4 +1,4 @@
-"""Slim T-Eval config: only instruct + review subtasks."""
+"""Slim T-Eval config: only review subtask."""
 from opencompass.openicl.icl_prompt_template import PromptTemplate
 from opencompass.openicl.icl_retriever import ZeroRetriever
 from opencompass.openicl.icl_inferencer import ChatInferencer
@@ -6,7 +6,6 @@ from opencompass.openicl.icl_evaluator import TEvalEvaluator
 from opencompass.datasets import teval_postprocess, TEvalDataset
 
 teval_subject_mapping = {
-    'instruct': ['instruct_v1'],
     'review': ['review_str_v1'],
 }
 

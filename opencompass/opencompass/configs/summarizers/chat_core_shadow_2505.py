@@ -69,8 +69,6 @@ teval_top_groups = [
     dict(
         name="T-Eval",
         subsets=[
-            ["teval-instruct_v1", "format_metric"],
-            ["teval-instruct_v1", "args_em_metric"],
             ["teval-review_str_v1", "review_quality"],
         ],
     )
@@ -202,12 +200,9 @@ dataset_abbrs = [
 
     "",  # blank line
 
-    # Tool Use (T-Eval — slim: instruct + review)
+    # Tool Use (T-Eval — review only)
     "--------- Tool Use (T-Eval) ---------",
-    ["teval-instruct_v1", "format_metric"],
-    ["teval-instruct_v1", "args_em_metric"],
     ["teval-review_str_v1", "review_quality"],
-    ["T-Eval", "naive_average"],
 
     "",  # blank line
 

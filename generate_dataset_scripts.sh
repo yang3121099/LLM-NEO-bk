@@ -456,16 +456,6 @@ echo "========================================"
 echo ""
 echo "Generated scripts in: $SCRIPT_OUTPUT_DIR/"
 echo ""
-echo "=== 2k experiments (train + merge + eval) ==="
-for EXP in "${EXPERIMENTS[@]}"; do
-  IFS='|' read -r DATASET SUFFIX MAX_SAMPLES _ <<< "$EXP"
-  [[ "$MAX_SAMPLES" -gt 10000 ]] && continue
-  K="$(format_k "$MAX_SAMPLES")"
-  for M in "${MODEL_NAMES[@]}"; do
-    echo "  bash scripts/train_${SUFFIX}_${K}_${M}_${TIMESTAMP}.sh"
-  done
-done
-echo ""
 echo "=== Full-scale experiments (train + selective merge) ==="
 for EXP in "${EXPERIMENTS[@]}"; do
   IFS='|' read -r DATASET SUFFIX MAX_SAMPLES _ <<< "$EXP"
@@ -477,11 +467,12 @@ for EXP in "${EXPERIMENTS[@]}"; do
 done
 echo ""
 echo "=== Evaluation ==="
-echo "  # 2k experiments:"
-echo "  cd opencompass && python3 ./run.py ./eval_2k_${TIMESTAMP}.py -r ${TIMESTAMP}"
 if [[ ${#ALL_EVAL_FULL_ENTRIES[@]} -gt 0 ]]; then
   echo "  # Full-scale experiments:"
   echo "  cd opencompass && python3 ./run.py ./eval_full_${TIMESTAMP}.py -r ${TIMESTAMP}"
+fi
+echo "  # 2k experiments:"
+echo "  cd opencompass && python3 ./run.py ./eval_2k_${TIMESTAMP}.py -r ${TIMESTAMP}"
 fi
 echo ""
 echo "=== Prerequisites ==="

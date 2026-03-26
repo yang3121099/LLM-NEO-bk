@@ -61,7 +61,9 @@ class BaseEvaluator:
               test_set: Dataset) -> Dict[str, Any]:
         example2replications = {}
         for detail, example in zip(details, test_set):
-            example_abbr = f"{example['subdivision']}_{example['idx']}"
+            subdivision = example.get('subdivision', 'default')
+            idx = example.get('idx', id(example))
+            example_abbr = f"{subdivision}_{idx}"
             if example_abbr not in example2replications:
                 example2replications[example_abbr] = []
             example.update({'detail': detail})

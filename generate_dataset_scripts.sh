@@ -468,11 +468,7 @@ done
 echo ""
 echo "=== Evaluation ==="
 if [[ ${#ALL_EVAL_FULL_ENTRIES[@]} -gt 0 ]]; then
-  echo "  # Full-scale experiments:"
   echo "  cd opencompass && python3 ./run.py ./eval_full_${TIMESTAMP}.py -r ${TIMESTAMP}"
-fi
-echo "  # 2k experiments:"
-echo "  cd opencompass && python3 ./run.py ./eval_2k_${TIMESTAMP}.py -r ${TIMESTAMP}"
 fi
 echo ""
 echo "=== Prerequisites ==="

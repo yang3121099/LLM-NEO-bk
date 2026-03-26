@@ -7,7 +7,14 @@ them into separate training examples (question → r1_solution), tripling
 the dataset to ~309K examples in sharegpt format.
 
 Usage:
-    python3 scripts/prepare_deepmath_103k.py [--output data/deepmath_103k_sft.json]
+    # Full dataset (~309K examples)
+    python3 scripts/prepare_deepmath_103k.py
+
+    # 2K demo (for quick validation on new machines)
+    python3 scripts/prepare_deepmath_103k.py --demo
+
+    # Custom size
+    python3 scripts/prepare_deepmath_103k.py --max-questions 5000
 
 Output format (sharegpt):
     [
@@ -25,14 +32,32 @@ from datasets import load_dataset
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output", default="data/deepmath_103k_sft.json")
+    parser.add_argument("--output", default=None,
+                        help="Output path (default: auto based on size)")
     parser.add_argument("--max-solutions", type=int, default=3,
                         help="Max R1 solutions per question (1-3)")
+    parser.add_argument("--max-questions", type=int, default=0,
+                        help="Limit number of questions (0=all)")
+    parser.add_argument("--demo", action="store_true",
+                        help="Generate 2K demo dataset for validation")
     args = parser.parse_args()
+
+    if args.demo:
+        args.max_questions = 667   # 667 × 3 solutions ≈ 2000 examples
+        if args.output is None:
+            args.output = "data/deepmath_2k_demo.json"
+        print("=== Demo mode: generating ~2K examples ===")
+    else:
+        if args.output is None:
+            args.output = "data/deepmath_103k_sft.json"
 
     print("Loading zwhe99/DeepMath-103K from HuggingFace ...")
     ds = load_dataset("zwhe99/DeepMath-103K", split="train")
     print(f"  Loaded {len(ds)} samples")
+
+    if args.max_questions > 0:
+        ds = ds.select(range(min(args.max_questions, len(ds))))
+        print(f"  Using first {len(ds)} questions")
 
     records = []
     for row in ds:

@@ -230,6 +230,19 @@
       "assistant_tag": "gpt"
     }
   },
+  "deepmath_2k_demo": {
+    "file_name": "deepmath_2k_demo.json",
+    "formatting": "sharegpt",
+    "columns": {
+      "messages": "conversations"
+    },
+    "tags": {
+      "role_tag": "from",
+      "content_tag": "value",
+      "user_tag": "human",
+      "assistant_tag": "gpt"
+    }
+  },
   "openr1_math_220k": {
     "hf_hub_url": "open-r1/OpenR1-Math-220k",
     "subset": "all",

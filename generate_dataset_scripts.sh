@@ -255,8 +255,8 @@ with read_base():
     ################## Instruction Following ##################
     from opencompass.configs.datasets.IFEval.IFEval_gen_353ae7 import ifeval_datasets
 
-    ##################### Tool Use (T-Eval) ####################
-    from opencompass.configs.datasets.teval.teval_en_gen import teval_datasets
+    ##################### Tool Use (T-Eval slim) ####################
+    from opencompass.configs.datasets.teval.teval_en_gen_slim import teval_slim_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 

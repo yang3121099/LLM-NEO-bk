@@ -71,11 +71,6 @@ teval_top_groups = [
         subsets=[
             ["teval-instruct_v1", "format_metric"],
             ["teval-instruct_v1", "args_em_metric"],
-            ["teval-plan_str_v1", "f1_score"],
-            ["teval-plan_json_v1", "f1_score"],
-            ["teval-reason_str_v1", "thought"],
-            ["teval-retrieve_str_v1", "name"],
-            ["teval-understand_str_v1", "args"],
             ["teval-review_str_v1", "review_quality"],
         ],
     )
@@ -207,15 +202,10 @@ dataset_abbrs = [
 
     "",  # blank line
 
-    # Tool Use (T-Eval)
+    # Tool Use (T-Eval — slim: instruct + review)
     "--------- Tool Use (T-Eval) ---------",
     ["teval-instruct_v1", "format_metric"],
     ["teval-instruct_v1", "args_em_metric"],
-    ["teval-plan_str_v1", "f1_score"],
-    ["teval-plan_json_v1", "f1_score"],
-    ["teval-reason_str_v1", "thought"],
-    ["teval-retrieve_str_v1", "name"],
-    ["teval-understand_str_v1", "args"],
     ["teval-review_str_v1", "review_quality"],
     ["T-Eval", "naive_average"],
 

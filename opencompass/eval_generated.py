@@ -26,6 +26,9 @@ with read_base():
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
 
+    ##################### Tool Use (T-Eval slim) ####################
+    from opencompass.configs.datasets.teval.teval_en_gen_slim import teval_slim_datasets
+
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
 from opencompass.models import TurboMindModelwithChatTemplate

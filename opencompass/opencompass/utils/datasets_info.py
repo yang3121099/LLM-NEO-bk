@@ -735,7 +735,7 @@ DATASETS_URL = {
         "http://opencompass.oss-cn-shanghai.aliyuncs.com/datasets/data/test_generation.zip",
         "md5": "918a6ea2b1eee6f2b1314db3c21cb4c7",
     },
-    "/aime2024": {
+    "/aime.jsonl": {
         "url":
         "http://opencompass.oss-cn-shanghai.aliyuncs.com/datasets/data/aime.zip",
         "md5": "fbe2d0577fc210962a549f8cea1a00c8",
@@ -744,6 +744,11 @@ DATASETS_URL = {
         "url":
         "http://opencompass.oss-cn-shanghai.aliyuncs.com/datasets/data/aime2025.zip",
         "md5": "aa18cd5d2e2de246c5397f5eb1e61004",
+    },
+    "/aime2026": {
+        "url":
+        "http://opencompass.oss-cn-shanghai.aliyuncs.com/datasets/data/aime2026.zip",
+        "md5": "4230d87b80646c811ada0e4bb2efe3a3",
     },
     "/cmo": {
         "url":

@@ -178,12 +178,14 @@ HEADER
 mkdir -p "\$RESULTS_DIR/${REL_OUTDIR}"
 cd "\$WORKSPACE_DIR"
 
-# Multi-GPU: FORCE_TORCHRUN lets llamafactory-cli handle torchrun internally
+# Multi-GPU: FORCE_TORCHRUN + DeepSpeed ZeRO-2 for LoRA
+DS_ARG=""
 if [[ "\$NUM_GPUS" -gt 1 ]]; then
     export FORCE_TORCHRUN=1
     export NNODES=1
     export NPROC_PER_NODE=\$NUM_GPUS
     export MASTER_PORT=\$(( RANDOM % 10000 + 20000 ))
+    DS_ARG="--deepspeed \$WORKSPACE_DIR/examples/deepspeed/ds_z2_config.json"
 fi
 
 llamafactory-cli train \\
@@ -214,7 +216,8 @@ llamafactory-cli train \\
   --trust_remote_code True \\
   --flash_attn fa2 \\
   --overwrite_cache false \\
-  --use_fast_tokenizer True
+  --use_fast_tokenizer True \\
+  \$DS_ARG
 
 TRAIN
     done

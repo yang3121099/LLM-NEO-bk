@@ -13,6 +13,7 @@ with read_base():
     from .groups.mmlu import mmlu_summary_groups
     from .groups.mmlu_pro import mmlu_pro_summary_groups
     from .groups.mgsm import mgsm_summary_groups
+    from .groups.teval import teval_summary_groups
 
 # ---------------------------------------------------------------------------
 # Section definitions
@@ -40,6 +41,42 @@ code_groups = [
             ["openai_humaneval", "humaneval_pass@1"],
             ["humaneval_plus", "humaneval_plus_pass@1"],
             ["lcb_code_generation", "pass@1"],
+        ],
+    )
+]
+
+# ---------------------------------------------------------------------------
+# Instruction Following
+# ---------------------------------------------------------------------------
+
+ifeval_groups = [
+    dict(
+        name="IF_Eval",
+        subsets=[
+            ["IFEval", "Prompt-level-strict-accuracy"],
+            ["IFEval", "Inst-level-strict-accuracy"],
+            ["IFEval", "Prompt-level-loose-accuracy"],
+            ["IFEval", "Inst-level-loose-accuracy"],
+        ],
+    )
+]
+
+# ---------------------------------------------------------------------------
+# Tool Use (T-Eval)
+# ---------------------------------------------------------------------------
+
+teval_top_groups = [
+    dict(
+        name="T-Eval",
+        subsets=[
+            ["teval-instruct_v1", "format_metric"],
+            ["teval-instruct_v1", "args_em_metric"],
+            ["teval-plan_str_v1", "f1_score"],
+            ["teval-plan_json_v1", "f1_score"],
+            ["teval-reason_str_v1", "thought"],
+            ["teval-retrieve_str_v1", "name"],
+            ["teval-understand_str_v1", "args"],
+            ["teval-review_str_v1", "review_quality"],
         ],
     )
 ]
@@ -160,6 +197,30 @@ dataset_abbrs = [
 
     "",  # blank line
 
+    # Instruction Following (IFEval)
+    "--------- Instruction Following ---------",
+    ["IFEval", "Prompt-level-strict-accuracy"],
+    ["IFEval", "Inst-level-strict-accuracy"],
+    ["IFEval", "Prompt-level-loose-accuracy"],
+    ["IFEval", "Inst-level-loose-accuracy"],
+    ["IF_Eval", "naive_average"],
+
+    "",  # blank line
+
+    # Tool Use (T-Eval)
+    "--------- Tool Use (T-Eval) ---------",
+    ["teval-instruct_v1", "format_metric"],
+    ["teval-instruct_v1", "args_em_metric"],
+    ["teval-plan_str_v1", "f1_score"],
+    ["teval-plan_json_v1", "f1_score"],
+    ["teval-reason_str_v1", "thought"],
+    ["teval-retrieve_str_v1", "name"],
+    ["teval-understand_str_v1", "args"],
+    ["teval-review_str_v1", "review_quality"],
+    ["T-Eval", "naive_average"],
+
+    "",  # blank line
+
     # LiveCodeBench
     "--------- LiveCodeBench ---------",
     ["lcb_code_execution", "pass@1"],
@@ -196,6 +257,9 @@ summary_groups = (
     + mgsm_summary_groups
     + livecodebench_groups
     + code_v1_groups
+    + ifeval_groups
+    + teval_summary_groups
+    + teval_top_groups
     + general_v2_groups
     + average_groups2
 )

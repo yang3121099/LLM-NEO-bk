@@ -46,18 +46,19 @@ def main():
         args.max_questions = 667   # 667 × 3 solutions ≈ 2000 examples
         if args.output is None:
             args.output = "data/deepmath_2k_demo.json"
-        print("=== Demo mode: generating ~2K examples ===")
     else:
         if args.output is None:
             args.output = "data/deepmath_103k_sft.json"
 
-    print("Loading zwhe99/DeepMath-103K from HuggingFace ...")
+    log = (lambda *a, **kw: None) if args.demo else print
+
+    log("Loading zwhe99/DeepMath-103K from HuggingFace ...")
     ds = load_dataset("zwhe99/DeepMath-103K", split="train")
-    print(f"  Loaded {len(ds)} samples")
+    log(f"  Loaded {len(ds)} samples")
 
     if args.max_questions > 0:
         ds = ds.select(range(min(args.max_questions, len(ds))))
-        print(f"  Using first {len(ds)} questions")
+        log(f"  Using first {len(ds)} questions")
 
     records = []
     sol_keys = [f"r1_solution_{i}" for i in range(1, args.max_solutions + 1)]
@@ -74,10 +75,10 @@ def main():
                 ]
             })
 
-    print(f"  Expanded to {len(records)} training examples")
+    log(f"  Expanded to {len(records)} training examples")
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(records, f, ensure_ascii=False, indent=1)
-    print(f"  Saved to {args.output}")
+    log(f"  Saved to {args.output}")
 
 
 if __name__ == "__main__":

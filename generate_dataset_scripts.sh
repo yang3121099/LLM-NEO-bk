@@ -58,6 +58,7 @@ EXPERIMENTS=(
   "openr1_math_220k|openr1|2000|1000"
   "dolci_instruct_mix|dolci_mix|2000|1000"
   "nemotron_if_chat_v1|nemotron_if|2000|1000"
+  "deepmath_2k_demo|deepmath_demo|2000|1000"
   # --- Full-scale experiments ---
   "openr1_math_220k|openr1|220000|100"
   "deepmath_103k|deepmath|309000|100"

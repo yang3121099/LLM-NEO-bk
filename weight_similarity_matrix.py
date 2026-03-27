@@ -41,14 +41,15 @@ from weight_similarity_analysis import compute_relative_gap_ratio, load_model_st
 
 # Default model configuration
 DEFAULT_MODELS = {
-    # Training pipeline checkpoints
+    # Training pipeline checkpoints (Llama-3.1-8B based)
     "Llama3.1-8B-Base": "meta-llama/Llama-3.1-8B",
     "Llama3.1-8B-Instruct": "meta-llama/Llama-3.1-8B-Instruct",
     "Tulu3-8B-SFT": "allenai/Llama-3.1-Tulu-3-8B-SFT",
     "Tulu3-8B-DPO": "allenai/Llama-3.1-Tulu-3-8B-DPO",
     "Tulu3-8B-RLVR": "allenai/Llama-3.1-Tulu-3-8B",
-    # Independent models
+    # Independent models (same architecture, different training)
     "Tulu3.1-8B": "allenai/Llama-3.1-Tulu-3.1-8B",
+    "Llama3-8B-Base": "meta-llama/Llama-3-8B",
     "Llama3-8B-Instruct": "meta-llama/Llama-3-8B-Instruct",
     "DeepSeek-R1-Distill-Llama-8B": "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
 }
@@ -64,6 +65,7 @@ MODEL_GROUPS = {
     ],
     "Independent": [
         "Tulu3.1-8B",
+        "Llama3-8B-Base",
         "Llama3-8B-Instruct",
         "DeepSeek-R1-Distill-Llama-8B",
     ],

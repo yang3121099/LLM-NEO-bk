@@ -185,6 +185,8 @@ if [[ "\$NUM_GPUS" -gt 1 ]]; then
     export NNODES=1
     export NPROC_PER_NODE=\$NUM_GPUS
     export MASTER_PORT=\$(( RANDOM % 10000 + 20000 ))
+    # Increase NCCL timeout to 2h — large datasets need 30min+ tokenization on rank 0
+    export NCCL_TIMEOUT=7200
     DS_ARG="--deepspeed \$WORKSPACE_DIR/examples/deepspeed/ds_z2_config.json"
 fi
 
@@ -217,6 +219,7 @@ llamafactory-cli train \\
   --flash_attn fa2 \\
   --overwrite_cache false \\
   --use_fast_tokenizer True \\
+  --preprocessing_num_workers 16 \\
   \$DS_ARG
 
 TRAIN

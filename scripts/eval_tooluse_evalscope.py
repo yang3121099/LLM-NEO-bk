@@ -2,25 +2,31 @@
 """
 EvalScope tool-use evaluation script (BFCL + ToolBench).
 
+Model list uses the SAME (abbr, path) tuple format as OpenCompass eval configs,
+so you can copy model entries directly between scripts.
+
 Prerequisites:
     pip install 'evalscope[all]' vllm
 
 Usage:
-    # Evaluate all models (starts vLLM server automatically):
+    # Evaluate all models:
     python3 scripts/eval_tooluse_evalscope.py
 
-    # Evaluate a single model against an already-running vLLM server:
+    # Evaluate a single model:
     python3 scripts/eval_tooluse_evalscope.py \
         --model-path meta-llama/Llama-3.1-8B-Instruct \
-        --model-name Llama-3.1-8B-Instruct \
+        --model-name Llama-3.1-8B-Instruct
+
+    # Use an existing vLLM server:
+    python3 scripts/eval_tooluse_evalscope.py \
+        --model-path meta-llama/Llama-3.1-8B-Instruct \
         --api-url http://localhost:8000/v1
 
-    # Override result date prefix:
-    RESULT_MMDD=0727 python3 scripts/eval_tooluse_evalscope.py
+    # List models only:
+    python3 scripts/eval_tooluse_evalscope.py --list
 """
 
 import argparse
-import json
 import os
 import signal
 import subprocess
@@ -28,50 +34,85 @@ import sys
 import time
 from pathlib import Path
 
-WORKSPACE_DIR = Path(__file__).resolve().parent.parent
+# ---------------------------------------------------------------------------
+# Paths (same layout as generate_dataset_scripts.sh)
+# ---------------------------------------------------------------------------
+_SCRIPT_DIR = Path(__file__).resolve().parent
+WORKSPACE_DIR = _SCRIPT_DIR.parent
 RESULTS_DIR = WORKSPACE_DIR / "results"
 EVALSCOPE_OUT = RESULTS_DIR / "evalscope"
 
-# Date prefix for result directories (from generate_dataset_scripts.sh)
-MMDD = os.environ.get("RESULT_MMDD", "0326")
+# ---------------------------------------------------------------------------
+# Auto-detect GPU count (same logic as OpenCompass eval configs)
+# ---------------------------------------------------------------------------
+_NUM_GPUS = 1
+try:
+    _NUM_GPUS = max(1, len(
+        subprocess.check_output(["nvidia-smi", "-L"], text=True).strip().splitlines()
+    ))
+except Exception:
+    _NUM_GPUS = 1
+
+# ---------------------------------------------------------------------------
+# Model list — SAME (abbr, path) format as OpenCompass eval configs
+#
+# Copy entries directly from eval_2k_*.py or eval_full_*.py.
+# For local merged models, use $RESULTS_DIR which is resolved automatically.
+# ---------------------------------------------------------------------------
+
+# ======= Original Instruct baselines =======
+HF_baselines = [
+    ('Llama-3.1-8B-Instruct-hf', 'meta-llama/Llama-3.1-8B-Instruct'),
+    ('Qwen3-8B-Instruct-hf', 'Qwen/Qwen3-8B'),
+]
+
+# ======= Trained models (B2I Shadow-FT, I2I baseline) =======
+# 2k experiments
+Baseline_settings = [
+    ('Llama-3.1-8B-dolci_mix-2k-B2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I'),
+    ('Llama-3.1-8B-dolci_mix-2k-I2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I'),
+    ('Llama-3.1-8B-nemotron_if-2k-B2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I'),
+    ('Llama-3.1-8B-nemotron_if-2k-I2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I'),
+    ('Qwen3-8B-dolci_mix-2k-B2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I'),
+    ('Qwen3-8B-dolci_mix-2k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I'),
+    ('Qwen3-8B-nemotron_if-2k-B2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I'),
+    ('Qwen3-8B-nemotron_if-2k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I'),
+    # Full-scale experiments (uncomment after training completes)
+    # ('Llama-3.1-8B-openr1-220k-B2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I'),
+    # ('Llama-3.1-8B-openr1-220k-I2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I'),
+    # ('Llama-3.1-8B-deepmath-309k-B2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-309k-lora-rank128-lr0.0002-deepmath/merged-B2I'),
+    # ('Llama-3.1-8B-deepmath-309k-I2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-309k-lora-rank128-lr0.0002-deepmath/merged-I2I'),
+    # ('Qwen3-8B-openr1-220k-B2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I'),
+    # ('Qwen3-8B-openr1-220k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I'),
+    # ('Qwen3-8B-deepmath-309k-B2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-309k-lora-rank128-lr0.0002-deepmath/merged-B2I'),
+    # ('Qwen3-8B-deepmath-309k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-309k-lora-rank128-lr0.0002-deepmath/merged-I2I'),
+]
 
 
-def get_model_list():
-    """Return list of (abbr, model_path) tuples."""
-    llama_base = "Llama-3.1-8B"
-    qwen_base = "Qwen3-8B-Base"
-    llama_rel = f"{MMDD}/result-{llama_base}-{MMDD}"
-    qwen_rel = f"{MMDD}/result-{qwen_base}-{MMDD}"
+def resolve_path(path_str):
+    """Resolve $RESULTS_DIR in path strings (same as OpenCompass configs)."""
+    return path_str.replace("$RESULTS_DIR", str(RESULTS_DIR))
 
-    def merged(rel, tag, k, suffix, merge):
-        return str(
-            RESULTS_DIR
-            / rel
-            / f"{tag}-{k}-lora-rank128-lr0.0002-{suffix}"
-            / f"merged-{merge}"
-        )
 
-    models = [
-        # HF baselines
-        ("Llama-3.1-8B-Instruct-hf", "meta-llama/Llama-3.1-8B-Instruct"),
-        ("Qwen3-8B-hf", "Qwen/Qwen3-8B"),
-    ]
-
-    # dolci_mix and nemotron_if, B2I and I2I, for both model families
-    for base_name, rel in [(llama_base, llama_rel), (qwen_base, qwen_rel)]:
-        for suffix in ["dolci_mix", "nemotron_if"]:
-            models.append(
-                (f"{base_name}-{suffix}-2k-B2I", merged(rel, "B", "2k", suffix, "B2I"))
-            )
-            models.append(
-                (f"{base_name}-{suffix}-2k-I2I", merged(rel, "I", "2k", suffix, "I2I"))
-            )
-
+def get_all_models():
+    """Return list of (abbr, resolved_path) tuples."""
+    models = []
+    for abbr, path in HF_baselines:
+        models.append((abbr, path))
+    for abbr, path in Baseline_settings:
+        models.append((abbr, resolve_path(path)))
     return models
 
 
-def start_vllm_server(model_path, port=8234, tp=1, gpu_util=0.9, max_len=16384):
+# ---------------------------------------------------------------------------
+# vLLM server management
+# ---------------------------------------------------------------------------
+
+def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=16384):
     """Start a vLLM OpenAI-compatible server, return (process, port)."""
+    if tp is None:
+        tp = _NUM_GPUS
+
     cmd = [
         sys.executable, "-m", "vllm.entrypoints.openai.api_server",
         "--model", model_path,
@@ -86,7 +127,6 @@ def start_vllm_server(model_path, port=8234, tp=1, gpu_util=0.9, max_len=16384):
     log_f = open(log_path, "w")
     proc = subprocess.Popen(cmd, stdout=log_f, stderr=subprocess.STDOUT)
 
-    # Wait for server to be ready
     import urllib.request
     max_wait = 300
     for elapsed in range(0, max_wait, 5):
@@ -115,9 +155,13 @@ def stop_vllm_server(proc):
             proc.wait()
 
 
+# ---------------------------------------------------------------------------
+# Evaluation runners
+# ---------------------------------------------------------------------------
+
 def run_bfcl_eval(model_name, api_url, out_dir):
     """Run BFCL evaluation via evalscope."""
-    print(f"  Running BFCL evaluation ...")
+    print("  Running BFCL evaluation ...")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -138,12 +182,10 @@ def run_bfcl_eval(model_name, api_url, out_dir):
     except ImportError:
         print("  evalscope not available, trying bfcl-eval CLI ...")
         subprocess.run(
-            [
-                "bfcl", "evaluate",
-                "--model", model_name,
-                "--api-base", api_url,
-                "--output-dir", str(out_dir),
-            ],
+            ["bfcl", "evaluate",
+             "--model", model_name,
+             "--api-base", api_url,
+             "--output-dir", str(out_dir)],
             check=False,
         )
     except Exception as e:
@@ -153,7 +195,7 @@ def run_bfcl_eval(model_name, api_url, out_dir):
 
 def run_toolbench_eval(model_name, api_url, out_dir):
     """Run ToolBench evaluation via evalscope."""
-    print(f"  Running ToolBench evaluation ...")
+    print("  Running ToolBench evaluation ...")
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -182,7 +224,6 @@ def evaluate_model(abbr, model_path, api_url=None, port=8234):
     """Evaluate a single model on BFCL + ToolBench."""
     out_dir = EVALSCOPE_OUT / abbr
 
-    # Check local path existence
     if model_path.startswith("/") and not Path(model_path).is_dir():
         print(f"  SKIP: {abbr} — path not found: {model_path}")
         return
@@ -190,21 +231,19 @@ def evaluate_model(abbr, model_path, api_url=None, port=8234):
     print(f"\n{'=' * 64}")
     print(f"  Model: {abbr}")
     print(f"  Path:  {model_path}")
+    print(f"  GPUs:  {_NUM_GPUS} (tp={_NUM_GPUS})")
     print(f"{'=' * 64}")
 
     server_proc = None
     try:
         if api_url is None:
-            # Start vLLM server
             server_proc, port = start_vllm_server(model_path, port=port)
             api_url_used = f"http://localhost:{port}/v1"
         else:
             api_url_used = api_url
 
-        # Run evaluations
         run_bfcl_eval(abbr, api_url_used, out_dir / "bfcl")
         run_toolbench_eval(abbr, api_url_used, out_dir / "toolbench")
-
     finally:
         if server_proc:
             print("  Stopping vLLM server ...")
@@ -226,22 +265,20 @@ def main():
     EVALSCOPE_OUT.mkdir(parents=True, exist_ok=True)
 
     if args.list:
-        print("Models to evaluate:")
-        for abbr, path in get_model_list():
+        print(f"Models to evaluate (GPUs={_NUM_GPUS}):")
+        for abbr, path in get_all_models():
             exists = "OK" if not path.startswith("/") or Path(path).is_dir() else "NOT FOUND"
             print(f"  [{exists}] {abbr}")
             print(f"         {path}")
         return
 
     if args.model_path:
-        # Single model mode
         name = args.model_name or Path(args.model_path).name
         evaluate_model(name, args.model_path, api_url=args.api_url, port=args.port)
     else:
-        # Batch mode: all models
-        models = get_model_list()
+        models = get_all_models()
         print(f"EvalScope Tool-Use Evaluation (BFCL + ToolBench)")
-        print(f"Models: {len(models)}")
+        print(f"Models: {len(models)}, GPUs: {_NUM_GPUS}")
         print(f"Output: {EVALSCOPE_OUT}/\n")
 
         for abbr, model_path in models:

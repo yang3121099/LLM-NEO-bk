@@ -2,18 +2,17 @@
 ###############################################################################
 # eval_tooluse_evalscope.sh — EvalScope tool-use evaluation (BFCL + ToolBench)
 #
+# Model list uses the SAME (abbr, path) format as OpenCompass eval configs.
+# Copy entries directly between eval_*.py and this script.
+#
 # Prerequisites:
-#   pip install 'evalscope[all]'        # or: pip install evalscope bfcl-eval
+#   pip install 'evalscope[all]'
 #   pip install vllm
 #
 # Usage:
 #   bash scripts/eval_tooluse_evalscope.sh
 #
-# Each model is served via vLLM (auto port) and evaluated on:
-#   - BFCL v3 (Berkeley Function Calling Leaderboard)
-#   - ToolBench (API-Bank subset via EvalScope)
-#
-# Results are saved to results/evalscope/<model_abbr>/
+# Results → results/evalscope/<model_abbr>/
 ###############################################################################
 set -euo pipefail
 
@@ -22,57 +21,63 @@ RESULTS_DIR="$WORKSPACE_DIR/results"
 EVALSCOPE_OUT="$RESULTS_DIR/evalscope"
 mkdir -p "$EVALSCOPE_OUT"
 
-# TP size (tensor parallel)
-TP=1
-# GPU memory utilization for vLLM
+# ---------------------------------------------------------------------------
+# Auto-detect GPU count (same as OpenCompass eval configs + training scripts)
+# ---------------------------------------------------------------------------
+NUM_GPUS=$(nvidia-smi -L 2>/dev/null | wc -l)
+NUM_GPUS=${NUM_GPUS:-1}
+[[ "$NUM_GPUS" -lt 1 ]] && NUM_GPUS=1
+echo "INFO  Detected ${NUM_GPUS} GPU(s), using tp=${NUM_GPUS} for vLLM"
+
+# vLLM settings
+TP=$NUM_GPUS
 GPU_UTIL=0.9
-# Max model length
 MAX_MODEL_LEN=16384
 
 ###############################################################################
-# Model list
-# Format: "abbr|model_path"
-#   - model_path can be a HuggingFace ID or a local path
-#   - For local merged models, use $RESULTS_DIR as prefix
+# Model list — SAME (abbr, path) format as OpenCompass eval configs
+#
+# Format: "abbr|path"
+# Copy (abbr, path) entries from eval_2k_*.py or eval_full_*.py and convert:
+#   ('Llama-3.1-8B-dolci_mix-2k-B2I','$RESULTS_DIR/...')
+#   →  "Llama-3.1-8B-dolci_mix-2k-B2I|$RESULTS_DIR/..."
 ###############################################################################
 
-# --- Resolve result paths dynamically ---
-# These paths follow the pattern from generate_dataset_scripts.sh:
-#   $RESULTS_DIR/<MMDD>/result-<model>-<MMDD>/<TAG>-2k-lora-rank128-lr0.0002-<suffix>/merged-<X2Y>
-# Adjust MMDD to match your actual training run date.
-MMDD="${RESULT_MMDD:-0326}"  # Override with: RESULT_MMDD=0727 bash scripts/eval_tooluse_evalscope.sh
-
-LLAMA_BASE="Llama-3.1-8B"
-QWEN_BASE="Qwen3-8B-Base"
-LLAMA_REL="${MMDD}/result-${LLAMA_BASE}-${MMDD}"
-QWEN_REL="${MMDD}/result-${QWEN_BASE}-${MMDD}"
-
-MODELS=(
-  # --- HF baselines (Instruct) ---
+# ======= Original Instruct baselines =======
+HF_BASELINES=(
   "Llama-3.1-8B-Instruct-hf|meta-llama/Llama-3.1-8B-Instruct"
-  "Qwen3-8B-hf|Qwen/Qwen3-8B"
-
-  # --- dolci_mix 2k: B2I & I2I ---
-  "${LLAMA_BASE}-dolci_mix-2k-B2I|${RESULTS_DIR}/${LLAMA_REL}/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I"
-  "${LLAMA_BASE}-dolci_mix-2k-I2I|${RESULTS_DIR}/${LLAMA_REL}/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I"
-  "${QWEN_BASE}-dolci_mix-2k-B2I|${RESULTS_DIR}/${QWEN_REL}/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I"
-  "${QWEN_BASE}-dolci_mix-2k-I2I|${RESULTS_DIR}/${QWEN_REL}/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I"
-
-  # --- nemotron_if 2k: B2I & I2I ---
-  "${LLAMA_BASE}-nemotron_if-2k-B2I|${RESULTS_DIR}/${LLAMA_REL}/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I"
-  "${LLAMA_BASE}-nemotron_if-2k-I2I|${RESULTS_DIR}/${LLAMA_REL}/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I"
-  "${QWEN_BASE}-nemotron_if-2k-B2I|${RESULTS_DIR}/${QWEN_REL}/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I"
-  "${QWEN_BASE}-nemotron_if-2k-I2I|${RESULTS_DIR}/${QWEN_REL}/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I"
+  "Qwen3-8B-Instruct-hf|Qwen/Qwen3-8B"
 )
 
+# ======= Trained models (B2I Shadow-FT, I2I baseline) =======
+# 2k experiments
+TRAINED_MODELS=(
+  "Llama-3.1-8B-dolci_mix-2k-B2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I"
+  "Llama-3.1-8B-dolci_mix-2k-I2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I"
+  "Llama-3.1-8B-nemotron_if-2k-B2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I"
+  "Llama-3.1-8B-nemotron_if-2k-I2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I"
+  "Qwen3-8B-dolci_mix-2k-B2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-dolci_mix/merged-B2I"
+  "Qwen3-8B-dolci_mix-2k-I2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I"
+  "Qwen3-8B-nemotron_if-2k-B2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I"
+  "Qwen3-8B-nemotron_if-2k-I2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I"
+  # Full-scale experiments (uncomment after training completes)
+  # "Llama-3.1-8B-openr1-220k-B2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I"
+  # "Llama-3.1-8B-openr1-220k-I2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I"
+  # "Qwen3-8B-openr1-220k-B2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I"
+  # "Qwen3-8B-openr1-220k-I2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I"
+)
+
+# Combine all models
+MODELS=("${HF_BASELINES[@]}" "${TRAINED_MODELS[@]}")
+
 ###############################################################################
-# Helper: start vLLM server, run eval, stop server
+# Helper functions
 ###############################################################################
-VLLM_PORT=8234  # Starting port; incremented if needed
+VLLM_PORT=8234
 
 find_free_port() {
   local port=$VLLM_PORT
-  while ss -tlnp | grep -q ":${port} "; do
+  while ss -tlnp 2>/dev/null | grep -q ":${port} "; do
     port=$((port + 1))
   done
   echo "$port"
@@ -96,12 +101,10 @@ run_eval_for_model() {
   local abbr="$1" model_path="$2"
   local port out_dir vllm_pid
 
-  # Check if model path exists (for local models)
-  if [[ "$model_path" != */* ]] || [[ "$model_path" == /* ]]; then
-    if [[ ! -d "$model_path" ]]; then
-      echo "  SKIP: $abbr — model path not found: $model_path"
-      return 0
-    fi
+  # Check local path existence
+  if [[ "$model_path" == /* ]] && [[ ! -d "$model_path" ]]; then
+    echo "  SKIP: $abbr — model path not found: $model_path"
+    return 0
   fi
 
   port=$(find_free_port)
@@ -112,7 +115,7 @@ run_eval_for_model() {
   echo "================================================================"
   echo "  Model: $abbr"
   echo "  Path:  $model_path"
-  echo "  Port:  $port"
+  echo "  Port:  $port  |  TP: $TP"
   echo "================================================================"
 
   # --- Start vLLM server ---
@@ -136,67 +139,36 @@ run_eval_for_model() {
   fi
 
   # --- Run BFCL evaluation ---
-  echo "  Running BFCL v3 evaluation ..."
-  python3 -m evalscope.run \
-    --model "$abbr" \
-    --api-url "http://localhost:${port}/v1" \
-    --eval-type service \
-    --eval-backend toolbench \
-    --dataset bfcl \
-    --work-dir "$out_dir/bfcl" \
-    > "$out_dir/bfcl_eval.log" 2>&1 || {
-      echo "  WARNING: BFCL eval failed, trying alternative config ..."
-      # Alternative: use evalscope's TaskConfig directly
-      python3 << PYEOF
-import json, os
-try:
-    from evalscope.run import run_task
-    from evalscope.config import TaskConfig
-
-    task_cfg = TaskConfig(
-        model="$abbr",
-        api_url="http://localhost:${port}/v1",
-        eval_type="service",
-        datasets=["bfcl"],
-        work_dir="$out_dir/bfcl",
-    )
-    run_task(task_cfg)
-except Exception as e:
-    print(f"  BFCL eval error: {e}")
-    # Fallback: direct bfcl-eval CLI
-    os.system(
-        f'bfcl evaluate '
-        f'--model "$abbr" '
-        f'--api-base "http://localhost:{$port}/v1" '
-        f'--output-dir "$out_dir/bfcl" '
-        f'2>&1 | tee "$out_dir/bfcl_direct.log"'
-    )
-PYEOF
-  }
+  echo "  Running BFCL evaluation ..."
+  python3 -c "
+from evalscope.run import run_task
+from evalscope.config import TaskConfig
+task_cfg = TaskConfig(
+    model='$abbr',
+    api_url='http://localhost:${port}/v1',
+    eval_type='service',
+    datasets=['bfcl'],
+    work_dir='$out_dir/bfcl',
+)
+results = run_task(task_cfg)
+print(f'  BFCL results: {results}')
+" 2>&1 | tee "$out_dir/bfcl_eval.log" || echo "  WARNING: BFCL eval failed"
 
   # --- Run ToolBench evaluation ---
   echo "  Running ToolBench evaluation ..."
-  python3 << PYEOF
-import json, os
-try:
-    from evalscope.run import run_task
-    from evalscope.config import TaskConfig
-
-    task_cfg = TaskConfig(
-        model="$abbr",
-        api_url="http://localhost:${port}/v1",
-        eval_type="service",
-        datasets=["toolbench"],
-        work_dir="$out_dir/toolbench",
-    )
-    run_task(task_cfg)
-    print("  ToolBench eval completed.")
-except ImportError:
-    print("  WARNING: evalscope not installed or TaskConfig API changed.")
-    print("  Try: pip install 'evalscope[all]'")
-except Exception as e:
-    print(f"  ToolBench eval error: {e}")
-PYEOF
+  python3 -c "
+from evalscope.run import run_task
+from evalscope.config import TaskConfig
+task_cfg = TaskConfig(
+    model='$abbr',
+    api_url='http://localhost:${port}/v1',
+    eval_type='service',
+    datasets=['toolbench'],
+    work_dir='$out_dir/toolbench',
+)
+results = run_task(task_cfg)
+print(f'  ToolBench results: {results}')
+" 2>&1 | tee "$out_dir/toolbench_eval.log" || echo "  WARNING: ToolBench eval failed"
 
   # --- Stop vLLM server ---
   echo "  Stopping vLLM server (PID=$vllm_pid) ..."
@@ -204,8 +176,7 @@ PYEOF
   wait "$vllm_pid" 2>/dev/null || true
   sleep 2
 
-  echo "  Done: $abbr"
-  echo "  Results: $out_dir/"
+  echo "  Done: $abbr → $out_dir/"
 }
 
 ###############################################################################
@@ -214,6 +185,7 @@ PYEOF
 echo "=========================================="
 echo "  EvalScope Tool-Use Evaluation"
 echo "  BFCL + ToolBench"
+echo "  GPUs: $NUM_GPUS (tp=$TP)"
 echo "=========================================="
 echo ""
 echo "Models to evaluate: ${#MODELS[@]}"
@@ -221,17 +193,14 @@ echo "Output: $EVALSCOPE_OUT/"
 echo ""
 
 # Check dependencies
-if ! python3 -c "import evalscope" 2>/dev/null; then
-  echo "WARNING: evalscope not installed. Install with:"
-  echo "  pip install 'evalscope[all]'"
+python3 -c "import evalscope" 2>/dev/null || {
+  echo "WARNING: evalscope not installed. Run: pip install 'evalscope[all]'"
   echo ""
-fi
-
-if ! python3 -c "import vllm" 2>/dev/null; then
-  echo "WARNING: vllm not installed. Install with:"
-  echo "  pip install vllm"
+}
+python3 -c "import vllm" 2>/dev/null || {
+  echo "WARNING: vllm not installed. Run: pip install vllm"
   echo ""
-fi
+}
 
 for ENTRY in "${MODELS[@]}"; do
   IFS='|' read -r ABBR MODEL_PATH <<< "$ENTRY"
@@ -242,7 +211,7 @@ echo ""
 echo "=========================================="
 echo "  All evaluations complete!"
 echo "=========================================="
-echo "Results saved to: $EVALSCOPE_OUT/"
+echo "Results: $EVALSCOPE_OUT/"
 echo ""
 echo "To view results:"
 echo "  ls -la $EVALSCOPE_OUT/*/"

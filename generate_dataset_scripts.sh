@@ -479,6 +479,8 @@ if [[ ${#ALL_EVAL_FULL_ENTRIES[@]} -gt 0 ]]; then
 fi
 echo ""
 echo "=== Prerequisites ==="
+echo "  # Sync local opencompass fixes to site-packages (MUST run before eval):"
+echo "  bash src/copy_files.sh \$(python3 -c 'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
 echo "  # Download eval data (SVAMP, NLTK punkt_tab):"
 echo "  bash scripts/download_eval_data.sh"
 echo "  # Prepare DeepMath-103K for SFT (expands 3 R1 solutions per question):"

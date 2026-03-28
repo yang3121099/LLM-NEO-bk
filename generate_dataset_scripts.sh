@@ -36,7 +36,7 @@ LR_SCHEDULER="cosine"
 WARMUP_RATIO=0.1
 BF16=true
 LOGGING_STEPS=1
-CUTOFF_LEN=16384
+CUTOFF_LEN=4096
 VAL_SIZE=0.01
 
 # --- Helpers -----------------------------------------------------------------

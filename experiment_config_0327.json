@@ -1,0 +1,34 @@
+{
+  "experiment": "Cross-Delta Transfer (0327)",
+  "sources": ["Base", "SFT", "DPO", "RLVR"],
+  "source_adapter_names": ["Base3.1", "Tulu3-SFT", "Tulu3-DPO", "Tulu3-RLVR"],
+  "source_hf_paths": [
+    "meta-llama/Llama-3.1-8B",
+    "allenai/Llama-3.1-Tulu-3-8B-SFT",
+    "allenai/Llama-3.1-Tulu-3-8B-DPO",
+    "allenai/Llama-3.1-Tulu-3-8B"
+  ],
+  "targets": ["Base", "SFT", "DPO", "RLVR", "Instruct", "Tulu3.1", "Llama3-Inst", "R1-Distill"],
+  "target_adapter_names": ["Base3.1", "Tulu3-SFT", "Tulu3-DPO", "Tulu3-RLVR", "Instruct3.1", "Tulu3.1", "Instruct3", "R1-Distill"],
+  "target_hf_paths": [
+    "meta-llama/Llama-3.1-8B",
+    "allenai/Llama-3.1-Tulu-3-8B-SFT",
+    "allenai/Llama-3.1-Tulu-3-8B-DPO",
+    "allenai/Llama-3.1-Tulu-3-8B",
+    "meta-llama/Llama-3.1-8B-Instruct",
+    "allenai/Llama-3.1-Tulu-3.1-8B",
+    "meta-llama/Meta-Llama-3-8B-Instruct",
+    "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
+  ],
+  "adapter_root": "results/0327/result-weight-similarity-0327",
+  "adapter_suffix": "2k-lora-rank128-lr0.0002-shadow2k",
+  "merge_tag_pattern": "{src}2{tgt}",
+  "baseline_tag_pattern": "DirectFT-{tgt}",
+  "training": {
+    "dataset": "Shadow_2k",
+    "max_samples": 2000,
+    "lora_rank": 128,
+    "learning_rate": "2e-4",
+    "epochs": 1
+  }
+}

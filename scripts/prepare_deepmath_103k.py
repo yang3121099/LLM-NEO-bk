@@ -6,8 +6,11 @@ Each sample has 3 R1 solutions (`r1_solution_1/2/3`). This script expands
 them into separate training examples (question → r1_solution), tripling
 the dataset to ~309K examples in sharegpt format.
 
+For the full dataset, output is split into 4 shards to avoid PyArrow's
+2GB offset limit when loading large JSON files.
+
 Usage:
-    # Full dataset (~309K examples)
+    # Full dataset (~309K examples, 4 shards)
     python3 scripts/prepare_deepmath_103k.py
 
     # 2K demo (for quick validation on new machines)
@@ -15,19 +18,14 @@ Usage:
 
     # Custom size
     python3 scripts/prepare_deepmath_103k.py --max-questions 5000
-
-Output format (sharegpt):
-    [
-      {"conversations": [
-         {"from": "human", "value": "<question>"},
-         {"from": "gpt",   "value": "<r1_solution>"}
-      ]},
-      ...
-    ]
 """
 import argparse
 import json
+import math
 from datasets import load_dataset
+
+
+SHARD_SIZE = 80000  # ~80K examples per shard, well under 2GB
 
 
 def main():
@@ -76,9 +74,26 @@ def main():
             })
 
     log(f"  Expanded to {len(records)} training examples")
-    with open(args.output, "w", encoding="utf-8") as f:
-        json.dump(records, f, ensure_ascii=False, indent=1)
-    log(f"  Saved to {args.output}")
+
+    # For small datasets (demo) or when output is explicitly set, write single file
+    if args.demo or len(records) <= SHARD_SIZE:
+        with open(args.output, "w", encoding="utf-8") as f:
+            json.dump(records, f, ensure_ascii=False, indent=1)
+        log(f"  Saved to {args.output}")
+    else:
+        # Split into shards to avoid PyArrow 2GB offset overflow
+        n_shards = math.ceil(len(records) / SHARD_SIZE)
+        base = args.output.replace(".json", "")
+        shard_files = []
+        for i in range(n_shards):
+            start = i * SHARD_SIZE
+            end = min((i + 1) * SHARD_SIZE, len(records))
+            shard_path = f"{base}_shard{i}.json"
+            with open(shard_path, "w", encoding="utf-8") as f:
+                json.dump(records[start:end], f, ensure_ascii=False, indent=1)
+            shard_files.append(shard_path)
+            log(f"  Shard {i}: {end - start} examples → {shard_path}")
+        log(f"  Total: {len(records)} examples in {n_shards} shards")
 
 
 if __name__ == "__main__":

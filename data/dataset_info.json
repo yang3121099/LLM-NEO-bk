@@ -218,7 +218,12 @@
     }
   },
   "deepmath_103k": {
-    "file_name": "deepmath_103k_sft.json",
+    "file_name": [
+      "deepmath_103k_sft_shard0.json",
+      "deepmath_103k_sft_shard1.json",
+      "deepmath_103k_sft_shard2.json",
+      "deepmath_103k_sft_shard3.json"
+    ],
     "formatting": "sharegpt",
     "columns": {
       "messages": "conversations"

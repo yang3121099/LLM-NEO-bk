@@ -217,23 +217,29 @@
       "response": "solution"
     }
   },
-  "deepmath_103k": {
-    "file_name": [
-      "deepmath_103k_sft_shard0.json",
-      "deepmath_103k_sft_shard1.json",
-      "deepmath_103k_sft_shard2.json",
-      "deepmath_103k_sft_shard3.json"
-    ],
+  "deepmath_103k_s0": {
+    "file_name": "deepmath_103k_sft_shard0.json",
     "formatting": "sharegpt",
-    "columns": {
-      "messages": "conversations"
-    },
-    "tags": {
-      "role_tag": "from",
-      "content_tag": "value",
-      "user_tag": "human",
-      "assistant_tag": "gpt"
-    }
+    "columns": { "messages": "conversations" },
+    "tags": { "role_tag": "from", "content_tag": "value", "user_tag": "human", "assistant_tag": "gpt" }
+  },
+  "deepmath_103k_s1": {
+    "file_name": "deepmath_103k_sft_shard1.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "conversations" },
+    "tags": { "role_tag": "from", "content_tag": "value", "user_tag": "human", "assistant_tag": "gpt" }
+  },
+  "deepmath_103k_s2": {
+    "file_name": "deepmath_103k_sft_shard2.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "conversations" },
+    "tags": { "role_tag": "from", "content_tag": "value", "user_tag": "human", "assistant_tag": "gpt" }
+  },
+  "deepmath_103k_s3": {
+    "file_name": "deepmath_103k_sft_shard3.json",
+    "formatting": "sharegpt",
+    "columns": { "messages": "conversations" },
+    "tags": { "role_tag": "from", "content_tag": "value", "user_tag": "human", "assistant_tag": "gpt" }
   },
   "deepmath_2k_demo": {
     "file_name": "deepmath_2k_demo.json",

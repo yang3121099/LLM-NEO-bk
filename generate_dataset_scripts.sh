@@ -61,7 +61,7 @@ EXPERIMENTS=(
   "deepmath_2k_demo|deepmath_demo|2000|1000"
   # --- Full-scale experiments ---
   "openr1_math_220k|openr1|220000|100"
-  "deepmath_103k|deepmath|309000|100"
+  "deepmath_103k_s0,deepmath_103k_s1,deepmath_103k_s2,deepmath_103k_s3|deepmath|309000|100"
 )
 
 # --- Resolve model pairs -----------------------------------------------------

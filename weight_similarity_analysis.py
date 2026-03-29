@@ -33,14 +33,21 @@ def compute_relative_gap_ratio(w_base: torch.Tensor, w_instruct: torch.Tensor, e
     """
     Compute the relative gap ratio σ between two weight tensors.
 
-    σ = mean( |W_B - W_I| / (|W_B| + |W_I| + ε) )
+    Official formula (Shadow-FT, arXiv: 2505.12716):
+        σ = sum(|W_A - W_B|) / (sum(|W_A|) + sum(|W_B|))
+
+    This is a global sum-ratio (not element-wise mean), so larger weights
+    contribute more to the final σ value.
 
     Returns a float in [0, 1].
     """
-    diff = torch.abs(w_base.float() - w_instruct.float())
-    denom = torch.abs(w_base.float()) + torch.abs(w_instruct.float()) + eps
-    sigma = (diff / denom).mean().item()
-    return sigma
+    a = w_base.float()
+    b = w_instruct.float()
+    diff = torch.abs(a - b).sum().item()
+    total = torch.abs(a).sum().item() + torch.abs(b).sum().item()
+    if total == 0:
+        return 0.0
+    return diff / total
 
 
 def load_model_state_dict(model_path: str) -> dict:
@@ -168,13 +175,21 @@ def analyze_weight_similarity(base_path: str, instruct_path: str, output_dir: st
         print(f"Warning: {len(instruct_only)} keys only in Instruct model")
     print(f"Common parameters: {len(common_keys)}\n")
 
-    # Compute per-parameter σ
+    # Compute per-parameter σ (only model.layers.* keys, matching official script)
+    import re
+    layer_pattern = re.compile(r"model\.layers\.\d+\.")
+
     print("Computing relative gap ratio σ for each parameter...")
+    print("  (only model.layers.* keys, matching official sigma_v2.py)")
     results = []
     layer_results = defaultdict(list)  # layer_idx -> list of (name, sigma)
     category_results = defaultdict(list)  # category -> list of sigma
 
     for name in common_keys:
+        # Official: only process model.layers.* keys
+        if not layer_pattern.search(name):
+            continue
+
         w_base = base_sd[name]
         w_inst = instruct_sd[name]
 
@@ -198,7 +213,7 @@ def analyze_weight_similarity(base_path: str, instruct_path: str, output_dir: st
         layer_results[layer_idx].append((name, sigma))
         category_results[category].append(sigma)
 
-    # Overall statistics
+    # Overall statistics — simple mean across all per-key σ (matching official)
     all_sigmas = [r["sigma"] for r in results]
     overall_sigma = np.mean(all_sigmas)
     overall_sigma_std = np.std(all_sigmas)

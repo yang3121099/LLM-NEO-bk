@@ -76,6 +76,11 @@ def compute_pairwise_sigma(sd_a: dict, sd_b: dict, per_component: bool = False):
     """
     Compute the overall relative gap ratio σ between two state dicts.
 
+    Matches the official Shadow-FT implementation (sigma_v2.py):
+      - Only compare model.layers.* keys (skip embed_tokens, lm_head, norms outside layers)
+      - Per-key σ = sum(|A-B|) / (sum(|A|) + sum(|B|))
+      - Overall σ = simple average across all per-key σ values
+
     Args:
         sd_a, sd_b: model state dicts
         per_component: if True, also return per-component breakdown
@@ -84,65 +89,66 @@ def compute_pairwise_sigma(sd_a: dict, sd_b: dict, per_component: bool = False):
         overall_sigma: float
         component_sigmas: dict (only if per_component=True)
     """
+    import re
+    layer_pattern = re.compile(r"model\.layers\.\d+\.")
+
     common_keys = sorted(set(sd_a.keys()) & set(sd_b.keys()))
 
     all_sigmas = []
-    all_numels = []
     component_data = {}
 
     for name in common_keys:
+        # Official: only model.layers.* keys
+        if not layer_pattern.search(name):
+            continue
+
         wa = sd_a[name]
         wb = sd_b[name]
         if wa.shape != wb.shape:
             continue
 
         sigma = compute_relative_gap_ratio(wa, wb)
-        numel = wa.numel()
         all_sigmas.append(sigma)
-        all_numels.append(numel)
 
         if per_component:
             cat = categorize_param(name)
             if cat not in component_data:
                 component_data[cat] = []
-            component_data[cat].append((sigma, numel))
+            component_data[cat].append(sigma)
 
-    # Weighted mean by number of elements
-    total_numel = sum(all_numels)
-    overall_sigma = sum(s * n for s, n in zip(all_sigmas, all_numels)) / total_numel
+    # Simple average across all per-key σ (matching official script)
+    overall_sigma = float(np.mean(all_sigmas)) if all_sigmas else 0.0
 
     if per_component:
         component_sigmas = {}
-        for cat, items in component_data.items():
-            cat_total = sum(n for _, n in items)
-            component_sigmas[cat] = sum(s * n for s, n in items) / cat_total
+        for cat, sigmas in component_data.items():
+            component_sigmas[cat] = float(np.mean(sigmas))
         return overall_sigma, component_sigmas
 
     return overall_sigma
 
 
 def compute_pairwise_per_layer(sd_a: dict, sd_b: dict):
-    """Compute per-layer σ between two state dicts."""
+    """Compute per-layer σ between two state dicts (official formula)."""
     common_keys = sorted(set(sd_a.keys()) & set(sd_b.keys()))
     layer_data = {}
 
     for name in common_keys:
-        wa, wb = sd_a[name], sd_b[name]
-        if wa.shape != wb.shape:
-            continue
         layer_idx = extract_layer_idx(name)
         if layer_idx < 0:
             continue
+        wa, wb = sd_a[name], sd_b[name]
+        if wa.shape != wb.shape:
+            continue
         sigma = compute_relative_gap_ratio(wa, wb)
-        numel = wa.numel()
         if layer_idx not in layer_data:
             layer_data[layer_idx] = []
-        layer_data[layer_idx].append((sigma, numel))
+        layer_data[layer_idx].append(sigma)
 
+    # Simple average per layer (matching official)
     layer_sigmas = {}
-    for layer_idx, items in sorted(layer_data.items()):
-        total = sum(n for _, n in items)
-        layer_sigmas[layer_idx] = sum(s * n for s, n in items) / total
+    for layer_idx, sigmas in sorted(layer_data.items()):
+        layer_sigmas[layer_idx] = float(np.mean(sigmas))
 
     return layer_sigmas
 

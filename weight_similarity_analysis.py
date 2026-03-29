@@ -45,31 +45,49 @@ def compute_relative_gap_ratio(w_base: torch.Tensor, w_instruct: torch.Tensor, e
 
 def load_model_state_dict(model_path: str) -> dict:
     """
-    Load model weights from a HuggingFace model path.
-    Supports both safetensors and pytorch bin formats.
+    Load model weights from a local directory or HuggingFace Hub ID.
+    Supports safetensors, pytorch bin, and HF Hub auto-download.
     """
     from glob import glob
 
-    safetensor_files = sorted(glob(os.path.join(model_path, "*.safetensors")))
-    if safetensor_files:
-        state_dict = {}
-        for sf_file in safetensor_files:
-            with safe_open(sf_file, framework="pt", device="cpu") as f:
-                for key in f.keys():
-                    state_dict[key] = f.get_tensor(key)
-        return state_dict
+    # Try local path first
+    if os.path.isdir(model_path):
+        safetensor_files = sorted(glob(os.path.join(model_path, "*.safetensors")))
+        if safetensor_files:
+            state_dict = {}
+            for sf_file in safetensor_files:
+                with safe_open(sf_file, framework="pt", device="cpu") as f:
+                    for key in f.keys():
+                        state_dict[key] = f.get_tensor(key)
+            return state_dict
 
-    bin_files = sorted(glob(os.path.join(model_path, "*.bin")))
-    if bin_files:
-        state_dict = {}
-        for bin_file in bin_files:
-            sd = torch.load(bin_file, map_location="cpu", weights_only=True)
-            state_dict.update(sd)
-        return state_dict
+        bin_files = sorted(glob(os.path.join(model_path, "*.bin")))
+        if bin_files:
+            state_dict = {}
+            for bin_file in bin_files:
+                sd = torch.load(bin_file, map_location="cpu", weights_only=True)
+                state_dict.update(sd)
+            return state_dict
+
+    # Try HuggingFace Hub (model_path looks like "org/model-name")
+    if "/" in model_path and not os.path.isdir(model_path):
+        try:
+            from huggingface_hub import snapshot_download
+            print(f"  Downloading from HuggingFace Hub: {model_path}")
+            local_dir = snapshot_download(
+                model_path,
+                allow_patterns=["*.safetensors", "*.bin", "*.json"],
+                ignore_patterns=["*.gguf", "*.ot", "original/**"],
+            )
+            return load_model_state_dict(local_dir)
+        except Exception as e:
+            raise FileNotFoundError(
+                f"Could not load from HuggingFace Hub '{model_path}': {e}"
+            )
 
     raise FileNotFoundError(
         f"No safetensors or pytorch bin files found in {model_path}. "
-        "Please provide a valid HuggingFace model directory."
+        "Please provide a valid local directory or HuggingFace Hub ID."
     )
 
 

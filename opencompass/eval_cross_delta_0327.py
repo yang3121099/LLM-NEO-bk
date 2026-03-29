@@ -2,12 +2,13 @@
 # Usage: cd opencompass && python3 ./run.py ./eval_cross_delta_0327.py
 
 import os as _os
-from mmengine.config import read_base
 
 _SCRIPT_DIR = _os.path.dirname(_os.path.abspath(__file__))
 _RESULTS_DIR = _os.path.join(_os.path.dirname(_SCRIPT_DIR), 'results')
 _ROOT = _os.path.join(_RESULTS_DIR, '0327', 'result-weight-similarity-0327')
 _S = '2k-lora-rank128-lr0.0002-shadow2k'
+
+from mmengine.config import read_base
 
 with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
@@ -21,114 +22,122 @@ with read_base():
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
     from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
 
+    ######################### General benchmarks #########################
+    from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
+    from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
+    from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
+
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
-from opencompass.models import TurboMindModelwithChatTemplate
+from opencompass.models import TurboMindModel, TurboMindModelwithChatTemplate
 
 work_dir = 'outputs/cross-delta-0327/'
 
 ###############################################################################
-# 1. Original target models (no training)
+# Adapter path shortcuts
 ###############################################################################
+_BASE_A   = _ROOT + '/Base3.1-' + _S
+_SFT_A    = _ROOT + '/Tulu3-SFT-' + _S
+_DPO_A    = _ROOT + '/Tulu3-DPO-' + _S
+_RLVR_A   = _ROOT + '/Tulu3-RLVR-' + _S
+_INST_A   = _ROOT + '/Instruct3.1-' + _S
+_T31_A    = _ROOT + '/Tulu3.1-' + _S
+_INST3_A  = _ROOT + '/Instruct3-' + _S
+_R1D_A    = _ROOT + '/R1-Distill-' + _S
+
+###############################################################################
+# Model entries: (abbr, path, is_base)
+#   is_base=True  → TurboMindModel (no chat template)
+#   is_base=False → TurboMindModelwithChatTemplate
+###############################################################################
+
+# --- 1. Original target models (no training) ---
 original_targets = [
-    ('Base-orig',       'meta-llama/Llama-3.1-8B'),
-    ('SFT-orig',        'allenai/Llama-3.1-Tulu-3-8B-SFT'),
-    ('DPO-orig',        'allenai/Llama-3.1-Tulu-3-8B-DPO'),
-    ('RLVR-orig',       'allenai/Llama-3.1-Tulu-3-8B'),
-    ('Instruct-orig',   'meta-llama/Llama-3.1-8B-Instruct'),
-    ('Tulu3.1-orig',    'allenai/Llama-3.1-Tulu-3.1-8B'),
-    # ('Llama3-Inst-orig','meta-llama/Meta-Llama-3-8B-Instruct'),  # uncomment if available
-    # ('R1-Distill-orig', 'deepseek-ai/DeepSeek-R1-Distill-Llama-8B'),
+    # (abbr, path, is_base)
+    ('Base-orig',        'meta-llama/Llama-3.1-8B',                      True),
+    ('SFT-orig',         'allenai/Llama-3.1-Tulu-3-8B-SFT',             False),
+    ('DPO-orig',         'allenai/Llama-3.1-Tulu-3-8B-DPO',             False),
+    ('RLVR-orig',        'allenai/Llama-3.1-Tulu-3-8B',                 False),
+    ('Instruct-orig',    'meta-llama/Llama-3.1-8B-Instruct',            False),
+    ('Tulu3.1-orig',     'allenai/Llama-3.1-Tulu-3.1-8B',              False),
+    ('Llama3-Inst-orig', 'meta-llama/Meta-Llama-3-8B-Instruct',        False),
+    ('R1-Distill-orig',  'deepseek-ai/DeepSeek-R1-Distill-Llama-8B',   False),
 ]
 
-###############################################################################
-# 2. Direct-FT baselines (target trained on itself → merged back)
-###############################################################################
+# --- 2. Direct-FT baselines (self-merge) ---
 direct_ft_baselines = [
-    ('DirectFT-Base',       _ROOT + '/Base3.1-' + _S + '/merged-DirectFT-Base'),
-    ('DirectFT-SFT',        _ROOT + '/Tulu3-SFT-' + _S + '/merged-DirectFT-SFT'),
-    ('DirectFT-DPO',        _ROOT + '/Tulu3-DPO-' + _S + '/merged-DirectFT-DPO'),
-    ('DirectFT-RLVR',       _ROOT + '/Tulu3-RLVR-' + _S + '/merged-DirectFT-RLVR'),
-    ('DirectFT-Instruct',   _ROOT + '/Instruct3.1-' + _S + '/merged-DirectFT-Instruct'),
-    ('DirectFT-Tulu3.1',    _ROOT + '/Tulu3.1-' + _S + '/merged-DirectFT-Tulu3.1'),
-    # ('DirectFT-Llama3-Inst', _ROOT + '/Instruct3-' + _S + '/merged-DirectFT-Llama3-Inst'),
-    # ('DirectFT-R1-Distill',  _ROOT + '/R1-Distill-' + _S + '/merged-DirectFT-R1-Distill'),
+    ('DirectFT-Base',       _BASE_A  + '/merged-DirectFT-Base',       True),
+    ('DirectFT-SFT',        _SFT_A   + '/merged-DirectFT-SFT',       False),
+    ('DirectFT-DPO',        _DPO_A   + '/merged-DirectFT-DPO',       False),
+    ('DirectFT-RLVR',       _RLVR_A  + '/merged-DirectFT-RLVR',      False),
+    ('DirectFT-Instruct',   _INST_A  + '/merged-DirectFT-Instruct',   False),
+    ('DirectFT-Tulu3.1',    _T31_A   + '/merged-DirectFT-Tulu3.1',   False),
+    ('DirectFT-Llama3-Inst', _INST3_A + '/merged-DirectFT-Llama3-Inst', False),
+    ('DirectFT-R1-Distill',  _R1D_A  + '/merged-DirectFT-R1-Distill', False),
 ]
 
-###############################################################################
-# 3. Cross-delta merged models (4 sources × 8 targets)
-#    Source adapter dir → merged-{Src}2{Tgt}
-###############################################################################
-# Source: Base3.1 (adapter trained on Base)
-_BASE_A = _ROOT + '/Base3.1-' + _S
-# Source: Tulu3-SFT (adapter trained on SFT)
-_SFT_A = _ROOT + '/Tulu3-SFT-' + _S
-# Source: Tulu3-DPO (adapter trained on DPO)
-_DPO_A = _ROOT + '/Tulu3-DPO-' + _S
-# Source: Tulu3-RLVR (adapter trained on RLVR)
-_RLVR_A = _ROOT + '/Tulu3-RLVR-' + _S
-
+# --- 3. Cross-delta merged models (4 sources × 8 targets = 32) ---
 cross_delta_models = [
-    # === Base delta → 8 targets ===
-    ('Base2Base',       _BASE_A + '/merged-Base2Base'),
-    ('Base2SFT',        _BASE_A + '/merged-Base2SFT'),
-    ('Base2DPO',        _BASE_A + '/merged-Base2DPO'),
-    ('Base2RLVR',       _BASE_A + '/merged-Base2RLVR'),
-    ('Base2Instruct',   _BASE_A + '/merged-Base2Instruct'),
-    ('Base2Tulu3.1',    _BASE_A + '/merged-Base2Tulu3.1'),
-    ('Base2Llama3-Inst', _BASE_A + '/merged-Base2Llama3-Inst'),
-    ('Base2R1-Distill', _BASE_A + '/merged-Base2R1-Distill'),
+    # Base delta → 8 targets (Base is a base model, everything else is chat)
+    ('Base2Base',        _BASE_A + '/merged-Base2Base',        True),
+    ('Base2SFT',         _BASE_A + '/merged-Base2SFT',         False),
+    ('Base2DPO',         _BASE_A + '/merged-Base2DPO',         False),
+    ('Base2RLVR',        _BASE_A + '/merged-Base2RLVR',        False),
+    ('Base2Instruct',    _BASE_A + '/merged-Base2Instruct',    False),
+    ('Base2Tulu3.1',     _BASE_A + '/merged-Base2Tulu3.1',    False),
+    ('Base2Llama3-Inst', _BASE_A + '/merged-Base2Llama3-Inst', False),
+    ('Base2R1-Distill',  _BASE_A + '/merged-Base2R1-Distill', False),
 
-    # === SFT delta → 8 targets ===
-    ('SFT2Base',       _SFT_A + '/merged-SFT2Base'),
-    ('SFT2SFT',        _SFT_A + '/merged-SFT2SFT'),
-    ('SFT2DPO',        _SFT_A + '/merged-SFT2DPO'),
-    ('SFT2RLVR',       _SFT_A + '/merged-SFT2RLVR'),
-    ('SFT2Instruct',   _SFT_A + '/merged-SFT2Instruct'),
-    ('SFT2Tulu3.1',    _SFT_A + '/merged-SFT2Tulu3.1'),
-    ('SFT2Llama3-Inst', _SFT_A + '/merged-SFT2Llama3-Inst'),
-    ('SFT2R1-Distill', _SFT_A + '/merged-SFT2R1-Distill'),
+    # SFT delta → 8 targets
+    ('SFT2Base',        _SFT_A + '/merged-SFT2Base',        True),
+    ('SFT2SFT',         _SFT_A + '/merged-SFT2SFT',         False),
+    ('SFT2DPO',         _SFT_A + '/merged-SFT2DPO',         False),
+    ('SFT2RLVR',        _SFT_A + '/merged-SFT2RLVR',        False),
+    ('SFT2Instruct',    _SFT_A + '/merged-SFT2Instruct',    False),
+    ('SFT2Tulu3.1',     _SFT_A + '/merged-SFT2Tulu3.1',    False),
+    ('SFT2Llama3-Inst', _SFT_A + '/merged-SFT2Llama3-Inst', False),
+    ('SFT2R1-Distill',  _SFT_A + '/merged-SFT2R1-Distill', False),
 
-    # === DPO delta → 8 targets ===
-    ('DPO2Base',       _DPO_A + '/merged-DPO2Base'),
-    ('DPO2SFT',        _DPO_A + '/merged-DPO2SFT'),
-    ('DPO2DPO',        _DPO_A + '/merged-DPO2DPO'),
-    ('DPO2RLVR',       _DPO_A + '/merged-DPO2RLVR'),
-    ('DPO2Instruct',   _DPO_A + '/merged-DPO2Instruct'),
-    ('DPO2Tulu3.1',    _DPO_A + '/merged-DPO2Tulu3.1'),
-    ('DPO2Llama3-Inst', _DPO_A + '/merged-DPO2Llama3-Inst'),
-    ('DPO2R1-Distill', _DPO_A + '/merged-DPO2R1-Distill'),
+    # DPO delta → 8 targets
+    ('DPO2Base',        _DPO_A + '/merged-DPO2Base',        True),
+    ('DPO2SFT',         _DPO_A + '/merged-DPO2SFT',         False),
+    ('DPO2DPO',         _DPO_A + '/merged-DPO2DPO',         False),
+    ('DPO2RLVR',        _DPO_A + '/merged-DPO2RLVR',        False),
+    ('DPO2Instruct',    _DPO_A + '/merged-DPO2Instruct',    False),
+    ('DPO2Tulu3.1',     _DPO_A + '/merged-DPO2Tulu3.1',    False),
+    ('DPO2Llama3-Inst', _DPO_A + '/merged-DPO2Llama3-Inst', False),
+    ('DPO2R1-Distill',  _DPO_A + '/merged-DPO2R1-Distill', False),
 
-    # === RLVR delta → 8 targets ===
-    ('RLVR2Base',       _RLVR_A + '/merged-RLVR2Base'),
-    ('RLVR2SFT',        _RLVR_A + '/merged-RLVR2SFT'),
-    ('RLVR2DPO',        _RLVR_A + '/merged-RLVR2DPO'),
-    ('RLVR2RLVR',       _RLVR_A + '/merged-RLVR2RLVR'),
-    ('RLVR2Instruct',   _RLVR_A + '/merged-RLVR2Instruct'),
-    ('RLVR2Tulu3.1',    _RLVR_A + '/merged-RLVR2Tulu3.1'),
-    ('RLVR2Llama3-Inst', _RLVR_A + '/merged-RLVR2Llama3-Inst'),
-    ('RLVR2R1-Distill', _RLVR_A + '/merged-RLVR2R1-Distill'),
+    # RLVR delta → 8 targets
+    ('RLVR2Base',        _RLVR_A + '/merged-RLVR2Base',        True),
+    ('RLVR2SFT',         _RLVR_A + '/merged-RLVR2SFT',         False),
+    ('RLVR2DPO',         _RLVR_A + '/merged-RLVR2DPO',         False),
+    ('RLVR2RLVR',        _RLVR_A + '/merged-RLVR2RLVR',        False),
+    ('RLVR2Instruct',    _RLVR_A + '/merged-RLVR2Instruct',    False),
+    ('RLVR2Tulu3.1',     _RLVR_A + '/merged-RLVR2Tulu3.1',    False),
+    ('RLVR2Llama3-Inst', _RLVR_A + '/merged-RLVR2Llama3-Inst', False),
+    ('RLVR2R1-Distill',  _RLVR_A + '/merged-RLVR2R1-Distill', False),
 ]
 
 ###############################################################################
-# Build model list — filter out paths that don't exist
+# Build model list — auto-skip missing paths
 ###############################################################################
 models = []
-
-_all_entries = original_targets + direct_ft_baselines + cross_delta_models
 _skipped = []
 
-for abbr, path in _all_entries:
-    # For HF hub paths (no /), always include
-    # For local paths, check existence
-    if '/' in path and not path.startswith(('meta-llama', 'allenai', 'deepseek', 'Qwen')):
-        if not _os.path.isdir(path):
-            _skipped.append(abbr)
-            continue
+_all_entries = original_targets + direct_ft_baselines + cross_delta_models
 
+for abbr, path, is_base in _all_entries:
+    # Local merged models: check existence
+    is_local = _os.path.sep in path or path.startswith(_RESULTS_DIR)
+    if is_local and not _os.path.isdir(path):
+        _skipped.append(abbr)
+        continue
+
+    model_type = TurboMindModel if is_base else TurboMindModelwithChatTemplate
     models.append(
         dict(
-            type=TurboMindModelwithChatTemplate,
+            type=model_type,
             abbr=abbr,
             path=path,
             engine_config=dict(session_len=16384, max_batch_size=4096, tp=1),
@@ -141,5 +150,5 @@ for abbr, path in _all_entries:
     )
 
 if _skipped:
-    print('[eval_cross_delta_0327] Skipped (path not found): ' + ', '.join(_skipped))
-print('[eval_cross_delta_0327] Total models to evaluate: ' + str(len(models)))
+    print('[eval] Skipped (not found): ' + ', '.join(_skipped))
+print('[eval] Total models: ' + str(len(models)))

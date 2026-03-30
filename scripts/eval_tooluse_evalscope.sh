@@ -60,6 +60,11 @@ TRAINED_MODELS=(
   "Qwen3-8B-dolci_mix-2k-I2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I"
   "Qwen3-8B-nemotron_if-2k-B2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I"
   "Qwen3-8B-nemotron_if-2k-I2I|$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I"
+  # Tool-use experiments (dolci_instruct_tool_use, 2k samples)
+  "Llama-3.1-8B-dolci_tool-2k-B2I|$RESULTS_DIR/0330/result-Llama-3.1-8B-0330/B-2k-lora-rank128-lr0.0002-dolci_tool/merged-B2I"
+  "Llama-3.1-8B-dolci_tool-2k-I2I|$RESULTS_DIR/0330/result-Llama-3.1-8B-0330/I-2k-lora-rank128-lr0.0002-dolci_tool/merged-I2I"
+  "Qwen3-8B-dolci_tool-2k-B2I|$RESULTS_DIR/0330/result-Qwen3-8B-Base-0330/B-2k-lora-rank128-lr0.0002-dolci_tool/merged-B2I"
+  "Qwen3-8B-dolci_tool-2k-I2I|$RESULTS_DIR/0330/result-Qwen3-8B-Base-0330/I-2k-lora-rank128-lr0.0002-dolci_tool/merged-I2I"
   # Full-scale experiments (uncomment after training completes)
   # "Llama-3.1-8B-openr1-220k-B2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I"
   # "Llama-3.1-8B-openr1-220k-I2I|$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I"
@@ -147,7 +152,7 @@ task_cfg = TaskConfig(
     model='$abbr',
     api_url='http://localhost:${port}/v1',
     eval_type='service',
-    datasets=['bfcl'],
+    datasets=['bfcl_v3'],
     work_dir='$out_dir/bfcl',
 )
 results = run_task(task_cfg)
@@ -163,7 +168,7 @@ task_cfg = TaskConfig(
     model='$abbr',
     api_url='http://localhost:${port}/v1',
     eval_type='service',
-    datasets=['toolbench'],
+    datasets=['tool_bench'],
     work_dir='$out_dir/toolbench',
 )
 results = run_task(task_cfg)
@@ -199,6 +204,11 @@ python3 -c "import evalscope" 2>/dev/null || {
 }
 python3 -c "import vllm" 2>/dev/null || {
   echo "WARNING: vllm not installed. Run: pip install vllm"
+  echo ""
+}
+python3 -c "import bfcl" 2>/dev/null || {
+  echo "WARNING: bfcl-eval not installed. Run: pip install bfcl-eval==2025.10.27.1"
+  echo "         (Required for BFCL-v3 evaluation)"
   echo ""
 }
 

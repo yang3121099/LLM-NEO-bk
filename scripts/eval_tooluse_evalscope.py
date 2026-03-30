@@ -185,14 +185,8 @@ def run_bfcl_eval(model_name, api_url, out_dir):
         print(f"  BFCL results: {results}")
         return results
     except ImportError:
-        print("  evalscope not available, trying bfcl-eval CLI ...")
-        subprocess.run(
-            ["bfcl", "evaluate",
-             "--model", model_name,
-             "--api-base", api_url,
-             "--output-dir", str(out_dir)],
-            check=False,
-        )
+        print("  evalscope not available for BFCL.")
+        print("  Install: pip install 'evalscope[all]' bfcl-eval==2025.10.27.1")
     except Exception as e:
         print(f"  BFCL eval error: {e}")
         return None

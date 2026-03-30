@@ -166,11 +166,22 @@ run_eval_for_model() {
     python3 -c "
 from evalscope.run import run_task
 from evalscope.config import TaskConfig
+dataset_args = {}
+if '${bench_dataset}' == 'bfcl_v3':
+    dataset_args = {'bfcl_v3': {'subset_list': [
+        'simple', 'multiple', 'parallel', 'parallel_multiple',
+        'java', 'javascript',
+        'live_simple', 'live_multiple', 'live_parallel',
+        'irrelevance', 'live_relevance', 'live_irrelevance',
+        'multi_turn_base', 'multi_turn_miss_func',
+        'multi_turn_miss_param', 'multi_turn_long_context',
+    ]}}
 task_cfg = TaskConfig(
     model='$model_path',
     api_url='http://localhost:${port}/v1',
     eval_type='server',
     datasets=['${bench_dataset}'],
+    dataset_args=dataset_args,
     work_dir='$out_dir/${bench_name}',
 )
 results = run_task(task_cfg)

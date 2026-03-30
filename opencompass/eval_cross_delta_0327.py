@@ -128,8 +128,8 @@ _skipped = []
 _all_entries = original_targets + direct_ft_baselines + cross_delta_models
 
 for abbr, path, is_base in _all_entries:
-    # Local merged models: check existence
-    is_local = _os.path.sep in path or path.startswith(_RESULTS_DIR)
+    # Local merged models: check existence; HF Hub IDs (org/model) are not local
+    is_local = path.startswith('/') or path.startswith(_RESULTS_DIR)
     if is_local and not _os.path.isdir(path):
         _skipped.append(abbr)
         continue

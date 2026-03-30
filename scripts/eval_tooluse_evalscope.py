@@ -77,6 +77,11 @@ Baseline_settings = [
     ('Qwen3-8B-dolci_mix-2k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-dolci_mix/merged-I2I'),
     ('Qwen3-8B-nemotron_if-2k-B2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/B-2k-lora-rank128-lr0.0002-nemotron_if/merged-B2I'),
     ('Qwen3-8B-nemotron_if-2k-I2I', '$RESULTS_DIR/0326/result-Qwen3-8B-0326/I-2k-lora-rank128-lr0.0002-nemotron_if/merged-I2I'),
+    # Tool-use experiments (dolci_instruct_tool_use, 2k samples)
+    ('Llama-3.1-8B-dolci_tool-2k-B2I', '$RESULTS_DIR/0330/result-Llama-3.1-8B-0330/B-2k-lora-rank128-lr0.0002-dolci_tool/merged-B2I'),
+    ('Llama-3.1-8B-dolci_tool-2k-I2I', '$RESULTS_DIR/0330/result-Llama-3.1-8B-0330/I-2k-lora-rank128-lr0.0002-dolci_tool/merged-I2I'),
+    ('Qwen3-8B-dolci_tool-2k-B2I', '$RESULTS_DIR/0330/result-Qwen3-8B-Base-0330/B-2k-lora-rank128-lr0.0002-dolci_tool/merged-B2I'),
+    ('Qwen3-8B-dolci_tool-2k-I2I', '$RESULTS_DIR/0330/result-Qwen3-8B-Base-0330/I-2k-lora-rank128-lr0.0002-dolci_tool/merged-I2I'),
     # Full-scale experiments (uncomment after training completes)
     # ('Llama-3.1-8B-openr1-220k-B2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/B-220k-lora-rank128-lr0.0002-openr1/merged-B2I'),
     # ('Llama-3.1-8B-openr1-220k-I2I', '$RESULTS_DIR/0326/result-Llama-3.1-8B-0326/I-220k-lora-rank128-lr0.0002-openr1/merged-I2I'),

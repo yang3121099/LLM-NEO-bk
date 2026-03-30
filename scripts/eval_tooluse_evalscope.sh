@@ -123,6 +123,15 @@ run_eval_for_model() {
   echo "  Port:  $port  |  TP: $TP"
   echo "================================================================"
 
+  # --- Determine tool-call parser based on model family ---
+  local tool_parser="hermes"
+  case "${model_path,,}" in
+    *llama*)  tool_parser="llama3_json" ;;
+    *qwen*)   tool_parser="hermes" ;;
+    *mistral*) tool_parser="mistral" ;;
+  esac
+  echo "  Tool-call parser: $tool_parser"
+
   # --- Start vLLM server ---
   echo "  Starting vLLM server ..."
   python3 -m vllm.entrypoints.openai.api_server \
@@ -133,6 +142,8 @@ run_eval_for_model() {
     --max-model-len "$MAX_MODEL_LEN" \
     --trust-remote-code \
     --dtype auto \
+    --enable-auto-tool-choice \
+    --tool-call-parser "$tool_parser" \
     > "$out_dir/vllm_server.log" 2>&1 &
   vllm_pid=$!
 

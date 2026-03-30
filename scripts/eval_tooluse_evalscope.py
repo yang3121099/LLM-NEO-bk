@@ -113,11 +113,25 @@ def get_all_models():
 # vLLM server management
 # ---------------------------------------------------------------------------
 
+def _get_tool_call_parser(model_path):
+    """Determine the vLLM tool-call parser based on model family."""
+    model_lower = model_path.lower()
+    if "llama" in model_lower:
+        return "llama3_json"
+    elif "qwen" in model_lower:
+        return "hermes"
+    elif "mistral" in model_lower:
+        return "mistral"
+    else:
+        return "hermes"  # reasonable default
+
+
 def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=16384):
     """Start a vLLM OpenAI-compatible server, return (process, port)."""
     if tp is None:
         tp = _NUM_GPUS
 
+    tool_parser = _get_tool_call_parser(model_path)
     cmd = [
         sys.executable, "-m", "vllm.entrypoints.openai.api_server",
         "--model", model_path,
@@ -127,6 +141,8 @@ def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=1638
         "--max-model-len", str(max_len),
         "--trust-remote-code",
         "--dtype", "auto",
+        "--enable-auto-tool-choice",
+        "--tool-call-parser", tool_parser,
     ]
     log_path = EVALSCOPE_OUT / "vllm_server.log"
     log_f = open(log_path, "w")

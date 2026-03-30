@@ -172,7 +172,7 @@ def run_bfcl_eval(model_name, api_url, out_dir):
         task_cfg = TaskConfig(
             model=model_name,
             api_url=api_url,
-            eval_type="service",
+            eval_type="server",
             datasets=["bfcl"],
             work_dir=str(out_dir),
         )
@@ -206,7 +206,7 @@ def run_toolbench_eval(model_name, api_url, out_dir):
         task_cfg = TaskConfig(
             model=model_name,
             api_url=api_url,
-            eval_type="service",
+            eval_type="server",
             datasets=["tool_bench"],
             work_dir=str(out_dir),
         )

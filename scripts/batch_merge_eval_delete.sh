@@ -300,8 +300,8 @@ if [[ "$SKIP_MERGE" != "1" ]]; then
     # Wait if we've hit max parallel jobs
     while (( ${#MERGE_PIDS[@]} >= MERGE_JOBS )); do
       # Wait for any one to finish
-      local new_pids=()
-      local new_abbrs=()
+      new_pids=()
+      new_abbrs=()
       for (( pi=0; pi<${#MERGE_PIDS[@]}; pi++ )); do
         if kill -0 "${MERGE_PIDS[$pi]}" 2>/dev/null; then
           new_pids+=("${MERGE_PIDS[$pi]}")
@@ -317,20 +317,18 @@ if [[ "$SKIP_MERGE" != "1" ]]; then
 
     # Also check disk limit before launching new merge
     # Count currently existing merged dirs
-    local current_merged=0
+    current_merged=0
     for e in "${ADAPTERS[@]}"; do
-      local ap mt
-      IFS='|' read -r ap _ mt _ _ <<< "$e"
-      [[ -d "${ap}/merged-${mt}" ]] && current_merged=$((current_merged + 1))
+      IFS='|' read -r _ap _ _mt _ _ <<< "$e"
+      [[ -d "${_ap}/merged-${_mt}" ]] && current_merged=$((current_merged + 1))
     done
     while (( current_merged >= MAX_MERGED )); do
       echo "  WAIT: $current_merged merged models on disk (max=$MAX_MERGED), waiting for eval to free space ..."
       sleep 30
       current_merged=0
       for e in "${ADAPTERS[@]}"; do
-        local ap mt
-        IFS='|' read -r ap _ mt _ _ <<< "$e"
-        [[ -d "${ap}/merged-${mt}" ]] && current_merged=$((current_merged + 1))
+        IFS='|' read -r _ap _ _mt _ _ <<< "$e"
+        [[ -d "${_ap}/merged-${_mt}" ]] && current_merged=$((current_merged + 1))
       done
     done
 

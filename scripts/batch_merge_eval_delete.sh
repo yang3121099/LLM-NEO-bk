@@ -138,7 +138,7 @@ discover_adapters
 
 # Add HF baselines (always evaluated, never deleted)
 BASELINES=(
-  "NOMERGE|meta-llama/Llama-3.1-8B-Instruct|_|llama3|Llama-3.1-8B-Instruct-hf"
+  # "NOMERGE|meta-llama/Llama-3.1-8B-Instruct|_|llama3|Llama-3.1-8B-Instruct-hf"
   "NOMERGE|Qwen/Qwen3-8B|_|qwen3|Qwen3-8B-Instruct-hf"
 )
 

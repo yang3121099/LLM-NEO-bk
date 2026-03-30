@@ -178,13 +178,16 @@ def convert_conversation(example):
         return None
 
     result = {"messages": converted_messages}
-    if system_msg:
-        result["system"] = system_msg
+    # Always include system and tools fields (LLaMA-Factory requires them
+    # to exist in every row when specified in dataset_info.json columns)
+    result["system"] = system_msg if system_msg else ""
     if tools:
         if isinstance(tools, list):
             result["tools"] = json.dumps(tools, ensure_ascii=False)
         else:
             result["tools"] = str(tools)
+    else:
+        result["tools"] = ""
 
     return result
 

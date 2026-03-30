@@ -241,8 +241,8 @@ def evaluate_model(abbr, model_path, api_url=None, port=8234):
         else:
             api_url_used = api_url
 
-        run_bfcl_eval(abbr, api_url_used, out_dir / "bfcl")
-        run_toolbench_eval(abbr, api_url_used, out_dir / "toolbench")
+        run_bfcl_eval(model_path, api_url_used, out_dir / "bfcl")
+        run_toolbench_eval(model_path, api_url_used, out_dir / "toolbench")
     finally:
         if server_proc:
             print("  Stopping vLLM server ...")

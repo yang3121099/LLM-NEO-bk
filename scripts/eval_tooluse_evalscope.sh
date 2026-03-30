@@ -149,7 +149,7 @@ run_eval_for_model() {
 from evalscope.run import run_task
 from evalscope.config import TaskConfig
 task_cfg = TaskConfig(
-    model='$abbr',
+    model='$model_path',
     api_url='http://localhost:${port}/v1',
     eval_type='server',
     datasets=['bfcl_v3'],
@@ -165,7 +165,7 @@ print(f'  BFCL results: {results}')
 from evalscope.run import run_task
 from evalscope.config import TaskConfig
 task_cfg = TaskConfig(
-    model='$abbr',
+    model='$model_path',
     api_url='http://localhost:${port}/v1',
     eval_type='server',
     datasets=['tool_bench'],

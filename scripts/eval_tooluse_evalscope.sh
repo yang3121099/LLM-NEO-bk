@@ -32,7 +32,7 @@ echo "INFO  Detected ${NUM_GPUS} GPU(s), using tp=${NUM_GPUS} for vLLM"
 # vLLM settings
 TP=$NUM_GPUS
 GPU_UTIL=0.9
-MAX_MODEL_LEN=8192
+MAX_MODEL_LEN=16384
 
 ###############################################################################
 # Model list — SAME (abbr, path) format as OpenCompass eval configs
@@ -147,6 +147,7 @@ run_eval_for_model() {
       --tensor-parallel-size "$TP" \
       --gpu-memory-utilization "$GPU_UTIL" \
       --max-model-len "$MAX_MODEL_LEN" \
+      --max-num-seqs 64 \
       --trust-remote-code \
       --dtype auto \
       --enable-auto-tool-choice \

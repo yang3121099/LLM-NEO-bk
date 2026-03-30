@@ -126,7 +126,7 @@ def _get_tool_call_parser(model_path):
         return "hermes"  # reasonable default
 
 
-def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=8192):
+def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=16384):
     """Start a vLLM OpenAI-compatible server, return (process, port)."""
     if tp is None:
         tp = _NUM_GPUS
@@ -139,6 +139,7 @@ def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=8192
         "--tensor-parallel-size", str(tp),
         "--gpu-memory-utilization", str(gpu_util),
         "--max-model-len", str(max_len),
+        "--max-num-seqs", "64",
         "--trust-remote-code",
         "--dtype", "auto",
         "--enable-auto-tool-choice",

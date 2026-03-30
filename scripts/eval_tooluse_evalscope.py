@@ -178,7 +178,7 @@ def run_bfcl_eval(model_name, api_url, out_dir):
             model=model_name,
             api_url=api_url,
             eval_type="service",
-            datasets=["bfcl"],
+            datasets=["bfcl_v3"],
             work_dir=str(out_dir),
         )
         results = run_task(task_cfg)
@@ -212,7 +212,7 @@ def run_toolbench_eval(model_name, api_url, out_dir):
             model=model_name,
             api_url=api_url,
             eval_type="service",
-            datasets=["toolbench"],
+            datasets=["tool_bench"],
             work_dir=str(out_dir),
         )
         results = run_task(task_cfg)

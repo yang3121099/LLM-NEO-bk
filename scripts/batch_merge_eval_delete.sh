@@ -78,7 +78,7 @@ for result_dir in "$RESULTS_DIR"/*/result-Qwen3-8B*; do
     while IFS= read -r ckpt; do
       all_ckpts+=("$ckpt")
     done < <(find "$adapter_dir" -maxdepth 1 -type d -name "checkpoint-*" | \
-             sort -t- -k2 -n)
+             awk -F'checkpoint-' '{print $NF, $0}' | sort -n | cut -d' ' -f2-)
 
     total=${#all_ckpts[@]}
 

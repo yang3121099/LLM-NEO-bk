@@ -23,7 +23,7 @@ with read_base():
     from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
 
     ######################### General benchmarks #########################
-    from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
+    from opencompass.configs.datasets.winogrande.winogrande_gen_458220 import winogrande_datasets
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
     from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
 

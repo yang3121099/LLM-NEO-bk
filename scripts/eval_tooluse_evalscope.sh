@@ -151,7 +151,7 @@ from evalscope.config import TaskConfig
 task_cfg = TaskConfig(
     model='$abbr',
     api_url='http://localhost:${port}/v1',
-    eval_type='service',
+    eval_type='server',
     datasets=['bfcl_v3'],
     work_dir='$out_dir/bfcl',
 )
@@ -167,7 +167,7 @@ from evalscope.config import TaskConfig
 task_cfg = TaskConfig(
     model='$abbr',
     api_url='http://localhost:${port}/v1',
-    eval_type='service',
+    eval_type='server',
     datasets=['tool_bench'],
     work_dir='$out_dir/toolbench',
 )

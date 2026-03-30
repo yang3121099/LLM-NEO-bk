@@ -126,7 +126,7 @@ def _get_tool_call_parser(model_path):
         return "hermes"  # reasonable default
 
 
-def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=16384):
+def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=8192):
     """Start a vLLM OpenAI-compatible server, return (process, port)."""
     if tp is None:
         tp = _NUM_GPUS
@@ -236,7 +236,11 @@ def run_toolbench_eval(model_name, api_url, out_dir):
 
 
 def evaluate_model(abbr, model_path, api_url=None, port=8234):
-    """Evaluate a single model on BFCL + ToolBench."""
+    """Evaluate a single model on BFCL + ToolBench.
+
+    Restarts vLLM server between benchmarks to avoid OOM / KV cache
+    fragmentation on long-running evaluations.
+    """
     out_dir = EVALSCOPE_OUT / abbr
 
     if model_path.startswith("/") and not Path(model_path).is_dir():
@@ -249,21 +253,28 @@ def evaluate_model(abbr, model_path, api_url=None, port=8234):
     print(f"  GPUs:  {_NUM_GPUS} (tp={_NUM_GPUS})")
     print(f"{'=' * 64}")
 
-    server_proc = None
-    try:
-        if api_url is None:
-            server_proc, port = start_vllm_server(model_path, port=port)
-            api_url_used = f"http://localhost:{port}/v1"
-        else:
-            api_url_used = api_url
+    benchmarks = [
+        ("bfcl", run_bfcl_eval),
+        ("toolbench", run_toolbench_eval),
+    ]
 
-        run_bfcl_eval(model_path, api_url_used, out_dir / "bfcl")
-        run_toolbench_eval(model_path, api_url_used, out_dir / "toolbench")
-    finally:
-        if server_proc:
-            print("  Stopping vLLM server ...")
-            stop_vllm_server(server_proc)
-            time.sleep(2)
+    for bench_name, bench_fn in benchmarks:
+        server_proc = None
+        try:
+            if api_url is None:
+                server_proc, port = start_vllm_server(model_path, port=port)
+                api_url_used = f"http://localhost:{port}/v1"
+            else:
+                api_url_used = api_url
+
+            bench_fn(model_path, api_url_used, out_dir / bench_name)
+        except Exception as e:
+            print(f"  ERROR in {bench_name}: {e}")
+        finally:
+            if server_proc:
+                print(f"  Stopping vLLM server (after {bench_name}) ...")
+                stop_vllm_server(server_proc)
+                time.sleep(5)  # give GPU memory time to free
 
     print(f"  Done: {abbr} -> {out_dir}/")
 

@@ -32,7 +32,7 @@ echo "INFO  Detected ${NUM_GPUS} GPU(s), using tp=${NUM_GPUS} for vLLM"
 # vLLM settings
 TP=$NUM_GPUS
 GPU_UTIL=0.9
-MAX_MODEL_LEN=16384
+MAX_MODEL_LEN=8192
 
 ###############################################################################
 # Model list — SAME (abbr, path) format as OpenCompass eval configs
@@ -132,65 +132,58 @@ run_eval_for_model() {
   esac
   echo "  Tool-call parser: $tool_parser"
 
-  # --- Start vLLM server ---
-  echo "  Starting vLLM server ..."
-  python3 -m vllm.entrypoints.openai.api_server \
-    --model "$model_path" \
-    --port "$port" \
-    --tensor-parallel-size "$TP" \
-    --gpu-memory-utilization "$GPU_UTIL" \
-    --max-model-len "$MAX_MODEL_LEN" \
-    --trust-remote-code \
-    --dtype auto \
-    --enable-auto-tool-choice \
-    --tool-call-parser "$tool_parser" \
-    > "$out_dir/vllm_server.log" 2>&1 &
-  vllm_pid=$!
+  # --- Helper: start/stop vLLM for one benchmark ---
+  # Restart between benchmarks to avoid OOM / KV cache fragmentation
+  run_one_benchmark() {
+    local bench_name="$1" bench_dataset="$2"
+    local vllm_pid
 
-  if ! wait_for_server "$port"; then
+    echo ""
+    echo "  --- $bench_name ---"
+    echo "  Starting vLLM server ..."
+    python3 -m vllm.entrypoints.openai.api_server \
+      --model "$model_path" \
+      --port "$port" \
+      --tensor-parallel-size "$TP" \
+      --gpu-memory-utilization "$GPU_UTIL" \
+      --max-model-len "$MAX_MODEL_LEN" \
+      --trust-remote-code \
+      --dtype auto \
+      --enable-auto-tool-choice \
+      --tool-call-parser "$tool_parser" \
+      > "$out_dir/${bench_name}_vllm.log" 2>&1 &
+    vllm_pid=$!
+
+    if ! wait_for_server "$port"; then
+      kill "$vllm_pid" 2>/dev/null || true
+      wait "$vllm_pid" 2>/dev/null || true
+      echo "  FAILED to start vLLM for $bench_name, skipping."
+      return 1
+    fi
+
+    echo "  Running $bench_name evaluation ..."
+    python3 -c "
+from evalscope.run import run_task
+from evalscope.config import TaskConfig
+task_cfg = TaskConfig(
+    model='$model_path',
+    api_url='http://localhost:${port}/v1',
+    eval_type='server',
+    datasets=['${bench_dataset}'],
+    work_dir='$out_dir/${bench_name}',
+)
+results = run_task(task_cfg)
+print(f'  ${bench_name} results: {results}')
+" 2>&1 | tee "$out_dir/${bench_name}_eval.log" || echo "  WARNING: $bench_name eval failed"
+
+    echo "  Stopping vLLM server (after $bench_name) ..."
     kill "$vllm_pid" 2>/dev/null || true
     wait "$vllm_pid" 2>/dev/null || true
-    echo "  FAILED to start vLLM for $abbr, skipping."
-    return 1
-  fi
+    sleep 5  # give GPU memory time to free
+  }
 
-  # --- Run BFCL evaluation ---
-  echo "  Running BFCL evaluation ..."
-  python3 -c "
-from evalscope.run import run_task
-from evalscope.config import TaskConfig
-task_cfg = TaskConfig(
-    model='$model_path',
-    api_url='http://localhost:${port}/v1',
-    eval_type='server',
-    datasets=['bfcl_v3'],
-    work_dir='$out_dir/bfcl',
-)
-results = run_task(task_cfg)
-print(f'  BFCL results: {results}')
-" 2>&1 | tee "$out_dir/bfcl_eval.log" || echo "  WARNING: BFCL eval failed"
-
-  # --- Run ToolBench evaluation ---
-  echo "  Running ToolBench evaluation ..."
-  python3 -c "
-from evalscope.run import run_task
-from evalscope.config import TaskConfig
-task_cfg = TaskConfig(
-    model='$model_path',
-    api_url='http://localhost:${port}/v1',
-    eval_type='server',
-    datasets=['tool_bench'],
-    work_dir='$out_dir/toolbench',
-)
-results = run_task(task_cfg)
-print(f'  ToolBench results: {results}')
-" 2>&1 | tee "$out_dir/toolbench_eval.log" || echo "  WARNING: ToolBench eval failed"
-
-  # --- Stop vLLM server ---
-  echo "  Stopping vLLM server (PID=$vllm_pid) ..."
-  kill "$vllm_pid" 2>/dev/null || true
-  wait "$vllm_pid" 2>/dev/null || true
-  sleep 2
+  run_one_benchmark "bfcl" "bfcl_v3" || true
+  run_one_benchmark "toolbench" "tool_bench" || true
 
   echo "  Done: $abbr → $out_dir/"
 }

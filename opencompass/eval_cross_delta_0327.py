@@ -23,11 +23,13 @@ with read_base():
     from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
 
     ######################### General benchmarks #########################
-    from opencompass.configs.datasets.winogrande.winogrande_gen_458220 import winogrande_datasets
+    from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
     from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
+# Keep only winogrande_prompt_2 from the 3 prompt variants
+datasets = [d for d in datasets if not str(d.get('abbr', '')).startswith('winogrande_prompt_') or d['abbr'] == 'winogrande_prompt_2']
 
 from opencompass.models import TurboMindModel, TurboMindModelwithChatTemplate
 

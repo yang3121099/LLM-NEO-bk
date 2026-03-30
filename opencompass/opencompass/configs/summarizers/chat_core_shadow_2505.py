@@ -80,7 +80,7 @@ general_v2_groups = [
         subsets=[
             ["mmlu", "naive_average"],
             ["mmlu_pro", "naive_average"],
-            ["winogrande", "accuracy"],
+            ["winogrande_prompt_2", "accuracy"],
             ["drop", "accuracy"],
             ["ARC-c", "accuracy"],
             ["bbh", "naive_average"],
@@ -161,7 +161,7 @@ dataset_abbrs = [
     "--------- General ---------",
     ["mmlu", "naive_average"],
     ["mmlu_pro", "naive_average"],
-    ["winogrande", "accuracy"],
+    ["winogrande_prompt_2", "accuracy"],
     ["drop", "accuracy"],
     ["ARC-c", "accuracy"],
     ["bbh", "naive_average"],

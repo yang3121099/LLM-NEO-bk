@@ -21,7 +21,7 @@ WORKSPACE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RESULTS_DIR="$WORKSPACE_DIR/results"
 OC_DIR="$WORKSPACE_DIR/opencompass"
 MERGE_SCRIPT="$WORKSPACE_DIR/src/shadow/merge_lora.py"
-RUN_TAG="batch-$(date +%m%d%H%M)"
+RUN_TAG="${RUN_TAG:-batch-$(date +%m%d%H%M)}"
 
 DRY_RUN="${DRY_RUN:-0}"
 SKIP_MERGE="${SKIP_MERGE:-0}"

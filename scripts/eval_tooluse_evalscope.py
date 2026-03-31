@@ -205,7 +205,7 @@ def run_bfcl_eval(model_name, api_url, out_dir):
                         # "live_simple", "live_multiple", "live_parallel",
                         # "irrelevance", "live_relevance", "live_irrelevance",
                         # "multi_turn_base",
-                        "multi_turn_miss_func",
+                        # "multi_turn_miss_func",
                         "multi_turn_miss_param", "multi_turn_long_context",
                     ],
                 }

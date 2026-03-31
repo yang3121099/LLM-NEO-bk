@@ -139,7 +139,7 @@ def start_vllm_server(model_path, port=8234, tp=None, gpu_util=0.9, max_len=1638
         "--tensor-parallel-size", str(tp),
         "--gpu-memory-utilization", str(gpu_util),
         "--max-model-len", str(max_len),
-        "--max-num-seqs", "64",
+        "--max-num-seqs", "16",
         "--trust-remote-code",
         "--dtype", "auto",
         "--enable-auto-tool-choice",

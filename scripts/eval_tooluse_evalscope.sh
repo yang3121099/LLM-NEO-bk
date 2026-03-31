@@ -147,7 +147,7 @@ run_eval_for_model() {
       --tensor-parallel-size "$TP" \
       --gpu-memory-utilization "$GPU_UTIL" \
       --max-model-len "$MAX_MODEL_LEN" \
-      --max-num-seqs 64 \
+      --max-num-seqs 16 \
       --trust-remote-code \
       --dtype auto \
       --enable-auto-tool-choice \

@@ -199,12 +199,13 @@ def run_bfcl_eval(model_name, api_url, out_dir):
             dataset_args={
                 "bfcl_v3": {
                     "subset_list": [
-                        "simple", "multiple", "parallel", "parallel_multiple",
-                        "java", "javascript",
-                        "live_simple", "live_multiple", "live_parallel",
-                        # "live_parallel_multiple" excluded: surrogate unicode bug in evalscope cache
-                        "irrelevance", "live_relevance", "live_irrelevance",
-                        "multi_turn_base", "multi_turn_miss_func",
+                        # Temporarily skip earlier subsets to test remaining ones
+                        # "simple", "multiple", "parallel", "parallel_multiple",
+                        # "java", "javascript",
+                        # "live_simple", "live_multiple", "live_parallel",
+                        # "irrelevance", "live_relevance", "live_irrelevance",
+                        # "multi_turn_base",
+                        "multi_turn_miss_func",
                         "multi_turn_miss_param", "multi_turn_long_context",
                     ],
                 }

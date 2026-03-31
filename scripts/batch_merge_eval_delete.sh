@@ -240,6 +240,9 @@ with read_base():
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
     from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
+    from opencompass.configs.datasets.winogrande.winogrande_5shot_gen_b36770 import winogrande_datasets
+    from opencompass.configs.datasets.ARC_c.ARC_c_gen import ARC_c_datasets
+    from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 

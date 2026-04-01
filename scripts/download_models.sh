@@ -15,8 +15,10 @@ MODELS=(
   "meta-llama/Llama-3.1-8B-Instruct"
   "Qwen/Qwen3-8B-Base"
   "Qwen/Qwen3-8B"
-  "Qwen/Qwen3-32B-Base"
-  "Qwen/Qwen3-32B"
+  "Qwen/Qwen2.5-32B"
+  "Qwen/Qwen2.5-32B-Instruct"
+  "Qwen/Qwen3-30B-A3B-Base"
+  "Qwen/Qwen3-30B-A3B"
 )
 
 for MODEL in "${MODELS[@]}"; do

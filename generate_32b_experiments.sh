@@ -1,36 +1,29 @@
 #!/usr/bin/env bash
 ###############################################################################
-# generate_32b_experiments.sh — Qwen3-32B hyperparameter sweep for Shadow-FT
+# generate_32b_experiments.sh — Qwen2.5-32B & Qwen3-30B-A3B Shadow-FT
 #
-# Generates training scripts for multiple LoRA rank × LR combinations,
-# plus a batch merge+eval script. Designed for reviewer rebuttal experiments.
+# Generates training scripts with 2K samples, hyperparameter sweep,
+# plus comprehensive eval config (all benchmarks except code).
 #
-# Hyperparameter configs (based on 8B optimal scaling):
-#   Config A (primary):  rank=256  lr=1e-4   ← 32B sweet spot
-#   Config B (baseline): rank=128  lr=1e-4   ← 8B best rank, halved LR
-#   Config C (safe):     rank=256  lr=5e-5   ← conservative, very stable
+# Execution order:
+#   1. Qwen2.5-32B   cfgA (rank=256, lr=1e-4)  ← primary
+#   2. Qwen3-30B-A3B cfgA (rank=256, lr=1e-4)  ← MoE comparison
+#   3. Qwen2.5-32B   cfgC (rank=256, lr=5e-5)  ← conservative
+#   4. Qwen2.5-32B   cfgB (rank=128, lr=1e-4)  ← ablation
 #
 # Usage:
 #   bash generate_32b_experiments.sh
-#   # Then run generated scripts in scripts/
 ###############################################################################
 set -euo pipefail
 
 WORKSPACE_DIR="$(cd "$(dirname "$0")" && pwd)"
 RESULTS_DIR="$WORKSPACE_DIR/results"
 SCRIPT_DIR="$WORKSPACE_DIR/scripts"
-MODEL_PAIR_FILE="$WORKSPACE_DIR/examples/model_pair.json"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_DIR"
-
-# --- Model ---
-HF_BASE="Qwen/Qwen3-32B-Base"
-HF_INSTRUCT="Qwen/Qwen3-32B"
-TEMPLATE="qwen3"
-MODEL_SHORT="Qwen3-32B"
 
 # --- Fixed training constants ---
 EFFECTIVE_BS=256
-DEFAULT_PER_GPU_BS=1      # 32B model → BS=1 per GPU to fit memory
+DEFAULT_PER_GPU_BS=1      # 32B model → BS=1 per GPU
 NUM_EPOCHS=1
 LR_SCHEDULER="cosine"
 WARMUP_RATIO=0.1
@@ -39,18 +32,31 @@ LOGGING_STEPS=1
 CUTOFF_LEN=4096
 VAL_SIZE=0.01
 
-# --- Dataset: OpenR1-Math-220k (primary reviewer rebuttal dataset) ---
-DATASET="openr1_math_220k"
-SUFFIX="openr1"
-MAX_SAMPLES=220000
-SAVE_STEPS=100
+TIMESTAMP=$(date +%m%d%H%M%S)
+MONTHDAY=$(date +%m%d)
 
-# --- Hyperparameter sweep ---
+# --- 2K experiments (same datasets as 8B shadow-FT) ---
+DATASETS=(
+  "opus_reasoning_3k|opus3k|2000|1000"
+  "openr1_math_220k|openr1|2000|1000"
+  "dolci_instruct_mix|dolci_mix|2000|1000"
+  "nemotron_if_chat_v1|nemotron_if|2000|1000"
+  "deepmath_2k_demo|deepmath_demo|2000|1000"
+)
+
+# --- Hyperparameter configs ---
 # Format: "rank|lr|config_name"
 CONFIGS=(
-  "256|1e-4|cfgA"     # Primary: large rank + moderate LR (32B sweet spot)
-  "128|1e-4|cfgB"     # Baseline: 8B-optimal rank, halved LR for 32B
+  "256|1e-4|cfgA"     # Primary: large rank + moderate LR
+  "128|1e-4|cfgB"     # Ablation: 8B-optimal rank, halved LR
   "256|5e-5|cfgC"     # Conservative: large rank + safe LR
+)
+
+# --- Models ---
+# Format: "model_short|hf_base|hf_instruct|template"
+MODELS=(
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen"
+  "Qwen3-30B-A3B|Qwen/Qwen3-30B-A3B-Base|Qwen/Qwen3-30B-A3B|qwen3"
 )
 
 # --- Helpers ---
@@ -61,69 +67,51 @@ format_k() {
   else awk -v n="$num" 'BEGIN{ printf "%.1fk", n/1000 }'; fi
 }
 
-TIMESTAMP=$(date +%m%d%H%M%S)
-MONTHDAY=$(date +%m%d)
-K=$(format_k "$MAX_SAMPLES")
-REL_ROOT="${MONTHDAY}/result-${MODEL_SHORT}-Base-${MONTHDAY}"
+###############################################################################
+# Generate training script for one (model, config, dataset) combination
+###############################################################################
+generate_train_script() {
+  local MODEL_SHORT="$1" HF_BASE="$2" HF_INSTRUCT="$3" TEMPLATE="$4"
+  local RANK="$5" LR="$6" CFG_NAME="$7"
+  local DATASET="$8" SUFFIX="$9" MAX_SAMPLES="${10}" SAVE_STEPS="${11}"
 
-echo "=========================================="
-echo "  Qwen3-32B Shadow-FT Experiment Generator"
-echo "  Timestamp: $TIMESTAMP"
-echo "  Dataset: $DATASET ($K samples)"
-echo "=========================================="
-echo ""
-
-# --- Generate one training script per config ---
-ALL_SCRIPTS=()
-ALL_EVAL_ENTRIES=()
-
-for CFG in "${CONFIGS[@]}"; do
-  IFS='|' read -r RANK LR CFG_NAME <<< "$CFG"
+  local LR_DEC LR_TAG K REL_ROOT SCRIPT_FILE
   LR_DEC=$(to_decimal "$LR")
   LR_TAG="lr${LR_DEC}"
-
-  SCRIPT_FILE="$SCRIPT_DIR/train_32b_${SUFFIX}_${K}_${CFG_NAME}_${TIMESTAMP}.sh"
-  ALL_SCRIPTS+=("$SCRIPT_FILE")
-
-  echo "INFO  Config ${CFG_NAME}: rank=${RANK} lr=${LR}"
+  K=$(format_k "$MAX_SAMPLES")
+  REL_ROOT="${MONTHDAY}/result-${MODEL_SHORT}-${MONTHDAY}"
+  SCRIPT_FILE="$SCRIPT_DIR/train_${MODEL_SHORT}_${SUFFIX}_${K}_${CFG_NAME}_${TIMESTAMP}.sh"
 
   cat > "$SCRIPT_FILE" << HEADER
 #!/usr/bin/env bash
 ###############################################################################
-# Qwen3-32B Shadow-FT: ${CFG_NAME} (rank=${RANK}, lr=${LR})
+# ${MODEL_SHORT} Shadow-FT: ${CFG_NAME} (rank=${RANK}, lr=${LR})
 # Dataset: ${DATASET} (${K} samples)
-# Generated: ${TIMESTAMP}
 ###############################################################################
 set -euo pipefail
 
 WORKSPACE_DIR="$WORKSPACE_DIR"
 RESULTS_DIR="$RESULTS_DIR"
 
-# GPU auto-detection
 NUM_GPUS=\$(nvidia-smi -L 2>/dev/null | wc -l)
 [[ "\$NUM_GPUS" -lt 1 ]] && NUM_GPUS=1
 echo "INFO: Detected \$NUM_GPUS GPU(s)"
 
-# BS calculation: bs × acc × gpus = ${EFFECTIVE_BS}
 PER_GPU_BS=${DEFAULT_PER_GPU_BS}
 GRAD_ACCUM=\$(( ${EFFECTIVE_BS} / (PER_GPU_BS * NUM_GPUS) ))
 if [[ "\$GRAD_ACCUM" -lt 1 ]]; then
     PER_GPU_BS=1
     GRAD_ACCUM=\$(( ${EFFECTIVE_BS} / NUM_GPUS ))
 fi
-echo "INFO: PER_GPU_BS=\$PER_GPU_BS  GRAD_ACCUM=\$GRAD_ACCUM  NUM_GPUS=\$NUM_GPUS  (effective=${EFFECTIVE_BS})"
+echo "INFO: PER_GPU_BS=\$PER_GPU_BS  GRAD_ACCUM=\$GRAD_ACCUM  effective=${EFFECTIVE_BS}"
 
-# Environment
 export VLLM_WORKER_MULTIPROC_METHOD=spawn
 export HF_HUB_OFFLINE=0
-export HF_DATASETS_OFFLINE=0
 export HF_DATASETS_TRUST_REMOTE_CODE=1
 export TRUST_REMOTE_CODE=True
-export HF_ALLOW_CODE_EVAL=1
 
 HEADER
 
-  # Training for Base (B) and Instruct (I)
   for TAG_INFO in "B|$HF_BASE" "I|$HF_INSTRUCT"; do
     IFS='|' read -r TAG M_PATH <<< "$TAG_INFO"
     DIR="${TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX}"
@@ -131,12 +119,11 @@ HEADER
 
     cat >> "$SCRIPT_FILE" << TRAIN
 ###############################################################################
-##### Train ${TAG} (${M_PATH}) — ${CFG_NAME} #####
+##### Train ${TAG} (${M_PATH}) #####
 ###############################################################################
 mkdir -p "\$RESULTS_DIR/${REL_OUTDIR}"
 cd "\$WORKSPACE_DIR"
 
-# Multi-GPU: FORCE_TORCHRUN + DeepSpeed ZeRO-2
 DS_ARG=""
 if [[ "\$NUM_GPUS" -gt 1 ]]; then
     export FORCE_TORCHRUN=1
@@ -182,40 +169,15 @@ llamafactory-cli train \\
 TRAIN
   done
 
-  # Merge commands: every 10 checkpoints + final
+  # Merge B2I and I2I
   for MERGE_INFO in "B|B2I|$HF_INSTRUCT" "I|I2I|$HF_INSTRUCT"; do
     IFS='|' read -r SRC_TAG MERGE_TAG TGT_MODEL <<< "$MERGE_INFO"
     SRC_DIR="${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX}"
-    REL_ADAP="${REL_ROOT}/${SRC_DIR}"
 
     cat >> "$SCRIPT_FILE" << MERGE
-###############################################################################
-##### Merge ${MERGE_TAG}: ${SRC_DIR} #####
-###############################################################################
-echo "=== Merging ${MERGE_TAG} checkpoints ==="
-ADAPTER_BASE="\$RESULTS_DIR/${REL_ADAP}"
-CKPTS=(\$(find "\$ADAPTER_BASE" -maxdepth 1 -type d -name "checkpoint-*" | \\
-         awk -F'checkpoint-' '{print \$NF, \$0}' | sort -n | cut -d' ' -f2-))
-TOTAL_CKPTS=\${#CKPTS[@]}
-echo "Found \$TOTAL_CKPTS checkpoints"
-
-for (( ci=0; ci<TOTAL_CKPTS; ci++ )); do
-    CKPT="\${CKPTS[\$ci]}"
-    STEP=\$(basename "\$CKPT" | sed 's/checkpoint-//')
-    if (( (ci + 1) % 10 == 0 )) || (( ci == TOTAL_CKPTS - 1 )); then
-        echo "  Merging step \$STEP (${MERGE_TAG}) ..."
-        python3 "\$WORKSPACE_DIR/src/shadow/merge_lora.py" \\
-            --adapter_path "\$CKPT" \\
-            --target_base "${TGT_MODEL}" \\
-            --merge_tag "${MERGE_TAG}" \\
-            --template "${TEMPLATE}"
-    fi
-done
-
-# Merge final adapter
-echo "  Merging final adapter (${MERGE_TAG}) ..."
+### Merge: ${MERGE_TAG} (${SRC_DIR}) ###
 python3 "\$WORKSPACE_DIR/src/shadow/merge_lora.py" \\
-    --adapter_path "\$ADAPTER_BASE" \\
+    --adapter_path "\$RESULTS_DIR/${REL_ROOT}/${SRC_DIR}" \\
     --target_base "${TGT_MODEL}" \\
     --merge_tag "${MERGE_TAG}" \\
     --template "${TEMPLATE}"
@@ -224,23 +186,19 @@ MERGE
   done
 
   chmod +x "$SCRIPT_FILE"
-  echo "  → $SCRIPT_FILE"
+  echo "$SCRIPT_FILE"
+}
 
-  # Collect eval entries
-  for MERGE_TAG in "B2I" "I2I"; do
-    if [[ "$MERGE_TAG" == "B2I" ]]; then SRC_TAG="B"; else SRC_TAG="I"; fi
-    DIR="${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX}"
-    REL="${REL_ROOT}/${DIR}/merged-${MERGE_TAG}"
-    ABBR="${MODEL_SHORT}-${SUFFIX}-${K}-${CFG_NAME}-${MERGE_TAG}"
-    ALL_EVAL_ENTRIES+=("${ABBR}|\$RESULTS_DIR/${REL}")
-  done
-done
+###############################################################################
+# Generate comprehensive eval config (all benchmarks except code)
+###############################################################################
+generate_eval_config() {
+  local CONFIG_FILE="$1"
+  shift
+  local -a EVAL_ENTRIES=("$@")
 
-# --- Generate eval Python config directly ---
-EVAL_CONFIG="$WORKSPACE_DIR/opencompass/eval_32b_${TIMESTAMP}.py"
-
-cat > "$EVAL_CONFIG" << 'PYHEADER'
-# Auto-generated Qwen3-32B eval config
+  cat > "$CONFIG_FILE" << 'PYHEADER'
+# Auto-generated comprehensive eval config (all benchmarks except code)
 import subprocess as _sp
 import os as _os
 from mmengine.config import read_base
@@ -250,34 +208,51 @@ _NUM_GPUS = max(1, len(_sp.check_output(['nvidia-smi', '-L'], text=True).strip()
 RESULTS_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'results')
 
 with read_base():
+    ######################### Math (7) #########################
     from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
+    from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
-    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
+    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
+
+    ###################### General (6) #########################
+    from opencompass.configs.datasets.mmlu.mmlu_openai_simple_evals_gen_b618ea import mmlu_datasets
+    from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import mmlu_pro_datasets
     from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
     from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
+    from opencompass.configs.datasets.bbh.bbh_gen_ee62e9 import bbh_datasets
+    from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import drop_datasets
+    from opencompass.configs.datasets.TheoremQA.TheoremQA_5shot_gen_6f0af8 import TheoremQA_datasets
+
+    ################# Instruction Following (1) ################
+    from opencompass.configs.datasets.IFEval.IFEval_gen import ifeval_datasets
+
+    ##################### Tool Use (1) #########################
+    from opencompass.configs.datasets.teval.teval_en_gen_slim import teval_slim_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
-# Qwen3-32B Instruct baseline
-HF_baselines = [
-    ('Qwen3-32B-Instruct-hf', 'Qwen/Qwen3-32B'),
-]
-
-# Trained models (B2I Shadow-FT, I2I baseline)
-Baseline_settings = [
 PYHEADER
 
-# Append trained model entries
-for ENTRY in "${ALL_EVAL_ENTRIES[@]}"; do
-  IFS='|' read -r ABBR REL_PATH <<< "$ENTRY"
-  echo "    ('${ABBR}', '${REL_PATH}')," >> "$EVAL_CONFIG"
-done
+  # Baselines
+  {
+    echo "# ======= Instruct baselines ======="
+    echo "HF_baselines = ["
+    echo "    ('Qwen2.5-32B-Instruct-hf', 'Qwen/Qwen2.5-32B-Instruct'),"
+    echo "    ('Qwen3-30B-A3B-hf', 'Qwen/Qwen3-30B-A3B'),"
+    echo "]"
+    echo ""
+    echo "# ======= Trained models ======="
+    echo "Baseline_settings = ["
+    for entry in "${EVAL_ENTRIES[@]}"; do
+      echo "$entry"
+    done
+    echo "]"
+  } >> "$CONFIG_FILE"
 
-cat >> "$EVAL_CONFIG" << 'PYFOOTER'
-]
+  cat >> "$CONFIG_FILE" << 'PYFOOTER'
 
 models = []
 
@@ -313,33 +288,106 @@ for abbr, path in Baseline_settings:
         )
     )
 PYFOOTER
+}
 
-echo "INFO  Generated eval config: $EVAL_CONFIG"
-
+###############################################################################
+# Main: Generate scripts in specified execution order
+###############################################################################
 echo ""
 echo "=========================================="
-echo "  Qwen3-32B Experiment Scripts Generated!"
+echo "  32B Experiment Generator"
+echo "  Timestamp: $TIMESTAMP"
 echo "=========================================="
 echo ""
-echo "=== Training (run in order of priority) ==="
-for S in "${ALL_SCRIPTS[@]}"; do
-  echo "  bash $S"
+
+ALL_EVAL_ENTRIES=()
+ORDERED_SCRIPTS=()
+
+# --- Execution order ---
+# 1. Qwen2.5-32B cfgA
+# 2. Qwen3-30B-A3B cfgA
+# 3. Qwen2.5-32B cfgC
+# 4. Qwen2.5-32B cfgB
+EXEC_ORDER=(
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|1e-4|cfgA"
+  "Qwen3-30B-A3B|Qwen/Qwen3-30B-A3B-Base|Qwen/Qwen3-30B-A3B|qwen3|256|1e-4|cfgA"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|5e-5|cfgC"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|1e-4|cfgB"
+)
+
+for EXEC in "${EXEC_ORDER[@]}"; do
+  IFS='|' read -r M_SHORT HF_BASE HF_INST TPL RANK LR CFG <<< "$EXEC"
+  LR_DEC=$(to_decimal "$LR")
+  LR_TAG="lr${LR_DEC}"
+
+  echo "--- ${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR}) ---"
+
+  for DS in "${DATASETS[@]}"; do
+    IFS='|' read -r DATASET SUFFIX MAX_SAMPLES SAVE_STEPS <<< "$DS"
+    K=$(format_k "$MAX_SAMPLES")
+
+    SCRIPT=$(generate_train_script "$M_SHORT" "$HF_BASE" "$HF_INST" "$TPL" \
+             "$RANK" "$LR" "$CFG" "$DATASET" "$SUFFIX" "$MAX_SAMPLES" "$SAVE_STEPS")
+    ORDERED_SCRIPTS+=("$SCRIPT")
+    echo "  $SCRIPT"
+
+    # Collect eval entries
+    REL_ROOT="${MONTHDAY}/result-${M_SHORT}-${MONTHDAY}"
+    for MERGE_TAG in "B2I" "I2I"; do
+      if [[ "$MERGE_TAG" == "B2I" ]]; then SRC_TAG="B"; else SRC_TAG="I"; fi
+      DIR="${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX}"
+      REL="${REL_ROOT}/${DIR}/merged-${MERGE_TAG}"
+      ABBR="${M_SHORT}-${SUFFIX}-${K}-${CFG}-${MERGE_TAG}"
+      ALL_EVAL_ENTRIES+=("    ('${ABBR}','\$RESULTS_DIR/${REL}'),")
+    done
+  done
+done
+
+# --- Generate eval config ---
+EVAL_CONFIG="$WORKSPACE_DIR/opencompass/eval_32b_${TIMESTAMP}.py"
+generate_eval_config "$EVAL_CONFIG" "${ALL_EVAL_ENTRIES[@]}"
+echo ""
+echo "INFO  Eval config: $EVAL_CONFIG"
+
+###############################################################################
+# Output summary
+###############################################################################
+echo ""
+echo "=========================================="
+echo "  Scripts Generated!"
+echo "=========================================="
+echo ""
+echo "=== Execution Order ==="
+echo ""
+STEP=1
+PREV_MODEL=""
+for EXEC in "${EXEC_ORDER[@]}"; do
+  IFS='|' read -r M_SHORT _ _ _ RANK LR CFG <<< "$EXEC"
+  LABEL="${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR})"
+  if [[ "$LABEL" != "$PREV_MODEL" ]]; then
+    echo "--- Step ${STEP}: ${LABEL} ---"
+    STEP=$((STEP + 1))
+    PREV_MODEL="$LABEL"
+  fi
+  for DS in "${DATASETS[@]}"; do
+    IFS='|' read -r _ SUFFIX MAX_SAMPLES _ <<< "$DS"
+    K=$(format_k "$MAX_SAMPLES")
+    echo "  bash scripts/train_${M_SHORT}_${SUFFIX}_${K}_${CFG}_${TIMESTAMP}.sh"
+  done
 done
 echo ""
-echo "=== Evaluation (after training completes) ==="
+echo "--- Evaluation (after each step or all at once) ---"
 echo "  cd opencompass && python3 ./run.py eval_32b_${TIMESTAMP}.py -r eval32b"
+echo "  # Supports -r resume: run after each training step to accumulate results"
 echo ""
-echo "=== Model download (run first on slow networks) ==="
+echo "=== Prerequisites ==="
 echo "  nohup bash scripts/download_models.sh > download_models.log 2>&1 &"
+echo "  bash scripts/download_eval_data.sh"
+echo "  bash src/copy_files.sh \$(python3 -c 'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
 echo ""
-echo "=== Hyperparameter configs ==="
-for CFG in "${CONFIGS[@]}"; do
-  IFS='|' read -r RANK LR CFG_NAME <<< "$CFG"
-  echo "  ${CFG_NAME}: rank=${RANK}  lr=${LR}"
-done
-echo ""
-echo "=== Recommendation ==="
-echo "  Start with cfgA (rank=256, lr=1e-4) — most likely to beat 8B results."
-echo "  Run cfgB as ablation (same rank=128 as 8B, but LR halved for 32B)."
-echo "  Use cfgC only if cfgA shows loss instability."
+echo "=== Datasets (16 benchmarks, no code) ==="
+echo "  Math:    math-500, minerva_math, gsm8k, gsm8k_0shot, aime2024, svamp"
+echo "  General: mmlu, mmlu_pro, winogrande, ARC-c, GPQA_diamond, bbh, drop, TheoremQA"
+echo "  IF:      IFEval"
+echo "  Tool:    teval-review"
 echo ""

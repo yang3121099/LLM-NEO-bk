@@ -77,6 +77,11 @@
       "hf_instruct_path":"Qwen/Qwen3-8B"
     },
     {
+      "name": "Qwen3-32B",
+      "hf_base_path": "Qwen/Qwen3-32B-Base",
+      "hf_instruct_path":"Qwen/Qwen3-32B"
+    },
+    {
       "name": "Qwen3-14B",
       "hf_base_path": "Qwen/Qwen3-14B-Base",
       "hf_instruct_path":"Qwen/Qwen3-14B"

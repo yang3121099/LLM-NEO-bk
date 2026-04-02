@@ -35,13 +35,9 @@ VAL_SIZE=0.01
 TIMESTAMP=$(date +%m%d%H%M%S)
 MONTHDAY=$(date +%m%d)
 
-# --- 2K experiments (same datasets as 8B shadow-FT) ---
+# --- Single Shadow_2k dataset ---
 DATASETS=(
-  "opus_reasoning_3k|opus3k|2000|1000"
-  "openr1_math_220k|openr1|2000|1000"
-  "dolci_instruct_mix|dolci_mix|2000|1000"
-  "nemotron_if_chat_v1|nemotron_if|2000|1000"
-  "deepmath_2k_demo|deepmath_demo|2000|1000"
+  "Shadow_2k|shadow2k|2000|200"
 )
 
 # --- Hyperparameter configs ---

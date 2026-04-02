@@ -129,7 +129,7 @@ if [[ "\$NUM_GPUS" -gt 1 ]]; then
     export NCCL_TIMEOUT=7200
     export TORCH_NCCL_TIMEOUT=7200000
     export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200
-    DS_ARG="--deepspeed \$WORKSPACE_DIR/examples/deepspeed/ds_z2_config.json"
+    DS_ARG="--deepspeed \$WORKSPACE_DIR/examples/deepspeed/ds_z3_config.json"
 fi
 
 llamafactory-cli train \\

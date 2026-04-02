@@ -197,57 +197,57 @@ generate_eval_config() {
   local -a EVAL_ENTRIES=("$@")
 
   cat > "$CONFIG_FILE" << 'PYHEADER'
-# Auto-generated comprehensive eval config (16 benchmarks, no code)
-import subprocess as _sp
-import os as _os
-import importlib as _il
+from mmengine.config import read_base
 from opencompass.models import TurboMindModelwithChatTemplate
+import os as _os
 
-_NUM_GPUS = max(1, len(_sp.check_output(['nvidia-smi', '-L'], text=True).strip().splitlines()))
 RESULTS_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'results')
 
-def _load(mod, var):
-    return getattr(_il.import_module(mod), var)
+#######################################################################
+#                          PART 0  Essential Configs                  #
+#######################################################################
 
-######################### Math-7 #########################
-math_500_datasets     = _load('opencompass.configs.datasets.math.math_500_gen', 'math_datasets')
-minerva_math_datasets = _load('opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31', 'minerva_math_datasets')
-math_datasets         = _load('opencompass.configs.datasets.math.math_0shot_gen_393424', 'math_datasets')
-gsm8k_datasets        = _load('opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4', 'gsm8k_datasets')
-gsm8k_0shot_datasets  = _load('opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799', 'gsm8k_datasets')
-aime2024_datasets     = _load('opencompass.configs.datasets.aime2024.aime2024_gen_17d799', 'aime2024_datasets')
-svamp_datasets        = _load('opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4', 'svamp_datasets')
+with read_base():
+    from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
 
-######################### Reasoning-9 #########################
-mmlu_datasets         = _load('opencompass.configs.datasets.mmlu.mmlu_gen_4d595a', 'mmlu_datasets')
-mmlu_pro_datasets     = _load('opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de', 'mmlu_pro_datasets')
-bbh_datasets          = _load('opencompass.configs.datasets.bbh.bbh_gen_5b92b0', 'bbh_datasets')
-bbh3_datasets         = _load('opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4', 'bbh3_datasets')
-drop_datasets         = _load('opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0', 'drop_datasets')
-winogrande_datasets   = _load('opencompass.configs.datasets.winogrande.winogrande_gen_a027b6', 'winogrande_datasets')
-ARC_c_datasets        = _load('opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652', 'ARC_c_datasets')
-gpqa_datasets         = _load('opencompass.configs.datasets.gpqa.gpqa_gen_4baadb', 'gpqa_datasets')
-TheoremQA_datasets    = _load('opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7', 'TheoremQA_datasets')
+    #######################################################################
+    #                          PART 1  Datasets List                      #
+    #######################################################################
 
-datasets = (
-    math_500_datasets + minerva_math_datasets + math_datasets +
-    gsm8k_datasets + gsm8k_0shot_datasets + aime2024_datasets + svamp_datasets +
-    mmlu_datasets + mmlu_pro_datasets + bbh_datasets + bbh3_datasets +
-    drop_datasets + winogrande_datasets + ARC_c_datasets + gpqa_datasets + TheoremQA_datasets
-)
+    ######################### Reasoning-9 (general reasoning) #########################
+    from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
+    from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import mmlu_pro_datasets
+    from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets  # few-shot
+    from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets  # 0-shot
+    from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import drop_datasets
+    from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
+    from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
+    from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
+    from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets
+
+    ######################### Math-7 (mathematical) #########################
+    from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets   # noqa: F401, F403
+    from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets  # minerva_math
+    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets  # MATH
+    from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets  # noqa: F401, F403
+    from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
+    from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets  # 0-shot eval_v2
+    from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets  # math_500
+
+datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
+
+#######################################################################
+#                        PART 2  Models  List                         #
+#######################################################################
 
 PYHEADER
 
-  # Baselines
+  # Baselines + trained models
   {
-    echo "# ======= Instruct baselines ======="
-    echo "HF_baselines = ["
-    echo "    ('Qwen2.5-32B-Instruct-hf', 'Qwen/Qwen2.5-32B-Instruct'),"
-    echo "    ('Qwen3-30B-A3B-hf', 'Qwen/Qwen3-30B-A3B'),"
-    echo "]"
-    echo ""
-    echo "# ======= Trained models ======="
     echo "Baseline_settings = ["
+    echo "('Qwen2.5-32B-Instruct-hf', 'Qwen/Qwen2.5-32B-Instruct'),"
+    echo "('Qwen3-30B-A3B-hf', 'Qwen/Qwen3-30B-A3B'),"
+    echo ""
     for entry in "${EVAL_ENTRIES[@]}"; do
       echo "$entry"
     done
@@ -258,21 +258,6 @@ PYHEADER
 
 models = []
 
-for abbr, path in HF_baselines:
-    models.append(
-        dict(
-            type=TurboMindModelwithChatTemplate,
-            abbr=abbr,
-            path=path,
-            engine_config=dict(session_len=4096, max_batch_size=2048, tp=_NUM_GPUS),
-            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=2048),
-            max_seq_len=4096,
-            max_out_len=2048,
-            batch_size=1024,
-            run_cfg=dict(num_gpus=_NUM_GPUS),
-        )
-    )
-
 for abbr, path in Baseline_settings:
     if '$RESULTS_DIR' in path:
         path = path.replace('$RESULTS_DIR', RESULTS_DIR)
@@ -281,12 +266,12 @@ for abbr, path in Baseline_settings:
             type=TurboMindModelwithChatTemplate,
             abbr=abbr,
             path=path,
-            engine_config=dict(session_len=4096, max_batch_size=2048, tp=_NUM_GPUS),
-            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=2048),
-            max_seq_len=4096,
-            max_out_len=2048,
-            batch_size=1024,
-            run_cfg=dict(num_gpus=_NUM_GPUS),
+            engine_config=dict(session_len=16384, max_batch_size=4096, tp=8),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            max_seq_len=16384,
+            max_out_len=4096,
+            batch_size=2048,
+            run_cfg=dict(num_gpus=8),
         )
     )
 PYFOOTER

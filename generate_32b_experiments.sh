@@ -208,29 +208,25 @@ _NUM_GPUS = max(1, len(_sp.check_output(['nvidia-smi', '-L'], text=True).strip()
 RESULTS_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'results')
 
 with read_base():
-    ######################### Math (7) #########################
+    ######################### Math-7 #########################
     from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
     from opencompass.configs.datasets.math.math_evaluatorv2_gen_cecb31 import minerva_math_datasets
+    from opencompass.configs.datasets.math.math_0shot_gen_393424 import math_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_gen_1d7fe4 import gsm8k_datasets
     from opencompass.configs.datasets.gsm8k.gsm8k_0shot_v2_gen_17d799 import gsm8k_datasets as gsm8k_0shot_datasets
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
     from opencompass.configs.datasets.SVAMP.svamp_gen_fb25e4 import svamp_datasets
 
-    ###################### General (6) #########################
-    from opencompass.configs.datasets.mmlu.mmlu_openai_simple_evals_gen_b618ea import mmlu_datasets
+    ######################### Reasoning-9 #########################
+    from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
     from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import mmlu_pro_datasets
+    from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets
+    from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets
+    from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import drop_datasets
     from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets
     from opencompass.configs.datasets.gpqa.gpqa_gen_4baadb import gpqa_datasets
-    from opencompass.configs.datasets.bbh.bbh_gen_ee62e9 import bbh_datasets
-    from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import drop_datasets
-    from opencompass.configs.datasets.TheoremQA.TheoremQA_5shot_gen_6f0af8 import TheoremQA_datasets
-
-    ################# Instruction Following (1) ################
-    from opencompass.configs.datasets.IFEval.IFEval_gen import ifeval_datasets
-
-    ##################### Tool Use (1) #########################
-    from opencompass.configs.datasets.teval.teval_en_gen_slim import teval_slim_datasets
+    from opencompass.configs.datasets.TheoremQA.ThroremQA_0shot_cot_gen_8acdf7 import TheoremQA_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
@@ -386,8 +382,6 @@ echo "  bash scripts/download_eval_data.sh"
 echo "  bash src/copy_files.sh \$(python3 -c 'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
 echo ""
 echo "=== Datasets (16 benchmarks, no code) ==="
-echo "  Math:    math-500, minerva_math, gsm8k, gsm8k_0shot, aime2024, svamp"
-echo "  General: mmlu, mmlu_pro, winogrande, ARC-c, GPQA_diamond, bbh, drop, TheoremQA"
-echo "  IF:      IFEval"
-echo "  Tool:    teval-review"
+echo "  Math(7):    math-500, minerva_math, MATH, gsm8k, gsm8k_0shot, aime2024, svamp"
+echo "  General(9): mmlu, mmlu_pro, bbh(few-shot), bbh(0-shot), drop, winogrande, ARC-c, GPQA, TheoremQA"
 echo ""

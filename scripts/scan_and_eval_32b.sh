@@ -81,8 +81,8 @@ with read_base():
     ######################### Reasoning-9 (general reasoning) #########################
     from opencompass.configs.datasets.mmlu.mmlu_gen_4d595a import mmlu_datasets
     from opencompass.configs.datasets.mmlu_pro.mmlu_pro_0shot_cot_gen_08c1de import mmlu_pro_datasets
-    from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets  # few-shot
-    from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets  # 0-shot
+    # from opencompass.configs.datasets.bbh.bbh_gen_5b92b0 import bbh_datasets  # few-shot
+    # from opencompass.configs.datasets.bbh.bbh_0shot_nocot_gen_925fc4 import bbh_datasets as bbh3_datasets  # 0-shot
     from opencompass.configs.datasets.drop.drop_openai_simple_evals_gen_3857b0 import drop_datasets
     from opencompass.configs.datasets.winogrande.winogrande_gen_a027b6 import winogrande_datasets
     from opencompass.configs.datasets.ARC_c.ARC_c_cot_gen_926652 import ARC_c_datasets

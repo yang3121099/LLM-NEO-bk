@@ -127,6 +127,8 @@ if [[ "\$NUM_GPUS" -gt 1 ]]; then
     export NPROC_PER_NODE=\$NUM_GPUS
     export MASTER_PORT=\$(( RANDOM % 10000 + 20000 ))
     export NCCL_TIMEOUT=7200
+    export TORCH_NCCL_TIMEOUT=7200000
+    export TORCH_NCCL_HEARTBEAT_TIMEOUT_SEC=7200
     DS_ARG="--deepspeed \$WORKSPACE_DIR/examples/deepspeed/ds_z2_config.json"
 fi
 

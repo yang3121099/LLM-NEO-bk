@@ -69,7 +69,7 @@ format_k() {
 generate_train_script() {
   local MODEL_SHORT="$1" HF_BASE="$2" HF_INSTRUCT="$3" TEMPLATE="$4"
   local RANK="$5" LR="$6" CFG_NAME="$7"
-  local DATASET="$8" SUFFIX="$9" MAX_SAMPLES="${10}" SAVE_STEPS="${11}"
+  local DATASET="$8" SUFFIX="$9" MAX_SAMPLES="${10}" SAVE_STEPS="${11}" PER_GPU_BS="${12:-$DEFAULT_PER_GPU_BS}"
 
   local LR_DEC LR_TAG K REL_ROOT SCRIPT_FILE
   LR_DEC=$(to_decimal "$LR")
@@ -93,7 +93,7 @@ NUM_GPUS=\$(nvidia-smi -L 2>/dev/null | wc -l)
 [[ "\$NUM_GPUS" -lt 1 ]] && NUM_GPUS=1
 echo "INFO: Detected \$NUM_GPUS GPU(s)"
 
-PER_GPU_BS=${DEFAULT_PER_GPU_BS}
+PER_GPU_BS=${PER_GPU_BS}
 GRAD_ACCUM=\$(( ${EFFECTIVE_BS} / (PER_GPU_BS * NUM_GPUS) ))
 if [[ "\$GRAD_ACCUM" -lt 1 ]]; then
     PER_GPU_BS=1
@@ -306,30 +306,31 @@ ALL_EVAL_ENTRIES=()
 ORDERED_SCRIPTS=()
 
 # --- Execution order ---
-# 1. Qwen2.5-32B cfgA
-# 2. Qwen3-30B-A3B cfgA
+# Format: "model_short|hf_base|hf_instruct|template|rank|lr|cfg|per_gpu_bs"
+# 1. Qwen2.5-32B cfgA     (dense 32B → bs=1)
+# 2. Qwen3-30B-A3B cfgA   (MoE 3B active → bs=4)
 # 3. Qwen2.5-32B cfgC
 # 4. Qwen2.5-32B cfgB
 EXEC_ORDER=(
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|1e-4|cfgA"
-  "Qwen3-30B-A3B|Qwen/Qwen3-30B-A3B-Base|Qwen/Qwen3-30B-A3B|qwen3|256|1e-4|cfgA"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|5e-5|cfgC"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|1e-4|cfgB"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|1e-4|cfgA|1"
+  "Qwen3-30B-A3B|Qwen/Qwen3-30B-A3B-Base|Qwen/Qwen3-30B-A3B|qwen3|256|1e-4|cfgA|4"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|5e-5|cfgC|1"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|1e-4|cfgB|1"
 )
 
 for EXEC in "${EXEC_ORDER[@]}"; do
-  IFS='|' read -r M_SHORT HF_BASE HF_INST TPL RANK LR CFG <<< "$EXEC"
+  IFS='|' read -r M_SHORT HF_BASE HF_INST TPL RANK LR CFG PER_GPU_BS <<< "$EXEC"
   LR_DEC=$(to_decimal "$LR")
   LR_TAG="lr${LR_DEC}"
 
-  echo "--- ${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR}) ---"
+  echo "--- ${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR}, bs=${PER_GPU_BS}) ---"
 
   for DS in "${DATASETS[@]}"; do
     IFS='|' read -r DATASET SUFFIX MAX_SAMPLES SAVE_STEPS <<< "$DS"
     K=$(format_k "$MAX_SAMPLES")
 
     SCRIPT=$(generate_train_script "$M_SHORT" "$HF_BASE" "$HF_INST" "$TPL" \
-             "$RANK" "$LR" "$CFG" "$DATASET" "$SUFFIX" "$MAX_SAMPLES" "$SAVE_STEPS")
+             "$RANK" "$LR" "$CFG" "$DATASET" "$SUFFIX" "$MAX_SAMPLES" "$SAVE_STEPS" "$PER_GPU_BS")
     ORDERED_SCRIPTS+=("$SCRIPT")
     echo "  $SCRIPT"
 
@@ -364,8 +365,8 @@ echo ""
 STEP=1
 PREV_MODEL=""
 for EXEC in "${EXEC_ORDER[@]}"; do
-  IFS='|' read -r M_SHORT _ _ _ RANK LR CFG <<< "$EXEC"
-  LABEL="${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR})"
+  IFS='|' read -r M_SHORT _ _ _ RANK LR CFG BS <<< "$EXEC"
+  LABEL="${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR}, bs=${BS})"
   if [[ "$LABEL" != "$PREV_MODEL" ]]; then
     echo "--- Step ${STEP}: ${LABEL} ---"
     STEP=$((STEP + 1))

@@ -33,7 +33,7 @@ CUTOFF_LEN=4096
 VAL_SIZE=0.01
 
 TIMESTAMP=$(date +%m%d%H%M%S)
-MONTHDAY=$(date +%m%d)
+MONTHDAY=0402
 
 # --- Single Shadow_2k dataset ---
 DATASETS=(

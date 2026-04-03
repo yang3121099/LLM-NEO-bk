@@ -14,3 +14,4 @@ from .icl_misc_evaluator import AveragePPLEvaluator  # noqa
 from .icl_plugin_evaluator import TEvalEvaluator  # noqa
 from .icl_toxic_evaluator import ToxicEvaluator  # noqa
 from .lm_evaluator import LMEvaluator  # noqa
+from opencompass.datasets.math import MATHEvaluator  # noqa - required by aime2024/gsm8k/math dataset configs

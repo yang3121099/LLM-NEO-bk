@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
 ###############################################################################
-# generate_32b_experiments.sh — Qwen2.5-32B & Qwen3-30B-A3B Shadow-FT
+# generate_32b_experiments.sh — Qwen2.5-32B cfgC expansion to all datasets
 #
-# Generates training scripts with 2K samples, hyperparameter sweep,
-# plus comprehensive eval config (all benchmarks except code).
-#
-# Execution order:
-#   1. Qwen2.5-32B   cfgA (rank=256, lr=1e-4)  ← primary
-#   2. Qwen3-30B-A3B cfgA (rank=256, lr=1e-4)  ← MoE comparison
-#   3. Qwen2.5-32B   cfgC (rank=256, lr=5e-5)  ← conservative
-#   4. Qwen2.5-32B   cfgB (rank=128, lr=1e-4)  ← ablation
+# Expand cfgC (rank=256, lr=5e-5) to 5 additional 2K datasets.
+# Also includes 0402 Shadow_2k results in eval for comparison.
 #
 # Usage:
 #   bash generate_32b_experiments.sh
@@ -33,11 +27,15 @@ CUTOFF_LEN=4096
 VAL_SIZE=0.01
 
 TIMESTAMP=$(date +%m%d%H%M%S)
-MONTHDAY=0402
+MONTHDAY=$(date +%m%d)
 
-# --- Single Shadow_2k dataset ---
+# --- Datasets: 5 additional 2K datasets (Shadow_2k already done in 0402) ---
 DATASETS=(
-  "Shadow_2k|shadow2k|2000|200"
+  "opus_reasoning_3k|opus3k|2000|200"
+  "openr1_math_220k|openr1|2000|200"
+  "dolci_instruct_mix|dolci_mix|2000|200"
+  "nemotron_if_chat_v1|nemotron_if|2000|200"
+  "deepmath_2k_demo|deepmath_demo|2000|200"
 )
 
 # --- Hyperparameter configs ---
@@ -292,15 +290,9 @@ ORDERED_SCRIPTS=()
 
 # --- Execution order ---
 # Format: "model_short|hf_base|hf_instruct|template|rank|lr|cfg|per_gpu_bs"
-# 1. Qwen2.5-32B cfgA     (dense 32B → bs=1)
-# 2. Qwen3-30B-A3B cfgA   (MoE 3B active → bs=4)
-# 3. Qwen2.5-32B cfgC
-# 4. Qwen2.5-32B cfgB
+# cfgC only — expand to 5 additional datasets
 EXEC_ORDER=(
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|1e-4|cfgA|1"
-  "Qwen3-30B-A3B|Qwen/Qwen3-30B-A3B-Base|Qwen/Qwen3-30B-A3B|qwen3|256|1e-4|cfgA|4"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|5e-5|cfgC|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|1e-4|cfgB|1"
 )
 
 for EXEC in "${EXEC_ORDER[@]}"; do
@@ -329,6 +321,34 @@ for EXEC in "${EXEC_ORDER[@]}"; do
       ALL_EVAL_ENTRIES+=("    ('${ABBR}','\$RESULTS_DIR/${REL}'),")
     done
   done
+done
+
+# --- Include previous 0402 Shadow_2k results for comparison ---
+# cfgA/B/C Shadow_2k (already trained)
+for OLD_CFG_INFO in \
+  "256|1e-4|cfgA" \
+  "128|1e-4|cfgB" \
+  "256|5e-5|cfgC"; do
+  IFS='|' read -r O_RANK O_LR O_CFG <<< "$OLD_CFG_INFO"
+  O_LR_DEC=$(to_decimal "$O_LR")
+  O_LR_TAG="lr${O_LR_DEC}"
+  OLD_ROOT="0402/result-Qwen2.5-32B-0402"
+  for MT in "B2I" "I2I"; do
+    [[ "$MT" == "B2I" ]] && ST="B" || ST="I"
+    OLD_DIR="${ST}-2k-lora-rank${O_RANK}-${O_LR_TAG}-shadow2k"
+    OLD_REL="${OLD_ROOT}/${OLD_DIR}/merged-${MT}"
+    OLD_ABBR="Qwen2.5-32B-shadow2k-2k-${O_CFG}-${MT}"
+    ALL_EVAL_ENTRIES+=("    ('${OLD_ABBR}','\$RESULTS_DIR/${OLD_REL}'),")
+  done
+done
+# 30B-A3B cfgA Shadow_2k
+OLD_ROOT_30B="0402/result-Qwen3-30B-A3B-0402"
+for MT in "B2I" "I2I"; do
+  [[ "$MT" == "B2I" ]] && ST="B" || ST="I"
+  OLD_DIR="${ST}-2k-lora-rank256-lr0.0001-shadow2k"
+  OLD_REL="${OLD_ROOT_30B}/${OLD_DIR}/merged-${MT}"
+  OLD_ABBR="Qwen3-30B-A3B-shadow2k-2k-cfgA-${MT}"
+  ALL_EVAL_ENTRIES+=("    ('${OLD_ABBR}','\$RESULTS_DIR/${OLD_REL}'),")
 done
 
 # --- Generate eval config ---
@@ -369,11 +389,15 @@ echo "  cd opencompass && python3 ./run.py eval_32b_${TIMESTAMP}.py -r eval32b"
 echo "  # Supports -r resume: run after each training step to accumulate results"
 echo ""
 echo "=== Prerequisites ==="
-echo "  nohup bash scripts/download_models.sh > download_models.log 2>&1 &"
-echo "  bash scripts/download_eval_data.sh"
 echo "  bash src/copy_files.sh \$(python3 -c 'import sysconfig; print(sysconfig.get_path(\"purelib\"))')"
+echo "  python3 scripts/prepare_deepmath_103k.py --demo   # generates data/deepmath_2k_demo.json"
 echo ""
-echo "=== Datasets (16 benchmarks, no code) ==="
+echo "=== Training Datasets (5 × 2K, cfgC) ==="
+echo "  opus_reasoning_3k, openr1_math_220k, dolci_instruct_mix, nemotron_if_chat_v1, deepmath_2k_demo"
+echo ""
+echo "=== Eval Benchmarks (14, no code/bbh) ==="
 echo "  Math(7):    math-500, minerva_math, MATH, gsm8k, gsm8k_0shot, aime2024, svamp"
-echo "  General(9): mmlu, mmlu_pro, bbh(few-shot), bbh(0-shot), drop, winogrande, ARC-c, GPQA, TheoremQA"
+echo "  General(7): mmlu, mmlu_pro, drop, winogrande, ARC-c, GPQA, TheoremQA"
+echo ""
+echo "=== Also evaluates 0402 Shadow_2k models (cfgA/B/C + 30B-A3B) ==="
 echo ""

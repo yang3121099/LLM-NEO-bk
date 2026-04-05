@@ -255,12 +255,24 @@ ALL_EVAL_ENTRIES=()
 # New configs to fill the grid:
 # ==========================================================================
 echo ""
-echo "=== Phase 1: Qwen2.5-32B Grid Search ==="
+echo "=== Phase 1: Qwen2.5-32B Full Grid Search ==="
 
 GRID_32B=(
+  # rank=64
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|2e-4|r64_lr2e4|1"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|1e-4|r64_lr1e4|1"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|5e-5|r64_lr5e5|1"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|2e-5|r64_lr2e5|1"
+  # rank=128 (lr=1e-4 done as cfgB in 0402)
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|2e-4|r128_lr2e4|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|5e-5|r128_lr5e5|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|2e-5|r128_lr2e5|1"
+  # rank=256 (lr=1e-4 done as cfgA, lr=5e-5 done as cfgC in 0402)
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|2e-4|r256_lr2e4|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|2e-5|r256_lr2e5|1"
+  # rank=512
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|2e-4|r512_lr2e4|1"
+  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|1e-4|r512_lr1e4|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|5e-5|r512_lr5e5|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|2e-5|r512_lr2e5|1"
 )
@@ -359,10 +371,10 @@ echo "=========================================="
 echo "  Scripts Generated!"
 echo "=========================================="
 echo ""
-echo "=== Phase 1: 32B Grid Search (run first) ==="
-echo "  New:  r128/lr5e-5, r128/lr2e-5, r256/lr2e-5, r512/lr5e-5, r512/lr2e-5"
-echo "  0402: cfgA(r256/lr1e-4), cfgB(r128/lr1e-4), cfgC(r256/lr5e-5)"
-echo "  → Full grid: rank ∈ {128, 256, 512} × lr ∈ {1e-4, 5e-5, 2e-5}"
+echo "=== Phase 1: 32B Full Grid Search (13 new + 3 from 0402) ==="
+echo "  rank ∈ {64, 128, 256, 512} × lr ∈ {2e-4, 1e-4, 5e-5, 2e-5}"
+echo "  0402 already done: r256/lr1e-4(cfgA), r128/lr1e-4(cfgB), r256/lr5e-5(cfgC)"
+echo "  → 16 total grid points, 13 new training runs"
 echo ""
 echo "=== Phase 2: 70B (run after 32B eval) ==="
 echo "  r256/lr5e-5, r256/lr2e-5, r128/lr5e-5  (BS=1, ZeRO-3)"

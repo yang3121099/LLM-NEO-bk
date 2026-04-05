@@ -207,7 +207,6 @@ PYHEADER
   {
     echo "Baseline_settings = ["
     echo "('Qwen2.5-32B-Instruct-hf', 'Qwen/Qwen2.5-32B-Instruct'),"
-    echo "('Llama-3-70B-Instruct-hf', 'meta-llama/Meta-Llama-3-70B-Instruct'),"
     echo ""
     for entry in "${EVAL_ENTRIES[@]}"; do
       echo "$entry"
@@ -335,40 +334,8 @@ for OLD_CFG_INFO in \
 done
 
 # ==========================================================================
-# Phase 2: Meta-Llama-3-70B × 3 configs (Shadow_2k, BS=1)
+# Phase 2 removed — 70B experiments not needed
 # ==========================================================================
-echo ""
-echo "=== Phase 2: Meta-Llama-3-70B ==="
-
-GRID_70B=(
-  "Llama-3-70B|meta-llama/Meta-Llama-3-70B|meta-llama/Meta-Llama-3-70B-Instruct|llama3|256|5e-5|r256_lr5e5|1"
-  "Llama-3-70B|meta-llama/Meta-Llama-3-70B|meta-llama/Meta-Llama-3-70B-Instruct|llama3|256|2e-5|r256_lr2e5|1"
-  "Llama-3-70B|meta-llama/Meta-Llama-3-70B|meta-llama/Meta-Llama-3-70B-Instruct|llama3|128|5e-5|r128_lr5e5|1"
-)
-
-for EXEC in "${GRID_70B[@]}"; do
-  IFS='|' read -r M_SHORT HF_BASE HF_INST TPL RANK LR CFG PER_GPU_BS <<< "$EXEC"
-  LR_DEC=$(to_decimal "$LR")
-  LR_TAG="lr${LR_DEC}"
-  echo "  ${M_SHORT} ${CFG} (rank=${RANK}, lr=${LR})"
-
-  for DS in "${DATASETS[@]}"; do
-    IFS='|' read -r DATASET SUFFIX MAX_SAMPLES SAVE_STEPS <<< "$DS"
-    K=$(format_k "$MAX_SAMPLES")
-    SCRIPT=$(generate_train_script "$M_SHORT" "$HF_BASE" "$HF_INST" "$TPL" \
-             "$RANK" "$LR" "$CFG" "$DATASET" "$SUFFIX" "$MAX_SAMPLES" "$SAVE_STEPS" "$PER_GPU_BS")
-    echo "    $SCRIPT"
-
-    REL_ROOT="${MONTHDAY}/result-${M_SHORT}-${MONTHDAY}"
-    for MERGE_TAG in "B2I" "I2I"; do
-      [[ "$MERGE_TAG" == "B2I" ]] && SRC_TAG="B" || SRC_TAG="I"
-      DIR="${SRC_TAG}-${K}-lora-rank${RANK}-${LR_TAG}-${SUFFIX}"
-      REL="${REL_ROOT}/${DIR}/merged-${MERGE_TAG}"
-      ABBR="${M_SHORT}-${SUFFIX}-${K}-${CFG}-${MERGE_TAG}"
-      ALL_EVAL_ENTRIES+=("    ('${ABBR}','\$RESULTS_DIR/${REL}'),")
-    done
-  done
-done
 
 # --- Generate eval config ---
 EVAL_CONFIG="$WORKSPACE_DIR/opencompass/eval_0404_grid_${TIMESTAMP}.py"
@@ -388,9 +355,6 @@ echo "=== Phase 1: 32B Grid Search (8 new runs) ==="
 echo "  NEW: rank=64 × {2e-4,1e-4,5e-5,2e-5} + {r128,r256,r512}×lr2e-4 + r512/lr1e-4"
 echo "  DONE(0402): r256/1e-4, r128/1e-4, r256/5e-5"
 echo "  DONE(0404): r128/5e-5, r128/2e-5, r256/2e-5, r512/5e-5, r512/2e-5"
-echo ""
-echo "=== Phase 2: 70B (run after 32B eval) ==="
-echo "  r256/lr5e-5, r256/lr2e-5, r128/lr5e-5  (BS=1, ZeRO-3)"
 echo ""
 echo "=== Eval (Math-7, shared -r tag) ==="
 echo "  cd opencompass && python3 ./run.py $(basename "$EVAL_CONFIG") -r eval0404"

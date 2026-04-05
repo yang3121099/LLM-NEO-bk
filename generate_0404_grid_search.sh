@@ -258,23 +258,17 @@ echo ""
 echo "=== Phase 1: Qwen2.5-32B Full Grid Search ==="
 
 GRID_32B=(
-  # rank=64
+  # rank=64 (all new)
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|2e-4|r64_lr2e4|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|1e-4|r64_lr1e4|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|5e-5|r64_lr5e5|1"
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|64|2e-5|r64_lr2e5|1"
-  # rank=128 (lr=1e-4 done as cfgB in 0402)
+  # lr=2e-4 (rank 128/256/512)
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|2e-4|r128_lr2e4|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|5e-5|r128_lr5e5|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|128|2e-5|r128_lr2e5|1"
-  # rank=256 (lr=1e-4 done as cfgA, lr=5e-5 done as cfgC in 0402)
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|2e-4|r256_lr2e4|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|256|2e-5|r256_lr2e5|1"
-  # rank=512
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|2e-4|r512_lr2e4|1"
+  # rank=512 lr=1e-4
   "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|1e-4|r512_lr1e4|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|5e-5|r512_lr5e5|1"
-  "Qwen2.5-32B|Qwen/Qwen2.5-32B|Qwen/Qwen2.5-32B-Instruct|qwen|512|2e-5|r512_lr2e5|1"
 )
 
 for EXEC in "${GRID_32B[@]}"; do
@@ -301,17 +295,36 @@ for EXEC in "${GRID_32B[@]}"; do
   done
 done
 
-# Include 0402 cfgA/B/C for comparison
+# Include previously done experiments in eval
 echo ""
-echo "  (also includes 0402 Shadow_2k cfgA/B/C in eval)"
-for OLD_CFG_INFO in \
-  "256|1e-4|cfgA" \
-  "128|1e-4|cfgB" \
-  "256|5e-5|cfgC"; do
+echo "  (also includes previously done configs in eval)"
+
+# 0402 results: cfgA, cfgB, cfgC
+for OLD_CFG_INFO in "256|1e-4|cfgA" "128|1e-4|cfgB" "256|5e-5|cfgC"; do
   IFS='|' read -r O_RANK O_LR O_CFG <<< "$OLD_CFG_INFO"
   O_LR_DEC=$(to_decimal "$O_LR")
   O_LR_TAG="lr${O_LR_DEC}"
   OLD_ROOT="0402/result-Qwen2.5-32B-0402"
+  for MT in "B2I" "I2I"; do
+    [[ "$MT" == "B2I" ]] && ST="B" || ST="I"
+    OLD_DIR="${ST}-2k-lora-rank${O_RANK}-${O_LR_TAG}-shadow2k"
+    OLD_REL="${OLD_ROOT}/${OLD_DIR}/merged-${MT}"
+    OLD_ABBR="Qwen2.5-32B-shadow2k-2k-${O_CFG}-${MT}"
+    ALL_EVAL_ENTRIES+=("    ('${OLD_ABBR}','\$RESULTS_DIR/${OLD_REL}'),")
+  done
+done
+
+# 0404 already done results
+for OLD_CFG_INFO in \
+  "128|5e-5|r128_lr5e5" \
+  "128|2e-5|r128_lr2e5" \
+  "256|2e-5|r256_lr2e5" \
+  "512|5e-5|r512_lr5e5" \
+  "512|2e-5|r512_lr2e5"; do
+  IFS='|' read -r O_RANK O_LR O_CFG <<< "$OLD_CFG_INFO"
+  O_LR_DEC=$(to_decimal "$O_LR")
+  O_LR_TAG="lr${O_LR_DEC}"
+  OLD_ROOT="0404/result-Qwen2.5-32B-0404"
   for MT in "B2I" "I2I"; do
     [[ "$MT" == "B2I" ]] && ST="B" || ST="I"
     OLD_DIR="${ST}-2k-lora-rank${O_RANK}-${O_LR_TAG}-shadow2k"
@@ -371,10 +384,10 @@ echo "=========================================="
 echo "  Scripts Generated!"
 echo "=========================================="
 echo ""
-echo "=== Phase 1: 32B Full Grid Search (13 new + 3 from 0402) ==="
-echo "  rank ∈ {64, 128, 256, 512} × lr ∈ {2e-4, 1e-4, 5e-5, 2e-5}"
-echo "  0402 already done: r256/lr1e-4(cfgA), r128/lr1e-4(cfgB), r256/lr5e-5(cfgC)"
-echo "  → 16 total grid points, 13 new training runs"
+echo "=== Phase 1: 32B Grid Search (8 new runs) ==="
+echo "  NEW: rank=64 × {2e-4,1e-4,5e-5,2e-5} + {r128,r256,r512}×lr2e-4 + r512/lr1e-4"
+echo "  DONE(0402): r256/1e-4, r128/1e-4, r256/5e-5"
+echo "  DONE(0404): r128/5e-5, r128/2e-5, r256/2e-5, r512/5e-5, r512/2e-5"
 echo ""
 echo "=== Phase 2: 70B (run after 32B eval) ==="
 echo "  r256/lr5e-5, r256/lr2e-5, r128/lr5e-5  (BS=1, ZeRO-3)"

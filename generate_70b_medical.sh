@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 ###############################################################################
-# generate_70b_medical.sh — Llama-3.1-70B Medical Shadow-FT
+# generate_70b_medical.sh — Meta-Llama-3-70B Medical Shadow-FT
 #
 # Training: medical_o1_reasoning_2k (2K samples, post Llama-3 cutoff)
-# Eval:     Medical (MedQA + medmcqa) + Math-7 (alignment preservation)
+# Eval:     Medical (MedQA + medmcqa + MedBench) + Math-7 (alignment preservation)
 #
 # Configs: cfgC-equivalent (rank=256, lr=5e-5) + two variants
 #
@@ -37,9 +37,9 @@ DATASETS=(
 )
 
 # --- Model ---
-MODEL_SHORT="Llama3.1-70B"
-HF_BASE="meta-llama/Llama-3.1-70B"
-HF_INSTRUCT="meta-llama/Llama-3.1-70B-Instruct"
+MODEL_SHORT="Llama3-70B"
+HF_BASE="meta-llama/Meta-Llama-3-70B"
+HF_INSTRUCT="meta-llama/Meta-Llama-3-70B-Instruct"
 TEMPLATE="llama3"
 
 # --- Helpers ---
@@ -192,9 +192,10 @@ RESULTS_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(_
 with read_base():
     from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
 
-    ######################### Medical-2 #########################
+    ######################### Medical-3 #########################
     from opencompass.configs.datasets.MedQA.MedQA_gen_3bf756 import MedQA_datasets
     from opencompass.configs.datasets.medmcqa.medmcqa_gen_60c8f5 import medmcqa_datasets
+    from opencompass.configs.datasets.MedBench.medbench_gen_0b4fff import medbench_datasets
 
     ######################### Math-7 (alignment preservation) #########################
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
@@ -211,7 +212,7 @@ PYHEADER
 
   {
     echo "Baseline_settings = ["
-    echo "('Llama-3.1-70B-Instruct-hf', 'meta-llama/Llama-3.1-70B-Instruct'),"
+    echo "('Meta-Llama-3-70B-Instruct-hf', 'meta-llama/Meta-Llama-3-70B-Instruct'),"
     echo ""
     for entry in "${EVAL_ENTRIES[@]}"; do
       echo "$entry"
@@ -312,10 +313,10 @@ echo "  med_cfgC:  rank=256, lr=5e-5  (best from 32B grid search)"
 echo "  med_r512:  rank=512, lr=5e-5  (higher capacity)"
 echo "  med_lr2e5: rank=256, lr=2e-5  (more conservative)"
 echo ""
-echo "=== Eval (Medical-2 + Math-7, 9 benchmarks total) ==="
-echo "  Medical: MedQA (US/Mainland/Taiwan), medmcqa"
+echo "=== Eval (Medical-3 + Math-7) ==="
+echo "  Medical: MedQA (US/Mainland/Taiwan), medmcqa, MedBench (16+ subtasks)"
 echo "  Math:    AIME2024, MATH, minerva_math, SVAMP, GSM8K, GSM8K-0shot, MATH-500"
-echo "  Baseline: Llama-3.1-70B-Instruct"
+echo "  Baseline: Meta-Llama-3-70B-Instruct"
 echo ""
 echo "  cd opencompass && python3 ./run.py $(basename "$EVAL_CONFIG") -r eval70b_med"
 echo ""

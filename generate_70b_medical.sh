@@ -190,12 +190,10 @@ import os as _os
 RESULTS_DIR = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), 'results')
 
 with read_base():
-    from opencompass.configs.summarizers.chat_core_shadow_2505 import summarizer
-
-    ######################### Medical-3 #########################
+    ######################### Medical (medbench commented out) #########################
     from opencompass.configs.datasets.MedQA.MedQA_gen_3bf756 import MedQA_datasets
     from opencompass.configs.datasets.medmcqa.medmcqa_gen_60c8f5 import medmcqa_datasets
-    from opencompass.configs.datasets.MedBench.medbench_gen_0b4fff import medbench_datasets
+    # from opencompass.configs.datasets.MedBench.medbench_gen_0b4fff import medbench_datasets
 
     ######################### Math-7 (alignment preservation) #########################
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
@@ -207,6 +205,80 @@ with read_base():
     from opencompass.configs.datasets.math.math_500_gen import math_datasets as math_500_datasets
 
 datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
+
+# ---------------------------------------------------------------------------
+# Inline summarizer (Medical + Math-7)
+# ---------------------------------------------------------------------------
+
+medical_groups = [
+    dict(
+        name="Medical",
+        subsets=[
+            ["MedQA_US", "accuracy"],
+            ["MedQA_Mainland", "accuracy"],
+            ["MedQA_Taiwan", "accuracy"],
+            ["medmcqa", "accuracy"],
+        ],
+    )
+]
+
+math_groups = [
+    dict(
+        name="Math",
+        subsets=[
+            ["math", "accuracy"],
+            ["math-500", "accuracy"],
+            ["minerva_math", "accuracy"],
+            ["gsm8k", "accuracy"],
+            ["gsm8k_0shot", "accuracy"],
+            ["aime2024", "accuracy"],
+            ["svamp", "accuracy"],
+        ],
+    )
+]
+
+average_groups = [
+    {"name": "average_medical", "subsets": [["Medical", "naive_average"]]},
+    {"name": "average_math", "subsets": [["Math", "naive_average"]]},
+    {
+        "name": "overall_average",
+        "subsets": [
+            ["average_medical", "naive_average"],
+            ["average_math", "naive_average"],
+        ],
+    },
+]
+
+dataset_abbrs = [
+    "--------- Medical ---------",
+    ["MedQA_US", "accuracy"],
+    ["MedQA_Mainland", "accuracy"],
+    ["MedQA_Taiwan", "accuracy"],
+    ["medmcqa", "accuracy"],
+    "",
+    "--------- Math ---------",
+    ["math", "accuracy"],
+    ["math-500", "accuracy"],
+    ["minerva_math", "accuracy"],
+    ["gsm8k", "accuracy"],
+    ["gsm8k_0shot", "accuracy"],
+    ["aime2024", "accuracy"],
+    ["svamp", "accuracy"],
+    "",
+    "--------- Section AVG ---------",
+    ["Medical", "naive_average"],
+    ["Math", "naive_average"],
+    "",
+    "--------- Overall AVG ---------",
+    ["overall_average", "naive_average"],
+]
+
+summary_groups = medical_groups + math_groups + average_groups
+
+summarizer = dict(
+    dataset_abbrs=dataset_abbrs,
+    summary_groups=summary_groups,
+)
 
 PYHEADER
 

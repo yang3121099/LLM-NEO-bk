@@ -194,6 +194,8 @@ with read_base():
     from opencompass.configs.datasets.MedQA.MedQA_gen_3bf756 import MedQA_datasets
     from opencompass.configs.datasets.medmcqa.medmcqa_gen_60c8f5 import medmcqa_datasets
     # from opencompass.configs.datasets.MedBench.medbench_gen_0b4fff import medbench_datasets
+    from opencompass.configs.datasets.ProteinLMBench.ProteinLMBench_gen_a67965 import proteinlmbench_datasets
+    from opencompass.configs.datasets.Medbullets.medbullets_gen_60c8f5 import medbullets_datasets
 
     ######################### Math-7 (alignment preservation) #########################
     from opencompass.configs.datasets.aime2024.aime2024_gen_17d799 import aime2024_datasets
@@ -218,6 +220,8 @@ medical_groups = [
             ["MedQA_Mainland", "accuracy"],
             ["MedQA_Taiwan", "accuracy"],
             ["medmcqa", "accuracy"],
+            ["ProteinLMBench", "accuracy"],
+            ["medbullets", "accuracy"],
         ],
     )
 ]
@@ -255,6 +259,8 @@ dataset_abbrs = [
     ["MedQA_Mainland", "accuracy"],
     ["MedQA_Taiwan", "accuracy"],
     ["medmcqa", "accuracy"],
+    ["ProteinLMBench", "accuracy"],
+    ["medbullets", "accuracy"],
     "",
     "--------- Math ---------",
     ["math", "accuracy"],
@@ -385,8 +391,8 @@ echo "  med_cfgC:  rank=256, lr=5e-5  (best from 32B grid search)"
 echo "  med_r512:  rank=512, lr=5e-5  (higher capacity)"
 echo "  med_lr2e5: rank=256, lr=2e-5  (more conservative)"
 echo ""
-echo "=== Eval (Medical-3 + Math-7) ==="
-echo "  Medical: MedQA (US/Mainland/Taiwan), medmcqa, MedBench (16+ subtasks)"
+echo "=== Eval (Medical-6 + Math-7) ==="
+echo "  Medical: MedQA (US/Mainland/Taiwan), medmcqa, ProteinLMBench, medbullets"
 echo "  Math:    AIME2024, MATH, minerva_math, SVAMP, GSM8K, GSM8K-0shot, MATH-500"
 echo "  Baseline: Meta-Llama-3-70B-Instruct"
 echo ""

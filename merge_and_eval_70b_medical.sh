@@ -52,12 +52,9 @@ done
 
 if [ ${#FOUND_ADAPTERS[@]} -eq 0 ]; then
     echo ""
-    echo "ERROR: No trained adapters found!"
+    echo "WARNING: No trained adapters found."
     echo "Expected pattern: results/MMDD/result-Llama3-70B-MMDD/{B,I}-*-med2k/"
-    echo ""
-    echo "Available directories in results/:"
-    ls -la "$RESULTS_DIR"/ 2>/dev/null || echo "  (empty)"
-    exit 1
+    echo "Will generate eval config with baseline Instruct model only."
 fi
 
 echo ""
@@ -66,10 +63,11 @@ echo "  Total adapters found: ${#FOUND_ADAPTERS[@]}"
 ###############################################################################
 # Step 2: Merge B2I and I2I
 ###############################################################################
+EVAL_ENTRIES=()
+
+if [ ${#FOUND_ADAPTERS[@]} -gt 0 ]; then
 echo ""
 echo "=== Step 2: Merging adapters ==="
-
-EVAL_ENTRIES=()
 
 for ADAPTER_DIR in "${FOUND_ADAPTERS[@]}"; do
     DIRNAME=$(basename "$ADAPTER_DIR")
@@ -123,6 +121,11 @@ done
 
 echo ""
 echo "  Merge complete. ${#EVAL_ENTRIES[@]} models ready for eval."
+
+else
+echo ""
+echo "=== Step 2: SKIPPED (no adapters) — baseline only ==="
+fi
 
 ###############################################################################
 # Step 3: Generate eval config

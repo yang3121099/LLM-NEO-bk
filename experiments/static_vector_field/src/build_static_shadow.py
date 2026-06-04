@@ -107,9 +107,12 @@ def main() -> None:
     for s, groups in selected.items():
         print(f"  {s}: {len(groups)} groups")
 
-    # Build readers.
-    lineage = {item["name"]: item["path"] for item in cfg["lineage"]}
-    readers = {s: CheckpointReader(s, lineage[s]) for s in ["base", "sft", "dpo", "rlvr"]}
+    # Build readers (local dir or HF repo id).
+    lineage = {item["name"]: item for item in cfg["lineage"]}
+    readers = {
+        s: CheckpointReader(s, lineage[s]["path"], lineage[s].get("revision"))
+        for s in ["base", "sft", "dpo", "rlvr"]
+    }
     names, _ = common_floating_names(
         list(readers.values()),
         ignore_patterns=cfg.get("ignore_regex", []),

@@ -43,15 +43,16 @@ def load_config(path: str) -> dict:
 
 
 def build_readers(cfg: dict) -> Dict[str, CheckpointReader]:
-    lineage = {item["name"]: item["path"] for item in cfg["lineage"]}
+    lineage = {item["name"]: item for item in cfg["lineage"]}
     missing = [s for s in REQUIRED_STAGES if s not in lineage]
     if missing:
         raise ValueError(f"config lineage is missing stages: {missing}")
-    print("Indexing checkpoints (no full-model load)...")
+    print("Indexing checkpoints (local dir or HF repo; no full-model load)...")
     readers = {}
     for stage in REQUIRED_STAGES:
-        print(f"  [{stage}] {lineage[stage]}")
-        readers[stage] = CheckpointReader(stage, lineage[stage])
+        item = lineage[stage]
+        print(f"  [{stage}] {item['path']}")
+        readers[stage] = CheckpointReader(stage, item["path"], item.get("revision"))
     return readers
 
 

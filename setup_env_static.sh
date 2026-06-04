@@ -78,20 +78,21 @@ fi
 ###############################################################################
 # 3. The remaining (small) dependencies
 ###############################################################################
-info "Installing numpy, safetensors, matplotlib, pyyaml ..."
-pip install -q numpy safetensors matplotlib pyyaml
+info "Installing numpy, safetensors, matplotlib, pyyaml, huggingface_hub ..."
+pip install -q numpy safetensors matplotlib pyyaml "huggingface_hub[cli]"
 
 ###############################################################################
 # 4. Verify
 ###############################################################################
 info "Verifying ..."
 python - <<'PY' || error "Dependency import failed."
-import torch, numpy, safetensors, matplotlib, yaml
-print(f"  torch:        {torch.__version__}")
-print(f"  numpy:        {numpy.__version__}")
-print(f"  safetensors:  {safetensors.__version__}")
-print(f"  matplotlib:   {matplotlib.__version__}")
-print(f"  CUDA:         {torch.cuda.is_available()} ({torch.cuda.device_count()} GPU(s))")
+import torch, numpy, safetensors, matplotlib, yaml, huggingface_hub
+print(f"  torch:           {torch.__version__}")
+print(f"  numpy:           {numpy.__version__}")
+print(f"  safetensors:     {safetensors.__version__}")
+print(f"  matplotlib:      {matplotlib.__version__}")
+print(f"  huggingface_hub: {huggingface_hub.__version__}")
+print(f"  CUDA:            {torch.cuda.is_available()} ({torch.cuda.device_count()} GPU(s))")
 PY
 
 echo ""
@@ -100,6 +101,8 @@ echo ""
 if [[ "$USE_CONDA" == "true" ]]; then
   echo "  Activate:  conda activate $CONDA_ENV"
 fi
+echo "  HF auth:   huggingface-cli login          # paste token at the prompt (not on the CLI)"
+echo "             # or:  export HF_TOKEN=<your-token>   (set in your shell, never commit it)"
 echo "  Run:       bash run_static_vector_field.sh            # CPU"
 echo "             bash run_static_vector_field.sh --device cuda"
 echo ""

@@ -123,6 +123,34 @@ bash run_static_vector_field.sh --steps analyze --limit 50   # quick smoke test
 bash run_static_vector_field.sh --config path/to/other.yaml
 ```
 
+### Checkpoints: local dir or HF Hub
+
+Each `path` in the config may be a local directory **or** a HuggingFace Hub repo
+id (the default config uses repo ids). Hub repos are fetched on demand — only the
+`*.safetensors` / `*.json` files — via `snapshot_download`. You can pin a commit
+with `revision: <sha>` per lineage entry.
+
+`meta-llama/Llama-3.1-8B` is **gated**: accept its license on the model page with
+the same account whose token you use, or the download returns 403.
+
+### Authenticating with HuggingFace (do NOT commit your token)
+
+Your token is a secret — never put it in the config, a script, or git. Use one of:
+
+```bash
+# Recommended: interactive login (token is pasted at the prompt, stored in
+# ~/.cache/huggingface/token, which is outside the repo and not committed).
+huggingface-cli login
+
+# Or: an environment variable, set in your shell session only.
+export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+`snapshot_download` picks either up automatically. Prefer a **read-only**
+fine-grained token scoped to just the models you need. If a token is ever exposed
+(e.g. pasted into a chat or a log), revoke it at
+<https://huggingface.co/settings/tokens> and issue a new one.
+
 ### Manual / per-step
 
 ```bash

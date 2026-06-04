@@ -36,19 +36,51 @@ def _is_floating_dtype(dtype: torch.dtype) -> bool:
 class CheckpointReader:
     """Lazily reads individual tensors from one HF checkpoint directory."""
 
-    def __init__(self, name: str, path: str):
+    def __init__(self, name: str, path: str, revision: str | None = None):
         self.name = name
         self.path = path
+        self.revision = revision
         self._st_index: Dict[str, str] = {}      # tensor name -> safetensors file
         self._bin_state: Dict[str, torch.Tensor] | None = None  # fallback
         self._st_handles: Dict[str, object] = {}  # file -> safe_open handle
         self._meta: Dict[str, Tuple[Tuple[int, ...], str]] = {}  # name -> (shape, dtype)
+        self._local_dir = self._resolve_path(path, revision)
         self._build_index()
+
+    # -- path resolution ----------------------------------------------------- #
+    def _resolve_path(self, path: str, revision: str | None) -> str:
+        """Return a local directory for ``path``.
+
+        If ``path`` is an existing local directory it is used as-is. Otherwise it
+        is treated as a HuggingFace Hub repo id and downloaded (only the
+        safetensors / json files) via ``snapshot_download``. Authentication is
+        picked up automatically from ``huggingface-cli login`` or the ``HF_TOKEN``
+        / ``HUGGING_FACE_HUB_TOKEN`` environment variable — never passed here as a
+        literal.
+        """
+        if os.path.isdir(path):
+            return path
+        try:
+            from huggingface_hub import snapshot_download
+        except ImportError as e:  # pragma: no cover
+            raise FileNotFoundError(
+                f"[{self.name}] '{path}' is not a local dir and huggingface_hub is "
+                f"not installed (pip install huggingface_hub)."
+            ) from e
+        print(f"  [{self.name}] resolving HF repo '{path}'"
+              + (f"@{revision}" if revision else "") + " ...")
+        local = snapshot_download(
+            repo_id=path,
+            revision=revision,
+            allow_patterns=["*.safetensors", "*.json"],
+        )
+        return local
 
     # -- index construction -------------------------------------------------- #
     def _build_index(self) -> None:
-        if not os.path.isdir(self.path):
-            raise FileNotFoundError(f"[{self.name}] not a directory: {self.path}")
+        if not os.path.isdir(self._local_dir):
+            raise FileNotFoundError(f"[{self.name}] could not resolve: {self.path}")
+        self.path = self._local_dir
 
         index_json = os.path.join(self.path, "model.safetensors.index.json")
         single = os.path.join(self.path, "model.safetensors")

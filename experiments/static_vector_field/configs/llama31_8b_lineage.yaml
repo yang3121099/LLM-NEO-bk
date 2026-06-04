@@ -6,18 +6,24 @@
 #   dpo  : allenai/Llama-3.1-Tulu-3-8B-DPO
 #   rlvr : allenai/Llama-3.1-Tulu-3-8B
 #
-# Replace the `path` values with local snapshot directories (or HF cache dirs).
-# All four must share the same architecture / tensor names.
+# `path` may be a local directory OR a HuggingFace Hub repo id. Hub repos are
+# fetched on demand (only *.safetensors / *.json) via snapshot_download, using
+# your `huggingface-cli login` cache or the HF_TOKEN env var for auth.
+#
+# NOTE: meta-llama/Llama-3.1-8B is a *gated* model — accept its license on the Hub
+# (https://huggingface.co/meta-llama/Llama-3.1-8B) with the same account whose
+# token you log in with, or the download will 403. Optionally pin a commit with
+# `revision: <sha>`.
 
 lineage:
   - name: base
-    path: /path/to/Llama-3.1-8B
+    path: meta-llama/Llama-3.1-8B
   - name: sft
-    path: /path/to/Llama-3.1-Tulu-3-8B-SFT
+    path: allenai/Llama-3.1-Tulu-3-8B-SFT
   - name: dpo
-    path: /path/to/Llama-3.1-Tulu-3-8B-DPO
+    path: allenai/Llama-3.1-Tulu-3-8B-DPO
   - name: rlvr
-    path: /path/to/Llama-3.1-Tulu-3-8B
+    path: allenai/Llama-3.1-Tulu-3-8B
 
 output_dir: outputs/static_vector_field/llama31_8b
 

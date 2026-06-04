@@ -1,0 +1,64 @@
+# Static post-training vector-field audit — Llama-3.1-8B lineage.
+#
+# Base   -> SFT -> DPO -> RLVR maps onto the Tulu-3 8B release:
+#   base : meta-llama/Llama-3.1-8B
+#   sft  : allenai/Llama-3.1-Tulu-3-8B-SFT
+#   dpo  : allenai/Llama-3.1-Tulu-3-8B-DPO
+#   rlvr : allenai/Llama-3.1-Tulu-3-8B
+#
+# Replace the `path` values with local snapshot directories (or HF cache dirs).
+# All four must share the same architecture / tensor names.
+
+lineage:
+  - name: base
+    path: /path/to/Llama-3.1-8B
+  - name: sft
+    path: /path/to/Llama-3.1-Tulu-3-8B-SFT
+  - name: dpo
+    path: /path/to/Llama-3.1-Tulu-3-8B-DPO
+  - name: rlvr
+    path: /path/to/Llama-3.1-Tulu-3-8B
+
+output_dir: outputs/static_vector_field/llama31_8b
+
+dtype: float32
+device: cpu
+eps: 1.0e-12
+
+granularities:
+  - global
+  - layer
+  - module
+  - layer_module
+  - submodule
+  - depth_bin
+
+depth_bins:
+  shallow: [0, 10]
+  middle: [11, 20]
+  deep: [21, 31]
+
+ignore_regex:
+  - ".*rotary_emb.*"
+  - ".*inv_freq.*"
+
+include_non_floating: false
+
+topk:
+  enabled: true
+  k_fraction: 0.001
+  min_k: 1000
+  max_k: 100000
+
+rollback:
+  enabled: true
+  target: rlvr
+  granularity: layer_module
+  stages:
+    - dpo
+    - rlvr
+  strategy: residual_to_chord
+  top_fraction: 0.2
+  rho_max: 0.5
+  save_full_checkpoint: false
+  save_delta_only: true

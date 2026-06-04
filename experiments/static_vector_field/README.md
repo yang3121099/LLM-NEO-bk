@@ -1,0 +1,137 @@
+# Static Post-Training Vector-Field Audit
+
+A **pure static weight-space** analysis of a single model lineage:
+
+```
+Base → SFT → DPO → RLVR
+```
+
+For Llama-3.1-8B / Tulu-3 the four stages are:
+
+| stage | checkpoint |
+|-------|------------|
+| base | `meta-llama/Llama-3.1-8B` |
+| sft  | `allenai/Llama-3.1-Tulu-3-8B-SFT` |
+| dpo  | `allenai/Llama-3.1-Tulu-3-8B-DPO` |
+| rlvr | `allenai/Llama-3.1-Tulu-3-8B` |
+
+This experiment **does not** use any downstream-task data, **does not** train,
+**does not** evaluate, and **does not** compute a loss or gradient. It only reads
+checkpoint weights and characterises the *post-training vector field* in parameter
+space: per-stage deltas, direction consistency, path curvature, subspace structure,
+and from those a **static rollback candidate**.
+
+It complements the Shadow-FT finding that Base/Instruct weights are highly similar:
+here we ask whether the `Base→SFT→DPO→RLVR` path is close to a straight line, and
+which stages / layers / modules carry *curved*, *residual*, or *late-stage-specific*
+deltas — candidates for a future "plasticized shadow position".
+
+> ⚠️ **Interpretation caveat.** Everything here is geometry of weights. A high
+> curvature / residual / rollback score flags a candidate for further study; it is
+> **not**, on its own, a claim about downstream performance.
+
+## Layout
+
+```
+experiments/static_vector_field/
+  configs/llama31_8b_lineage.yaml   # lineage paths + analysis options
+  src/
+    hf_checkpoint_io.py    # streaming sharded-safetensors / bin reader
+    grouping.py            # param name -> {global,layer,module,...} group keys
+    accumulators.py        # float64 streaming accumulators per group
+    metrics.py             # accumulators -> metric CSV tables
+    analyze_lineage.py     # orchestrator: stream -> CSVs + summary.md
+    plot_lineage.py        # CSVs -> figures/*.png
+    build_static_shadow.py # rollback scores -> static delta checkpoint
+  tests/
+    test_grouping.py       # pure-stdlib grouping tests
+    test_metrics_toy.py    # closed-form numeric checks of the metric layer
+```
+
+## How it works
+
+The analyzer never materialises whole-model vectors. It builds a
+`tensor name → shard file` index for each checkpoint, then for every shared
+floating tensor:
+
+```python
+w0,w1,w2,w3 = load(base), load(sft), load(dpo), load(rlvr)   # flat float64
+v_sft  = w1 - w0      # SFT step
+v_dpo  = w2 - w1      # DPO step
+v_rlvr = w3 - w2      # RLVR step
+v_post = w3 - w0      # Base→RLVR chord
+update_accumulators(groups_of(name), w*, v*)   # float64 dot/norm/abs sums
+del w0,w1,w2,w3,v_*                            # release immediately
+```
+
+All metrics are then derived from the accumulated sums — so memory stays bounded
+to a single tensor at a time regardless of model size.
+
+### Grouping granularities
+
+`global`, `layer:N`, `module:{attn,mlp,norm,embed,lm_head,other}`,
+`layer_module:N:M`, `submodule:{q_proj,…,lm_head}`, and
+`depth_bin:{shallow,middle,deep}`. A tensor contributes to every group it belongs
+to. (`norm` is matched before `attention` so `post_attention_layernorm` is a norm.)
+
+## Metrics (CSV outputs)
+
+| file | content |
+|------|---------|
+| `pairwise_sigma.csv` | relative gap ratio σ = Σ\|θb−θa\| / (Σ\|θa\|+Σ\|θb\|) per adjacent + Base→RLVR pair |
+| `stage_norm_budget.csv` | ‖vᵢ‖, rel-L2 vs previous checkpoint, stage energy fraction, L1, L∞ |
+| `pairwise_cosine.csv` | cosines between the 4 stage vectors (6 pairs) |
+| `path_geometry.csv` | L_path, L_chord, straightness, cancellation, turning angles, curvature |
+| `chord_projection.csv` | progress along chord, chord alignment, residual-to-chord |
+| `subspace_rank.csv` | 3×3 Gram eigenvalues, PC1 energy, effective rank |
+| `orth_residual.csv` | DPO residual after removing SFT; RLVR residual after removing span(SFT,DPO) |
+| `topk_overlap.csv` | approximate per-tensor top-k absolute-coordinate overlap (marked approximate) |
+| `rollback_scores.csv` | per (group, late-stage) z-scored rollback score |
+| `top_rollback_candidates.csv` | highest-scoring rollback candidates |
+| `summary.md` | auto-generated human-readable report |
+
+The rollback score (z-scored within each granularity):
+
+```
+score = z(residual_to_chord) + z(orth_residual_ratio) + z(curvature)
+      + z(cancellation) + z(stage_fraction) - z(chord_align)
+```
+
+## Usage
+
+```bash
+cd experiments/static_vector_field
+
+# 1. edit configs/llama31_8b_lineage.yaml with local checkpoint paths
+# 2. run the static audit  (CPU-only, streams one tensor at a time)
+python src/analyze_lineage.py --config configs/llama31_8b_lineage.yaml
+
+# 3. render figures
+python src/plot_lineage.py   --config configs/llama31_8b_lineage.yaml
+
+# 4. build the static rollback candidate (weight delta only by default)
+python src/build_static_shadow.py --config configs/llama31_8b_lineage.yaml
+```
+
+`--limit N` on `analyze_lineage.py` processes only the first N tensors (for a quick
+smoke test on real checkpoints).
+
+## Tests
+
+```bash
+python tests/test_grouping.py
+python tests/test_metrics_toy.py
+# or, if pytest is available:
+pytest tests/
+```
+
+`test_grouping.py` is pure stdlib; `test_metrics_toy.py` feeds hand-chosen tensors
+with known geometry (orthogonal vs. colinear paths) and checks curvature,
+straightness, residual-to-chord, subspace rank, etc. against closed-form values.
+
+## Relationship to the rest of the repo
+
+This experiment is self-contained under `experiments/static_vector_field/` and does
+not touch the existing Shadow-FT training / grafting code. It reuses the same
+weight-reading idea as the repo's `weight_similarity_analysis.py` but generalises it
+to a 4-stage streaming vector-field audit.

@@ -101,17 +101,21 @@ score = z(residual_to_chord) + z(orth_residual_ratio) + z(curvature)
 
 ### One command (recommended)
 
-From the repo root, after the usual environment setup:
+From the repo root, set up a **minimal** environment (only torch, numpy,
+safetensors, matplotlib, pyyaml — no LlamaFactory / OpenCompass):
 
 ```bash
-bash setup_env.sh          # one-shot: creates the `factory` conda env
+bash setup_env_static.sh        # creates the `factory` conda env + minimal deps
 conda activate factory
 bash run_static_vector_field.sh                 # analyze -> plot -> shadow
 ```
 
-`run_static_vector_field.sh` activates the `factory` env, installs the two extra
-deps this experiment needs (`matplotlib`, `pyyaml` — everything else comes from
-`setup_env.sh`), then runs all steps. Useful flags:
+> The full Shadow-FT pipeline setup still lives in `setup_env.sh`; this experiment
+> only needs `setup_env_static.sh`. Useful flags: `--cpu` (CPU-only torch wheel),
+> `--no-conda` (install into the active interpreter), `--env NAME`, `--skip-conda`.
+
+`run_static_vector_field.sh` activates the `factory` env, makes sure the extra deps
+are present, then runs all steps. Useful flags:
 
 ```bash
 bash run_static_vector_field.sh --device cuda            # use the GPU path

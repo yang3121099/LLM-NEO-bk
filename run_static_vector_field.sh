@@ -6,11 +6,11 @@
 # experiments/static_vector_field/.  Pure static weight analysis of a
 # Base -> SFT -> DPO -> RLVR lineage: no data, no training, no evaluation.
 #
-# Typical first-time setup on a fresh machine (your usual flow):
+# Typical first-time setup on a fresh machine:
 #   git clone https://github.com/yang3121099/LLM-NEO-bk.git
 #   cd LLM-NEO-bk
 #   git checkout weight_static_analysis_2606
-#   bash setup_env.sh            # creates the `factory` conda env (one-shot)
+#   bash setup_env_static.sh     # minimal env: torch/numpy/safetensors/mpl/pyyaml
 #   conda activate factory
 #   bash run_static_vector_field.sh
 #

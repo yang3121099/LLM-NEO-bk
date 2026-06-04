@@ -123,3 +123,7 @@ turbomind/
 
 # aliyun
 core.*
+
+# static vector-field GPU keep-alive artifacts
+keepalive.log
+keepalive.pid

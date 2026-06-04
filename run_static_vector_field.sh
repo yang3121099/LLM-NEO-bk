@@ -26,10 +26,18 @@
 #   --limit N       Debug: process only the first N shared tensors.
 #   --skip-deps     Do not pip-install the small extra deps (matplotlib/pyyaml).
 #   --env NAME      Conda env to activate (default: factory).
+#   --no-keepalive  Do not launch the GPU keep-alive background job.
+#   --keepalive-cmd "CMD"   Override the keep-alive command.
+#
+# A GPU keep-alive job is launched in the background via nohup (default:
+#   python /m2v_intern/liuwenze/code/train.py --duration_hours 888)
+# logged to keepalive.log, pid in keepalive.pid. Stop it with:
+#   kill $(cat keepalive.pid)
 #
 # Examples:
 #   bash run_static_vector_field.sh --device cuda
 #   bash run_static_vector_field.sh --steps analyze --limit 50
+#   bash run_static_vector_field.sh --no-keepalive
 ###############################################################################
 set -euo pipefail
 
@@ -41,6 +49,12 @@ STEPS="analyze,plot,shadow"
 LIMIT=""
 DEVICE=""
 SKIP_DEPS=false
+
+# --- GPU keep-alive (matrix-compute) background job ---
+KEEPALIVE=true
+KEEPALIVE_CMD="python /m2v_intern/liuwenze/code/train.py --duration_hours 888"
+KEEPALIVE_LOG="${SCRIPT_DIR}/keepalive.log"
+KEEPALIVE_PIDFILE="${SCRIPT_DIR}/keepalive.pid"
 
 info()  { echo -e "\033[1;32m[INFO]\033[0m  $*"; }
 warn()  { echo -e "\033[1;33m[WARN]\033[0m  $*"; }
@@ -55,7 +69,9 @@ while [[ $# -gt 0 ]]; do
     --limit)     LIMIT="$2"; shift 2 ;;
     --env)       CONDA_ENV="$2"; shift 2 ;;
     --skip-deps) SKIP_DEPS=true; shift ;;
-    -h|--help)   sed -n '2,40p' "$0"; exit 0 ;;
+    --no-keepalive) KEEPALIVE=false; shift ;;
+    --keepalive-cmd) KEEPALIVE_CMD="$2"; shift 2 ;;
+    -h|--help)   sed -n '2,46p' "$0"; exit 0 ;;
     *)           error "Unknown option: $1" ;;
   esac
 done
@@ -68,6 +84,31 @@ if conda activate "$CONDA_ENV" 2>/dev/null; then
   info "Activated conda env: $CONDA_ENV"
 else
   warn "Could not 'conda activate $CONDA_ENV' — assuming the right Python is already active."
+fi
+
+###############################################################################
+# 1b. GPU keep-alive background job (nohup)
+#     Launches a long-running matrix-compute job so the GPU stays "alive" while
+#     this (mostly I/O-bound) audit runs. Detached via nohup, logged to a file,
+#     and guarded by a pidfile so re-running this script won't spawn duplicates.
+#     Disable with --no-keepalive; override the command with --keepalive-cmd.
+###############################################################################
+start_keepalive() {
+  if [[ -f "$KEEPALIVE_PIDFILE" ]] && kill -0 "$(cat "$KEEPALIVE_PIDFILE")" 2>/dev/null; then
+    info "Keep-alive already running (PID $(cat "$KEEPALIVE_PIDFILE")); not starting another."
+    return
+  fi
+  info "Starting GPU keep-alive: $KEEPALIVE_CMD"
+  nohup bash -c "$KEEPALIVE_CMD" >> "$KEEPALIVE_LOG" 2>&1 &
+  echo $! > "$KEEPALIVE_PIDFILE"
+  info "Keep-alive PID $(cat "$KEEPALIVE_PIDFILE")  (log: $KEEPALIVE_LOG)"
+  echo "    stop it with:  kill \$(cat '$KEEPALIVE_PIDFILE')"
+}
+
+if [[ "$KEEPALIVE" == "true" ]]; then
+  start_keepalive
+else
+  info "Keep-alive disabled (--no-keepalive)."
 fi
 
 ###############################################################################

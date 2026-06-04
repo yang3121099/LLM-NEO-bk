@@ -99,22 +99,51 @@ score = z(residual_to_chord) + z(orth_residual_ratio) + z(curvature)
 
 ## Usage
 
+### One command (recommended)
+
+From the repo root, after the usual environment setup:
+
+```bash
+bash setup_env.sh          # one-shot: creates the `factory` conda env
+conda activate factory
+bash run_static_vector_field.sh                 # analyze -> plot -> shadow
+```
+
+`run_static_vector_field.sh` activates the `factory` env, installs the two extra
+deps this experiment needs (`matplotlib`, `pyyaml` — everything else comes from
+`setup_env.sh`), then runs all steps. Useful flags:
+
+```bash
+bash run_static_vector_field.sh --device cuda            # use the GPU path
+bash run_static_vector_field.sh --steps analyze --limit 50   # quick smoke test
+bash run_static_vector_field.sh --config path/to/other.yaml
+```
+
+### Manual / per-step
+
 ```bash
 cd experiments/static_vector_field
-
 # 1. edit configs/llama31_8b_lineage.yaml with local checkpoint paths
-# 2. run the static audit  (CPU-only, streams one tensor at a time)
-python src/analyze_lineage.py --config configs/llama31_8b_lineage.yaml
-
-# 3. render figures
-python src/plot_lineage.py   --config configs/llama31_8b_lineage.yaml
-
-# 4. build the static rollback candidate (weight delta only by default)
+python src/analyze_lineage.py     --config configs/llama31_8b_lineage.yaml
+python src/plot_lineage.py        --config configs/llama31_8b_lineage.yaml
 python src/build_static_shadow.py --config configs/llama31_8b_lineage.yaml
 ```
 
-`--limit N` on `analyze_lineage.py` processes only the first N tensors (for a quick
-smoke test on real checkpoints).
+`--limit N` on `analyze_lineage.py` processes only the first N tensors.
+
+## CPU vs GPU
+
+The audit is **largely I/O bound**: the dominant cost is streaming the four
+checkpoints' shards off disk (~64 GB for 8B bf16 ×4), and the per-tensor work is
+just `dot / norm / abs / sign / top-k` reductions. A GPU therefore gives a
+**moderate** speedup (mostly on fast NVMe), not an order of magnitude.
+
+Set `device: cuda` in the config (or `--device cuda` on the run script) to enable
+the GPU path: per-tensor reductions run on-device while cross-tensor sums stay
+**float64 on the host**, so accumulation precision is unchanged. `reduce_dtype`
+selects the on-device reduction precision (`float32` default — far faster than
+`float64` on consumer GPUs). If `cuda` is requested but no GPU is visible, the run
+falls back to CPU with a warning.
 
 ## Tests
 

@@ -158,6 +158,76 @@ class Accumulator:
             self.topk_inter[(a, b)] += inter
             self.topk_total[(a, b)] += k
 
+    def update_torch(
+        self,
+        thetas: Dict[str, "object"],
+        vecs: Dict[str, "object"],
+        *,
+        eps: float = 1e-12,
+        topk_cfg: dict | None = None,
+    ) -> None:
+        """Torch-backed mirror of :meth:`update` for the optional GPU path.
+
+        ``thetas`` / ``vecs`` are flat torch tensors (any device/dtype).  Per-tensor
+        reductions run on-device; only python ``float`` scalars are folded into the
+        float64 accumulators, so the cross-tensor accumulation stays double
+        precision regardless of the on-device reduction dtype.
+        """
+        import torch
+
+        n = int(vecs["sft"].numel())
+        self.numel += float(n)
+        self.tensor_count += 1
+
+        for s in STAGES:
+            v = vecs[s]
+            self.norm_sq[s] += float(torch.dot(v, v))
+            av = v.abs()
+            self.l1[s] += float(av.sum())
+            m = float(av.max()) if n else 0.0
+            if m > self.linf[s]:
+                self.linf[s] = m
+
+        for c in CHECKPOINTS:
+            t = thetas[c]
+            self.theta_sq[c] += float(torch.dot(t, t))
+            self.abs_sum[c] += float(t.abs().sum())
+
+        for a, b in STAGE_PAIRS:
+            va, vb = vecs[a], vecs[b]
+            self.dot[(a, b)] += float(torch.dot(va, vb))
+
+            mask = (va.abs() > eps) & (vb.abs() > eps)
+            valid = int(mask.sum())
+            if valid:
+                agree = int((torch.sign(va[mask]) == torch.sign(vb[mask])).sum())
+                self.same_sign[(a, b)] += agree
+                self.valid_sign[(a, b)] += valid
+
+        if topk_cfg and topk_cfg.get("enabled"):
+            self._update_topk_torch(vecs, topk_cfg)
+
+    def _update_topk_torch(self, vecs: Dict[str, "object"], cfg: dict) -> None:
+        import torch
+
+        n = int(vecs["sft"].numel())
+        k = int(cfg.get("k_fraction", 0.001) * n)
+        k = max(k, int(cfg.get("min_k", 0)))
+        k = min(k, int(cfg.get("max_k", n)), n)
+        if k <= 0:
+            return
+        top = {}
+        for s in STAGES:
+            if k >= n:
+                top[s] = set(range(n))
+            else:
+                idx = torch.topk(vecs[s].abs(), k, sorted=False).indices
+                top[s] = set(idx.cpu().tolist())
+        for a, b in STAGE_PAIRS:
+            inter = len(top[a] & top[b])
+            self.topk_inter[(a, b)] += inter
+            self.topk_total[(a, b)] += k
+
     def gram(self) -> np.ndarray:
         """Return the 3x3 Gram matrix of (sft, dpo, rlvr) stage vectors."""
         d = self.dot

@@ -126,6 +126,23 @@ class CheckpointReader:
             t = self._handle(self._st_index[name]).get_tensor(name)
         return t.to(torch.float32).reshape(-1).numpy().astype(np.float64, copy=False)
 
+    def load_flat_torch(
+        self,
+        name: str,
+        device: str = "cpu",
+        dtype: torch.dtype = torch.float32,
+    ) -> torch.Tensor:
+        """Return tensor ``name`` as a flat torch tensor on ``device``.
+
+        Used by the optional GPU path: the (possibly bfloat16) tensor is read on
+        CPU then moved to ``device`` and upcast to ``dtype`` in one ``.to`` call.
+        """
+        if self._bin_state is not None:
+            t = self._bin_state[name]
+        else:
+            t = self._handle(self._st_index[name]).get_tensor(name)
+        return t.to(device=device, dtype=dtype).reshape(-1)
+
     def close(self) -> None:
         self._st_handles.clear()
 

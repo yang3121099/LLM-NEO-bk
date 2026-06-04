@@ -66,24 +66,48 @@ def stream_accumulate(
     eps = float(cfg.get("eps", 1e-12))
     topk_cfg = cfg.get("topk", {"enabled": False})
 
+    use_cuda, torch_dtype = _resolve_device(cfg)
+    device = "cuda" if use_cuda else "cpu"
+    if use_cuda:
+        import torch
+        print(f"GPU path enabled: device=cuda, reduce dtype={torch_dtype}")
+
     store = AccumulatorStore()
     n_total = len(names)
     t0 = time.time()
     for i, name in enumerate(names):
-        # Load four flat float64 vectors, then immediately derive deltas.
-        w = {c: readers[c].load_flat_f64(name) for c in CHECKPOINTS}
-        vecs = {
-            "sft": w["sft"] - w["base"],
-            "dpo": w["dpo"] - w["sft"],
-            "rlvr": w["rlvr"] - w["dpo"],
-            "post": w["rlvr"] - w["base"],
-        }
         tied = is_tied_name(name)
-        for gran, group in assign_groups(name, granularities, depth_bins):
-            acc = store.get(gran, group)
-            acc.update(w, vecs, eps=eps, topk_cfg=topk_cfg)
-            if tied:
-                acc.has_tied = True
+        groups = assign_groups(name, granularities, depth_bins)
+
+        if use_cuda:
+            # GPU path: per-tensor reductions on-device, float64 accumulation on host.
+            w = {c: readers[c].load_flat_torch(name, device, torch_dtype)
+                 for c in CHECKPOINTS}
+            vecs = {
+                "sft": w["sft"] - w["base"],
+                "dpo": w["dpo"] - w["sft"],
+                "rlvr": w["rlvr"] - w["dpo"],
+                "post": w["rlvr"] - w["base"],
+            }
+            for gran, group in groups:
+                acc = store.get(gran, group)
+                acc.update_torch(w, vecs, eps=eps, topk_cfg=topk_cfg)
+                if tied:
+                    acc.has_tied = True
+        else:
+            # CPU path: flat float64 numpy vectors.
+            w = {c: readers[c].load_flat_f64(name) for c in CHECKPOINTS}
+            vecs = {
+                "sft": w["sft"] - w["base"],
+                "dpo": w["dpo"] - w["sft"],
+                "rlvr": w["rlvr"] - w["dpo"],
+                "post": w["rlvr"] - w["base"],
+            }
+            for gran, group in groups:
+                acc = store.get(gran, group)
+                acc.update(w, vecs, eps=eps, topk_cfg=topk_cfg)
+                if tied:
+                    acc.has_tied = True
 
         # Release immediately.
         del w, vecs
@@ -92,6 +116,27 @@ def stream_accumulate(
             rate = (i + 1) / max(time.time() - t0, 1e-9)
             print(f"  processed {i + 1}/{n_total} tensors ({rate:.1f}/s)", flush=True)
     return store
+
+
+def _resolve_device(cfg: dict):
+    """Return ``(use_cuda, torch_dtype)`` honouring the config + hardware.
+
+    Falls back to CPU (with a warning) when ``device: cuda`` is requested but no
+    GPU is visible.  ``reduce_dtype`` controls the on-device reduction precision
+    (default float32 — much faster on consumer GPUs than float64).
+    """
+    device = str(cfg.get("device", "cpu")).lower()
+    if not device.startswith("cuda"):
+        return False, None
+    import torch
+
+    if not torch.cuda.is_available():
+        print("  [warn] device: cuda requested but no GPU visible — using CPU.")
+        return False, None
+    reduce_dtype = str(cfg.get("reduce_dtype", "float32")).lower()
+    torch_dtype = torch.float64 if reduce_dtype in ("float64", "f64", "double") \
+        else torch.float32
+    return True, torch_dtype
 
 
 def write_summary_md(

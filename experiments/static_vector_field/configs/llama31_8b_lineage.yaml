@@ -22,7 +22,15 @@ lineage:
 output_dir: outputs/static_vector_field/llama31_8b
 
 dtype: float32
+
+# device: cpu (default) or cuda. This audit is largely I/O bound (it streams the
+# checkpoint shards), so a GPU only accelerates the per-tensor reductions — expect
+# a moderate speedup, mostly on fast NVMe storage. With device: cuda the per-tensor
+# dot/norm/abs/sign/top-k run on the GPU while cross-tensor sums stay float64 on
+# the host. reduce_dtype sets the on-device reduction precision (float32 is much
+# faster than float64 on consumer GPUs; switch to float64 if you need it).
 device: cpu
+reduce_dtype: float32
 eps: 1.0e-12
 
 granularities:

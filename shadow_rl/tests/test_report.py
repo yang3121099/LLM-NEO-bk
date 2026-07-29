@@ -149,7 +149,36 @@ def main():
         check("selected pair shown", "grpo-search-3b-v0.3" in out)
         check("other pair hidden", "ppo-nosearch-3b-v0.2" not in out)
 
-        print("\n[8] empty results does not crash")
+        print("\n[8] --progress shows live completion")
+        # A run in flight: two roles complete, one partway, two not started.
+        write_csv(csv_path, [("v0.2", "3b", "ppo", False, {
+            "base_baseline": flat(0.05),
+            "instruct_baseline": flat(0.11),
+            "rl_on_instruct": {"nq": 0.21, "hotpotqa": 0.20}})])
+        p = run("report.py", "--results", csv_path, "--no-color", "--progress",
+                "--pairs", "ppo-nosearch-3b-v0.2,ppo-nosearch-7b-v0.2")
+        out = p.stdout
+        check("exits cleanly", p.returncode == 0, p.stderr.strip()[:200])
+        check("both pairs listed",
+              "ppo-nosearch-3b-v0.2" in out and "ppo-nosearch-7b-v0.2" in out)
+        # Count ticks in data rows only; the legend line also contains a tick.
+        data_ticks = sum(ln.count("✓") for ln in out.splitlines()
+                         if re.match(r"^    (W_B|W_I|RL\(W_|W_shadow)", ln))
+        check("completed cells ticked", data_ticks == 10, f"{data_ticks} ticks")
+        # 2 pairs x 5 roles x 4 datasets seen = 40 cells, 10 done.
+        check("counts cells correctly", "10/40 cells (25%)" in out, out.split("cells")[0][-20:])
+        check("progress bar drawn", "█" in out and "░" in out)
+        check("says it is resumable", "Ctrl-C is safe" in out)
+
+        print("\n[9] --progress on an untouched run does not crash")
+        empty0 = os.path.join(tmp, "e0.csv")
+        with open(empty0, "w", newline="") as fh:
+            csv.DictWriter(fh, fieldnames=FIELDS).writeheader()
+        p = run("report.py", "--results", empty0, "--no-color", "--progress")
+        check("exits cleanly", p.returncode == 0)
+        check("reports nothing scored", "no results yet" in p.stdout)
+
+        print("\n[10] empty results does not crash")
         empty = os.path.join(tmp, "e.csv")
         with open(empty, "w", newline="") as fh:
             csv.DictWriter(fh, fieldnames=FIELDS).writeheader()

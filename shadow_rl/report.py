@@ -172,16 +172,85 @@ def render_pair(pair, roles_data, counts, st: Style, out):
         out.append(st.dim("  harness check:  ") + st.dim(" | ").join(checks))
 
 
+def show_progress(results, args, st: Style) -> None:
+    """Completion grid, readable while a run is still going.
+
+    results.csv is appended one dataset at a time and flushed, so this reflects
+    live state -- a cell is filled the moment that (pair, role, dataset) is
+    scored, without waiting for the pair to finish.
+    """
+    roles = [r.strip() for r in args.roles.split(",") if r.strip()]
+    if args.pairs:
+        want = [p for p in PAIRS if p.pair_id in
+                {x.strip() for x in args.pairs.split(",")}]
+    else:
+        want = [p for p in PAIRS if p.pair_id in results]
+    if not want:
+        print("\n  " + st.yellow("no results yet — nothing has been scored") + "\n")
+        return
+
+    # Datasets actually being evaluated: inferred from what has appeared so far.
+    seen = {d for pid in results for r in results[pid] for d in results[pid][r]}
+    cols = [d for d in DATASETS if d in seen] or DATASETS
+
+    done = total = 0
+    print("")
+    print(st.bold("  progress") + st.dim("   ✓ scored · · pending"))
+    print(st.cyan("━" * 96))
+    header = st.pad("  pair / model", 40)
+    for d in cols:
+        header += st.pad(ABBREV.get(d, d)[:9], 10, right=False)
+    print(st.dim(header))
+
+    for pair in want:
+        rd = results.get(pair.pair_id, {})
+        print(st.dim("  " + "─" * 94))
+        print(st.bold(f"  {pair.pair_id}"))
+        for role in roles:
+            per = rd.get(role, {})
+            sym, _ = SHORT.get(role, (role, ""))
+            line = st.pad(f"    {sym}", 40)
+            for d in cols:
+                total += 1
+                if d in per:
+                    done += 1
+                    line += st.pad(st.green("✓"), 10, right=False)
+                else:
+                    line += st.pad(st.dim("·"), 10, right=False)
+            print(line)
+
+    pct = 100.0 * done / total if total else 0.0
+    bar_w = 40
+    filled = int(bar_w * done / total) if total else 0
+    bar = st.green("█" * filled) + st.dim("░" * (bar_w - filled))
+    print("")
+    print(f"  {bar}  {done}/{total} cells ({pct:.0f}%)")
+    print("")
+    print(st.dim("  results are written per dataset, so this is live. "
+                 "Ctrl-C is safe: re-running skips what is already here."))
+    print("")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--results", default="shadow_rl/results.csv")
     ap.add_argument("--pair", default=None, help="only this pair")
     ap.add_argument("--no-color", action="store_true")
+    ap.add_argument("--progress", action="store_true",
+                    help="completion grid: which (role, dataset) cells are done")
+    ap.add_argument("--roles", default=",".join(MODEL_ROLES),
+                    help="roles the run was launched with, for the progress denominator")
+    ap.add_argument("--pairs", default=None,
+                    help="pair ids the run was launched with (default: those with results)")
     args = ap.parse_args()
 
     st = Style(not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
     results, counts = load(args.results)
+
+    if args.progress:
+        show_progress(results, args, st)
+        return
 
     out = []
     out.append("")

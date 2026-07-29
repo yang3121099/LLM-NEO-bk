@@ -432,6 +432,24 @@ script says so loudly instead:
 
 Pass `--strict-keys` to restore the old behaviour of failing on any difference.
 
+## Checking a run in progress
+
+`results.csv` is written one dataset at a time, so both views are live — safe to
+run in another shell while the job is going:
+
+```bash
+python shadow_rl/report.py --progress    # completion grid + % done
+python shadow_rl/report.py               # the numbers scored so far
+```
+
+Interrupting is safe. Ctrl-C, then re-run the identical command: finished
+datasets are skipped, complete merged models are reused, and passed smoke tests
+are not repeated. Nothing is recomputed.
+
+`git pull` during a run is also safe — git replaces files by rename, so the
+running shell keeps reading the old copy. (An in-place edit, `sed -i` style,
+would not be.)
+
 ## Reading the result
 
 `run_all.sh` prints a comparison table when it finishes; re-print it any time

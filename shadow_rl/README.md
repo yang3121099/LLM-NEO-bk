@@ -74,6 +74,7 @@ python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
 | `--roles X` | subset of the four model roles |
 | `--limit N` | first N questions per dataset — biased, smoke runs only |
 | `--sample N` | deterministic random N per dataset, identical across roles |
+| `--skip-datasets X` | omit datasets entirely; published averages are restricted to match |
 | `--auto-retriever` | start and stop the BM25 server automatically |
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
@@ -130,6 +131,39 @@ about 51,700 questions per model role:
 | `--pairs nosearch` (full sets) | 51,713 | ~8 h |
 
 `run_all.sh` prints this estimate during preflight before you commit to a run.
+
+### Start here: the fast alignment run
+
+Before any sweep, run the one configuration that shows whether Shadow-FT works
+at all, in under an hour:
+
+```bash
+./shadow_rl/run_all.sh --pairs nosearch --sample 1000 --yes    # ~1.6 h
+```
+
+Two pairs, both sizes, **no retrieval server and no 70 GB index download**. This
+is also the setting the paper says base-init wins (0.229 vs 0.224 at 3B, 0.276 vs
+0.271 at 7B) — so it is exactly where grafting should show up. You get the
+harness-validation diff against the published numbers *and* the first real
+`shadow` number in the same run.
+
+| run | pairs | time, 1× H200 |
+|---|---|---|
+| `--pairs nosearch --sample 1000` | 2 | **~1.6 h** |
+| `--pairs nosearch` (full sets) | 2 | ~13.7 h |
+| `--pairs 3b --sample 500` | 7 | ~3.7 h |
+| `--pairs all --sample 500` | 12 | ~9.9 h |
+
+**The expensive component is the search pairs, not any one dataset** — they are
+10 of the 12, their rollouts are 2–5× slower, and they need the corpus and index.
+Dropping them (`--pairs nosearch`) is what turns a week into an hour.
+
+Note that once you pass `--sample N`, dataset size stops mattering: every dataset
+contributes N questions, so `--skip-datasets popqa` saves a seventh of the time
+rather than the 28% of questions popqa represents at full size. Use
+`--skip-datasets` only if you want to drop a set for a reason other than speed.
+
+### Sampling
 
 **`--sample 500` is the recommended setting for the first comprehensive sweep.**
 It draws a seeded random subset — the same questions for every role and every
@@ -291,6 +325,35 @@ the comparison between them stays fair. This caveat is repeated in `FINDINGS.md`
 comparable to each other. The paper's `instruct_baseline` *direct inference*
 numbers use a plain QA prompt instead, so that row is not a like-for-like
 reference and is excluded from the harness-validation table.
+
+## Merging over mismatched key sets
+
+Exports of the same model legitimately disagree on bookkeeping keys. The common
+case here: Qwen2.5-3B sets `tie_word_embeddings`, so the official release stores
+no `lm_head.weight`, while verl's export of the RL checkpoints materialises the
+tied copy.
+
+`merge.py` therefore merges over the **intersection** by default, reports exactly
+what it skipped, and — for a dropped `lm_head` — checks whether it is still
+identical to `model.embed_tokens.weight` in each checkpoint:
+
+```
+[warn] key sets differ; merging over the 434 common keys.
+[warn] skipping 1 key(s): lm_head.weight
+    rl_base: lm_head is identical to model.embed_tokens.weight (tied) -- safe to drop
+```
+
+That check is the point. Dropping a tied `lm_head` is correct, because the merged
+model re-ties from `W_I`'s config. But if RL had *untied* it and trained it
+separately, silently dropping the key would discard part of the update — so the
+script says so loudly instead:
+
+```
+    ** rl_base: lm_head DIFFERS from model.embed_tokens.weight (max |diff| 0.0031).
+       RL appears to have untied it; dropping the key discards that update.
+```
+
+Pass `--strict-keys` to restore the old behaviour of failing on any difference.
 
 ## Reading the result
 

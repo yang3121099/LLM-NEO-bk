@@ -314,6 +314,8 @@ def main() -> None:
                     help="override the model location; required for --role shadow")
     ap.add_argument("--out", default="shadow_rl/results.csv")
     ap.add_argument("--datasets", default=",".join(DATASETS))
+    ap.add_argument("--skip-datasets", default="",
+                    help="comma list of datasets to omit, e.g. popqa,triviaqa")
     ap.add_argument("--limit", type=int, default=None,
                     help="first N questions per dataset; biased, smoke tests only")
     ap.add_argument("--sample", type=int, default=None,
@@ -338,7 +340,14 @@ def main() -> None:
 
     qa_em = load_qa_em(args.search_r1_root)
 
-    wanted = [d.strip() for d in args.datasets.split(",") if d.strip()]
+    skip = {d.strip() for d in args.skip_datasets.split(",") if d.strip()}
+    unknown = skip - set(DATASETS)
+    if unknown:
+        sys.exit(f"[fail] --skip-datasets names unknown dataset(s): {', '.join(sorted(unknown))}")
+    wanted = [d.strip() for d in args.datasets.split(",") if d.strip() and d.strip() not in skip]
+    if skip:
+        print(f"[info] skipping {', '.join(sorted(skip))}; "
+              f"averages will cover {len(wanted)} of {len(DATASETS)} datasets")
     key = (pair.version, pair.size, pair.algo, str(pair.with_search), args.role)
     done = set() if args.overwrite else existing_rows(args.out)
     todo = [d for d in wanted if (*key, d) not in done]

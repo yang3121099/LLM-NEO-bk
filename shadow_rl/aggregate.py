@@ -63,10 +63,26 @@ def load(path: str):
 
 
 def avg(per_dataset: Dict[str, float]) -> Optional[float]:
-    """Average over the seven datasets; None unless all seven are present."""
-    if not all(d in per_dataset for d in DATASETS):
-        return None
-    return sum(per_dataset[d] for d in DATASETS) / len(DATASETS)
+    """Average over whichever datasets are present, or None if none are.
+
+    Deliberately not "all seven or nothing": a run may skip datasets on purpose,
+    and a five-dataset average is still meaningful as long as every role is
+    averaged over the same five. Completeness is surfaced separately via
+    is_complete() so partial numbers are marked rather than silently compared.
+    """
+    present = [d for d in DATASETS if d in per_dataset]
+    return sum(per_dataset[d] for d in present) / len(present) if present else None
+
+
+def is_complete(per_dataset: Dict[str, float]) -> bool:
+    return all(d in per_dataset for d in DATASETS)
+
+
+def mark(per_dataset: Dict[str, float], value: Optional[float]) -> str:
+    """Format an average, flagging it when it does not cover all seven sets."""
+    if value is None:
+        return "--"
+    return f"{value:.3f}" if is_complete(per_dataset) else f"{value:.3f}*"
 
 
 def partial_avg(per_dataset: Dict[str, float]) -> Optional[float]:
@@ -147,11 +163,14 @@ def render(results, counts, out_path: str) -> None:
         lines.append(
             f"| `{pair.pair_id}` | {pair.algo} | {pair.size} | "
             f"{'yes' if pair.with_search else 'no'} | "
-            f"{fmt(a['instruct_baseline'])} | {fmt(a['rl_on_instruct'])} | "
-            f"{fmt(a['rl_on_base'])} | **{fmt(a['shadow'])}** | "
+            f"{mark(roles.get('instruct_baseline', {}), a['instruct_baseline'])} | "
+            f"{mark(roles.get('rl_on_instruct', {}), a['rl_on_instruct'])} | "
+            f"{mark(roles.get('rl_on_base', {}), a['rl_on_base'])} | "
+            f"**{mark(roles.get('shadow', {}), a['shadow'])}** | "
             f"{fmt(d_inst, sign=True)} | {fmt(d_base, sign=True)} |"
         )
-    lines += ["", "Avg is over all seven datasets; `--` means that role is not yet complete.", ""]
+    lines += ["", "Avg is over the datasets evaluated; `*` marks fewer than all seven, "
+              "`--` means the role has no results yet.", ""]
 
     # ------------------------------------------------------- harness validation
     lines += [
@@ -167,7 +186,8 @@ def render(results, counts, out_path: str) -> None:
     for pair in evaluated:
         for role in ("rl_on_base", "rl_on_instruct"):
             got = results[pair.pair_id].get(role, {})
-            ours, ref = avg(got), reference_avg(pair, role)
+            ours = avg(got)
+            ref = reference_avg(pair, role, subset=set(got))
             if ours is None or ref is None:
                 continue
             ref_per = reference_for(pair, role)
@@ -211,7 +231,7 @@ def render(results, counts, out_path: str) -> None:
                 continue
             cells = " | ".join(fmt(per.get(d)) for d in DATASETS)
             a = avg(per)
-            shown = fmt(a) if a is not None else f"{fmt(partial_avg(per))}*"
+            shown = mark(per, a)
             label = ROLE_LABEL[role]
             if role == "shadow":
                 label = f"**{label}**"
@@ -280,7 +300,9 @@ def render(results, counts, out_path: str) -> None:
                 + "; ".join(f"{d}: {v}" for d, v in inconsistent.items())
                 + ". The comparison between roles is not valid until these match.")
     lines += [
-        "- `*` on an Avg marks a partial average — not all seven datasets are in yet.",
+        "- `*` on an Avg marks an average over fewer than all seven datasets. Published",
+        "  averages in the validation table are restricted to the same subset, so the Δ",
+        "  stays a like-for-like comparison.",
         "- Retrieval for the `SearchR1-*` pairs uses `PeterJinGo/wiki-18-bm25-index` for speed.",
         "  The paper uses a dense E5 index, so absolute numbers on the search pairs sit below",
         "  the published ones; the four roles share the index, so the comparison stays fair.",

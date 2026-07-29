@@ -21,6 +21,7 @@
 #                  Recommended for multi-pair sweeps: the full test sets are
 #                  ~51,700 questions per role, and --pairs all over them is on
 #                  the order of two weeks of single-GPU time.
+#   --skip-datasets X comma list of datasets to omit entirely
 #   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
@@ -37,6 +38,7 @@ STAGES="similarity,merge,eval,aggregate"
 ROLES="instruct_baseline,rl_on_instruct,rl_on_base,shadow"
 LIMIT=""
 SAMPLE=""
+SKIP_DATASETS=""
 CLEANUP=0
 AUTO_RETRIEVER=0
 RETRIEVER_PID=""
@@ -59,6 +61,7 @@ while [[ $# -gt 0 ]]; do
         --roles)   ROLES="$2";     shift 2 ;;
         --limit)   LIMIT="$2";     shift 2 ;;
         --sample)  SAMPLE="$2";    shift 2 ;;
+        --skip-datasets) SKIP_DATASETS="$2"; shift 2 ;;
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
@@ -347,6 +350,7 @@ PY
             [[ "$role" == "shadow" ]] && EXTRA=(--model-path "$SHADOW_PATH")
             [[ -n "$LIMIT" ]]  && EXTRA+=(--limit "$LIMIT")
             [[ -n "$SAMPLE" ]] && EXTRA+=(--sample "$SAMPLE")
+            [[ -n "$SKIP_DATASETS" ]] && EXTRA+=(--skip-datasets "$SKIP_DATASETS")
             if python3 shadow_rl/evaluate.py \
                     --search-r1-root "$SEARCH_R1_ROOT" \
                     --pair "$pid" --role "$role" --out "$RESULTS" \

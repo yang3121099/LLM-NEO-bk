@@ -171,9 +171,18 @@ def reference_for(pair: Pair, role: str) -> Optional[Dict[str, float]]:
     return REFERENCE.get(f"{key}/{pair.size}/{role}")
 
 
-def reference_avg(pair: Pair, role: str) -> Optional[float]:
+def reference_avg(pair: Pair, role: str, subset=None) -> Optional[float]:
+    """Published average, optionally restricted to a subset of the datasets.
+
+    When a run skips datasets, averaging the reference over all seven and ours
+    over five would compare different things -- so the caller passes the subset
+    it actually evaluated.
+    """
     ref = reference_for(pair, role)
-    return sum(ref.values()) / len(ref) if ref else None
+    if not ref:
+        return None
+    keys = [d for d in DATASETS if d in ref and (subset is None or d in subset)]
+    return sum(ref[d] for d in keys) / len(keys) if keys else None
 
 
 if __name__ == "__main__":

@@ -126,7 +126,7 @@ def tensor_stats(w_b, w_i, w_rb, w_ri) -> Stats:
     return s
 
 
-def analyse(pair: Pair, ignore: Optional[str], device: str):
+def analyse(pair: Pair, ignore: Optional[str], device: str, strict: bool = False):
     """Yield (name, layer, module, Stats) for every float parameter."""
     ckpts = [
         Checkpoint(pair.base, "base"),
@@ -135,7 +135,7 @@ def analyse(pair: Pair, ignore: Optional[str], device: str):
         Checkpoint(pair.repo("rl_on_instruct"), "rl_instruct"),
     ]
     base, instruct, rl_base, rl_instruct = ckpts
-    keys = validate(ckpts, ignore)
+    keys = validate(ckpts, ignore, strict=strict)
 
     try:
         for idx, key in enumerate(keys, 1):
@@ -159,7 +159,7 @@ def analyse(pair: Pair, ignore: Optional[str], device: str):
             c.close()
 
 
-def run_pair(pair: Pair, param_writer, summary_writer, ignore, device) -> Dict[str, float]:
+def run_pair(pair: Pair, param_writer, summary_writer, ignore, device, strict=False) -> Dict[str, float]:
     print(f"\n{'=' * 70}\n[pair] {pair.pair_id}\n{'=' * 70}")
     print(f"  base      : {pair.base}")
     print(f"  instruct  : {pair.instruct}")
@@ -170,7 +170,7 @@ def run_pair(pair: Pair, param_writer, summary_writer, ignore, device) -> Dict[s
     by_layer: Dict[int, Stats] = defaultdict(Stats)
     overall = Stats()
 
-    for name, layer, module, st in analyse(pair, ignore, device):
+    for name, layer, module, st in analyse(pair, ignore, device, strict):
         row = st.row()
         param_writer.writerow({
             "pair_id": pair.pair_id, "param": name,
@@ -244,6 +244,8 @@ def main() -> None:
     ap.add_argument("--params-out", default="shadow_rl/similarity_params.csv")
     ap.add_argument("--summary-out", default="shadow_rl/similarity_summary.csv")
     ap.add_argument("--ignore-keys", default=None)
+    ap.add_argument("--strict-keys", action="store_true",
+                    help="fail if key sets differ, instead of using the common keys")
     ap.add_argument("--device", default="cuda" if torch.cuda.is_available() else "cpu")
     ap.add_argument("--append", action="store_true", help="add to existing CSVs")
     args = ap.parse_args()
@@ -267,7 +269,7 @@ def main() -> None:
 
         for pair in targets:
             try:
-                totals.append(run_pair(pair, pw, sw, args.ignore_keys, args.device))
+                totals.append(run_pair(pair, pw, sw, args.ignore_keys, args.device, args.strict_keys))
             except SystemExit as exc:
                 print(f"[fail] {pair.pair_id}: {exc}", file=sys.stderr)
             except Exception as exc:                      # keep going across pairs

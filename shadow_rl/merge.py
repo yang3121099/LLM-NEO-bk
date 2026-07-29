@@ -147,11 +147,39 @@ def _fmt_keys(keys: Iterable[str], limit: int = 10) -> str:
     return head
 
 
-def validate(ckpts: List[Checkpoint], ignore: Optional[str]) -> List[str]:
-    """Assert key sets and tensor shapes agree; return the merge key list.
+def _check_tied_lm_head(ckpts: List[Checkpoint], key: str) -> None:
+    """Report whether a dropped lm_head is still tied to the input embedding.
 
-    Raises SystemExit with a readable diff rather than a bare assertion, since
-    a mismatch here usually means the wrong checkpoint was passed on the CLI.
+    Qwen2.5-3B sets tie_word_embeddings, so the official release stores no
+    lm_head while verl's export materialises the tied copy. Dropping it is
+    correct *because* the merged model re-ties from W_I's config -- but only if
+    RL did not untie and separately train it. That is cheap to check, and
+    silently discarding a real update would be a genuine loss.
+    """
+    if not key.endswith("lm_head.weight"):
+        return
+    embed = "model.embed_tokens.weight"
+    for c in ckpts:
+        if key not in c.keys() or embed not in c.keys():
+            continue
+        a, b = c.get(key), c.get(embed)
+        if a.shape != b.shape:
+            continue
+        if torch.equal(a, b):
+            print(f"    {c.name}: lm_head is identical to {embed} (tied) -- safe to drop")
+        else:
+            delta = (a.to(torch.float32) - b.to(torch.float32)).abs().max().item()
+            print(f"    ** {c.name}: lm_head DIFFERS from {embed} (max |diff| {delta:.3g}).")
+            print(f"       RL appears to have untied it; dropping the key discards that update.")
+
+
+def validate(ckpts: List[Checkpoint], ignore: Optional[str], strict: bool = False) -> List[str]:
+    """Reconcile key sets across checkpoints; return the keys to merge.
+
+    By default the merge runs over the intersection: exports of the same model
+    legitimately differ in bookkeeping keys (a tied lm_head being the common
+    case), and refusing to merge over that helps nobody. What is skipped is
+    always reported. Pass strict=True to fail on any difference instead.
     """
     ignore_re = re.compile(ignore) if ignore else None
     key_sets = {
@@ -160,27 +188,38 @@ def validate(ckpts: List[Checkpoint], ignore: Optional[str]) -> List[str]:
     }
 
     reference_name, reference = next(iter(key_sets.items()))
-    problems = []
-    for name, keys in key_sets.items():
-        if keys == reference:
-            continue
-        missing, extra = reference - keys, keys - reference
-        detail = [f"  {name} vs {reference_name}:"]
-        if missing:
-            detail.append(f"    missing {len(missing)} key(s):\n{_fmt_keys(missing)}")
-        if extra:
-            detail.append(f"    extra {len(extra)} key(s):\n{_fmt_keys(extra)}")
-        problems.append("\n".join(detail))
+    common = set.intersection(*key_sets.values())
+    union = set.union(*key_sets.values())
+    dropped = union - common
 
-    if problems:
-        sys.exit(
-            "[fail] checkpoint key sets do not match:\n"
-            + "\n".join(problems)
-            + "\n\nIf the difference is benign (e.g. a tied lm_head saved in one "
-            "export but not another), re-run with --ignore-keys '<regex>'."
-        )
+    if dropped:
+        problems = []
+        for name, keys in key_sets.items():
+            if keys == reference:
+                continue
+            missing, extra = reference - keys, keys - reference
+            detail = [f"  {name} vs {reference_name}:"]
+            if missing:
+                detail.append(f"    missing {len(missing)} key(s):\n{_fmt_keys(missing)}")
+            if extra:
+                detail.append(f"    extra {len(extra)} key(s):\n{_fmt_keys(extra)}")
+            problems.append("\n".join(detail))
 
-    keys = sorted(reference)
+        if strict:
+            sys.exit(
+                "[fail] checkpoint key sets do not match (--strict-keys):\n"
+                + "\n".join(problems)
+                + "\n\nDrop --strict-keys to merge over the common keys instead, or "
+                "exclude them explicitly with --ignore-keys '<regex>'."
+            )
+
+        print(f"[warn] key sets differ; merging over the {len(common)} common keys.")
+        print("\n".join(problems))
+        print(f"[warn] skipping {len(dropped)} key(s): {', '.join(sorted(dropped))}")
+        for key in sorted(dropped):
+            _check_tied_lm_head(ckpts, key)
+
+    keys = sorted(common)
     shape_problems = []
     for key in keys:
         shapes = {c.name: c.shape(key) for c in ckpts}
@@ -330,6 +369,11 @@ def main() -> None:
         help="regex of parameter names to exclude from the key-set check and the merge",
     )
     ap.add_argument(
+        "--strict-keys",
+        action="store_true",
+        help="fail if key sets differ at all, instead of merging over the common keys",
+    )
+    ap.add_argument(
         "--stats-only",
         action="store_true",
         help="report sigma and delta magnitudes without writing a merged model",
@@ -346,7 +390,7 @@ def main() -> None:
         rl_instruct = Checkpoint(args.rl_instruct, "rl_instruct")
         ckpts.append(rl_instruct)
 
-    keys = validate(ckpts, args.ignore_keys)
+    keys = validate(ckpts, args.ignore_keys, strict=args.strict_keys)
 
     if args.stats_only:
         acc = Accum()

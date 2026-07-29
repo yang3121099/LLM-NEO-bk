@@ -170,7 +170,7 @@ def main():
         want_half = (inst_disk[k0].float() + 0.5 * (rlb_disk[k0].float() - base_disk[k0].float())).to(torch.bfloat16)
         check("scale=0.5 applied", torch.equal(half[k0], want_half))
 
-        print("\n[4] mismatched key set fails with a diff")
+        print("\n[4] extra key is merged over the intersection by default")
         p_bad = os.path.join(tmp, "bad_keys")
         write_ckpt(p_bad, rlb_t, torch.float32)
         with safe_open(os.path.join(p_bad, "model-00002-of-00002.safetensors"), framework="pt") as fh:
@@ -183,14 +183,24 @@ def main():
         idx["weight_map"]["lm_head.weight"] = "model-00002-of-00002.safetensors"
         json.dump(idx, open(idx_path, "w"))
 
-        proc = run(["--base", p_base, "--instruct", p_inst, "--rl-base", p_bad,
-                    "--out", os.path.join(tmp, "never")], expect_ok=False)
+        p_out4 = os.path.join(tmp, "shadow_extra_key")
+        proc = run(["--base", p_base, "--instruct", p_inst, "--rl-base", p_bad, "--out", p_out4])
         out = proc.stdout + proc.stderr
-        check("key mismatch is fatal", proc.returncode != 0)
-        check("diff names the offending key", "lm_head.weight" in out)
-        check("nothing written on failure", not os.path.exists(os.path.join(tmp, "never")))
+        check("merge proceeds despite the extra key", proc.returncode == 0)
+        check("skipped key is reported", "lm_head.weight" in out and "skipping" in out)
+        check("extra key absent from the output", "lm_head.weight" not in read_all(p_out4))
+        check("common keys still merged correctly",
+              set(read_all(p_out4)) == set(ALL_KEYS))
 
-        print("\n[5] --ignore-keys recovers the benign case")
+        print("\n[4b] --strict-keys restores the hard failure")
+        proc = run(["--base", p_base, "--instruct", p_inst, "--rl-base", p_bad,
+                    "--out", os.path.join(tmp, "never"), "--strict-keys"], expect_ok=False)
+        out = proc.stdout + proc.stderr
+        check("strict mode is fatal", proc.returncode != 0)
+        check("strict diff names the key", "lm_head.weight" in out)
+        check("nothing written when strict fails", not os.path.exists(os.path.join(tmp, "never")))
+
+        print("\n[5] --ignore-keys also excludes it")
         p_out5 = os.path.join(tmp, "shadow_ignored")
         run(["--base", p_base, "--instruct", p_inst, "--rl-base", p_bad, "--out", p_out5,
              "--ignore-keys", "lm_head"])

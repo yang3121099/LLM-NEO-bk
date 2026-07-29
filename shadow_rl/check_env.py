@@ -37,9 +37,33 @@ def warn(msg):
     print(f"  {YELLOW}warn{RESET}  {msg}")
 
 
-def torch_index(torch_cuda: str) -> str:
+def cuda_major(value) -> str | None:
+    """Major CUDA version from whatever a package reports.
+
+    torch reports a string ("12.8"); torchvision builds have been seen reporting
+    an int, either packed ("128" meaning 12.8) or bare ("12"). Normalising here
+    rather than assuming a string -- an AttributeError in the checker is worse
+    than no checker at all.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+        return value.split(".")[0]
+    if isinstance(value, (int, float)):
+        n = int(value)
+        return str(n // 10) if n >= 100 else str(n)   # 128 -> 12, 12 -> 12
+    return str(value).split(".")[0]
+
+
+def torch_index(torch_cuda) -> str:
     """PyTorch wheel index matching an installed torch CUDA version."""
-    return f"https://download.pytorch.org/whl/cu{torch_cuda.replace('.', '')}"
+    if torch_cuda is None:
+        return "https://download.pytorch.org/whl/cu128"
+    tag = str(torch_cuda).replace(".", "")
+    return f"https://download.pytorch.org/whl/cu{tag}"
 
 
 def check_torch():
@@ -74,13 +98,17 @@ def check_torchvision(torch_mod):
         bad(f"torchvision is installed but fails to import: {str(exc)[:160]}",
             f"pip install --force-reinstall torchvision --index-url {torch_index(t_cuda)}")
         return
-    tv_cuda = getattr(torchvision, "version", None) and getattr(
-        torchvision.version, "cuda", None)
-    if t_cuda and tv_cuda and t_cuda.split(".")[0] != tv_cuda.split(".")[0]:
+    tv_cuda = getattr(getattr(torchvision, "version", None), "cuda", None)
+    t_major, tv_major = cuda_major(t_cuda), cuda_major(tv_cuda)
+    if t_major and tv_major and t_major != tv_major:
         bad(f"torch CUDA {t_cuda} vs torchvision CUDA {tv_cuda} (major mismatch)",
             f"pip install --force-reinstall torchvision --index-url {torch_index(t_cuda)}")
-    else:
+    elif t_major and tv_major:
         ok(f"torchvision {torchvision.__version__} (CUDA {tv_cuda}) matches torch")
+    else:
+        # It imported cleanly, which is the property that actually matters.
+        warn(f"torchvision {getattr(torchvision, '__version__', '?')} imports, "
+             f"but CUDA version is unreported (torch={t_cuda!r}, torchvision={tv_cuda!r})")
 
 
 def check_transformers(torch_mod):
@@ -136,19 +164,27 @@ def main():
                                                               os.path.expanduser("~/Search-R1")))
     args = ap.parse_args()
 
+    def guarded(label, fn, *a):
+        """Run one check; a bug in the check must not abort the whole run."""
+        try:
+            return fn(*a)
+        except Exception as exc:
+            warn(f"{label} check itself errored ({type(exc).__name__}: {exc}); skipping it")
+            return None
+
     print("environment check")
-    torch_mod = check_torch()
+    torch_mod = guarded("torch", check_torch)
     if torch_mod:
-        check_torchvision(torch_mod)
-    check_transformers(torch_mod)
+        guarded("torchvision", check_torchvision, torch_mod)
+    guarded("transformers", check_transformers, torch_mod)
     for name, pip_name in (("safetensors", "safetensors"),
                            ("huggingface_hub", "huggingface_hub")):
-        check_simple(name, pip_name)
+        guarded(name, check_simple, name, pip_name)
 
     if args.full:
-        check_simple("datasets", "datasets")
-        check_simple("vllm", "vllm")
-        check_search_r1(args.search_r1_root)
+        guarded("datasets", check_simple, "datasets", "datasets")
+        guarded("vllm", check_simple, "vllm", "vllm")
+        guarded("Search-R1", check_search_r1, args.search_r1_root)
 
     print()
     if not problems:

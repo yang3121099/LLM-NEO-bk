@@ -16,6 +16,7 @@ has already run.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import sys
 
@@ -77,6 +78,19 @@ def torch_index(torch_cuda) -> str:
 # check it at import. Any one of them can be the mismatched package, and the
 # error surfaces from whichever transformers happens to import first.
 SIBLINGS = ("torchvision", "torchaudio", "torchcodec")
+
+# vllm imports torchvision unconditionally during kernel warmup
+# (model_executor/warmup -> models/minimax_m3 -> torchvision.transforms), so with
+# vllm installed torchvision is required, not optional. transformers, by
+# contrast, degrades gracefully when any of these are missing.
+REQUIRED_BY_VLLM = {"torchvision"}
+
+
+def have(module: str) -> bool:
+    try:
+        return importlib.util.find_spec(module) is not None
+    except Exception:
+        return False
 
 
 def blame_sibling(message: str):
@@ -143,11 +157,19 @@ def check_siblings(torch_mod):
     t_major = cuda_major(t_cuda)
     fix = f"pip install --force-reinstall {{pkg}} --index-url {torch_index(t_cuda)}"
 
+    vllm_present = have("vllm")
+
     for name in SIBLINGS:
         try:
             mod = __import__(name)
         except ModuleNotFoundError:
-            continue                      # absent is fine; transformers copes
+            if vllm_present and name in REQUIRED_BY_VLLM:
+                bad(f"{name} is not installed, but vllm requires it "
+                    f"(kernel warmup imports {name}.transforms)",
+                    f"pip install {name} --index-url {torch_index(t_cuda)}")
+            else:
+                warn(f"{name} not installed (fine; nothing here needs it)")
+            continue
         except Exception as exc:
             culprit = blame_sibling(str(exc)) or name
             bad(f"{name} is installed but fails to import: {str(exc)[:140]}",

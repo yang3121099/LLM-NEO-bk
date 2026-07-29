@@ -90,8 +90,14 @@ pip install --force-reinstall torchaudio --index-url https://download.pytorch.or
 ```
 
 Use the CUDA version your torch reports
-(`python -c 'import torch; print(torch.version.cuda)'`). A companion package
-being absent entirely is fine — transformers works without it.
+(`python -c 'import torch; print(torch.version.cuda)'`).
+
+**Do not uninstall torchvision to work around this.** transformers tolerates its
+absence, but vllm does not: kernel warmup imports
+`torchvision.transforms` unconditionally, so removing it trades a CUDA mismatch
+for `ModuleNotFoundError: No module named 'torchvision'` inside EngineCore.
+Reinstall it matching your torch instead. `torchaudio` and `torchcodec` are not
+needed by anything here, so uninstalling those is a legitimate fix.
 
 The check is **advisory**: `run_all.sh` reports problems and continues. Use
 `--strict-env` to make it abort, or `--skip-env-check` to skip it entirely.

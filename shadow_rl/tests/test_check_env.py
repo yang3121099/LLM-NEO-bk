@@ -121,7 +121,33 @@ def main():
           "--force-reinstall torchaudio" in out)
     check("no traceback", "Traceback" not in out)
 
-    print("\n[7] a dependency that raises on import does not abort the run")
+    print("\n[7] torchvision is required when vllm is installed")
+    # vllm's kernel warmup imports torchvision.transforms unconditionally, so
+    # "absent is fine" holds for transformers but not for vllm.
+    stub_vllm = tempfile.mkdtemp()
+    os.makedirs(os.path.join(stub_vllm, "vllm"))
+    with open(os.path.join(stub_vllm, "vllm", "__init__.py"), "w") as fh:
+        fh.write("__version__ = '0.26.0'\n")
+    proc = subprocess.run([sys.executable, os.path.join(ROOT, "check_env.py")],
+                          capture_output=True, text=True,
+                          env=dict(os.environ, PYTHONPATH=stub_vllm))
+    out = proc.stdout + proc.stderr
+    if ce.have("torchvision"):
+        check("torchvision present -> no complaint", "vllm requires it" not in out)
+    else:
+        check("missing torchvision + vllm is fatal", "vllm requires it" in out)
+        check("suggests installing torchvision", "pip install torchvision" in out)
+        check("exits non-zero", proc.returncode != 0)
+
+    # Without vllm, an absent torchvision is only a warning.
+    proc = subprocess.run([sys.executable, os.path.join(ROOT, "check_env.py")],
+                          capture_output=True, text=True)
+    out_novllm = proc.stdout + proc.stderr
+    if not ce.have("torchvision") and not ce.have("vllm"):
+        check("missing torchvision without vllm is only a warning",
+              "vllm requires it" not in out_novllm)
+
+    print("\n[8] a dependency that raises on import does not abort the run")
     stub3 = tempfile.mkdtemp()
     os.makedirs(os.path.join(stub3, "safetensors"))
     with open(os.path.join(stub3, "safetensors", "__init__.py"), "w") as fh:

@@ -188,8 +188,40 @@ def main():
                   solution_str=prompts[0] + "<answer> the PARIS. </answer>",
                   ground_truth={"target": ["Paris"]}) == 1)
 
+    # ------------------------------------------------------------- sampling
+    print("\n[8] --sample is deterministic and identical across roles")
+    N_ROWS = 5000
+
+    class FakeSplit:
+        def __len__(self): return N_ROWS
+        def __getitem__(self, i):
+            return {"question": f"question number {i}", "golden_answers": [f"a{i}"]}
+
+    sys.modules["datasets"] = types.SimpleNamespace(
+        load_dataset=lambda *a, **k: {"test": FakeSplit()}
+    )
+
+    def qids(rows):
+        return [r["question"] for r in rows]
+
+    s1 = qids(ev.load_questions("nq", None, 200))
+    s2 = qids(ev.load_questions("nq", None, 200))
+    other = qids(ev.load_questions("hotpotqa", None, 200))
+    full = qids(ev.load_questions("nq", None, None))
+
+    check("sample size honoured", len(s1) == 200)
+    check("same dataset -> same questions every call", s1 == s2)
+    check("different datasets draw different rows", s1 != other)
+    check("sample is a subset of the full set", set(s1) <= set(full))
+    check("sample is not just a prefix", s1 != full[:200])
+    check("no sampling -> everything", len(full) == N_ROWS)
+    check("sample larger than the split falls back to all",
+          len(ev.load_questions("bamboogle", None, N_ROWS * 2)) == N_ROWS)
+    check("--limit takes a prefix", qids(ev.load_questions("nq", 50, None)) == full[:50])
+    check("question mark appended", all(q.endswith("?") for q in s1))
+
     # ------------------------------------------------------------- aggregator
-    print("\n[8] aggregator renders FINDINGS.md")
+    print("\n[9] aggregator renders FINDINGS.md")
     from pairs import DATASETS
     with tempfile.TemporaryDirectory() as tmp:
         csv_path = os.path.join(tmp, "results.csv")
@@ -203,7 +235,7 @@ def main():
                 for d in DATASETS:
                     w.writerow({"version": "v0.2", "size": "3b", "algo": "ppo",
                                 "with_search": False, "model_role": role,
-                                "dataset": d, "em": em})
+                                "dataset": d, "em": em, "n_questions": 500})
 
         proc = subprocess.run(
             [sys.executable, os.path.join(ROOT, "aggregate.py"),
@@ -218,6 +250,8 @@ def main():
         check("harness validation section present", "Harness validation" in md)
         check("reproduction delta computed", "+0.000" in md)
         check("unevaluated pairs listed", "Not yet evaluated" in md)
+        check("sampled run is flagged as a subsample", "subsample" in md.lower())
+        check("question counts reported", "Questions evaluated per role" in md)
 
     print("\n" + "=" * 60)
     if FAILURES:

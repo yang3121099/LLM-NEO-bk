@@ -5,6 +5,7 @@
 #   ./shadow_rl/run_all.sh --pairs nosearch              # start here, no retrieval needed
 #   ./shadow_rl/run_all.sh --pairs all --cleanup         # everything, freeing disk as it goes
 #   ./shadow_rl/run_all.sh --pairs ppo-nosearch-3b-v0.2 --stages similarity
+#   ./shadow_rl/run_all.sh --pairs all --sample 500 --cleanup --auto-retriever --yes
 #   ./shadow_rl/run_all.sh --pairs nosearch --limit 200  # quick smoke run
 #
 # Every stage is resumable: finished work is detected and skipped, so re-running
@@ -15,7 +16,12 @@
 #   --pairs X      all | nosearch | search | grpo | ppo | 3b | 7b | <pair_id>[,<pair_id>...]
 #   --stages X     comma list of: similarity,merge,eval,aggregate   (default all)
 #   --roles X      comma list of roles to evaluate  (default all four)
-#   --limit N      questions per dataset; for smoke runs
+#   --limit N      first N questions per dataset; biased, smoke runs only
+#   --sample N     deterministic random N per dataset, identical across roles.
+#                  Recommended for multi-pair sweeps: the full test sets are
+#                  ~51,700 questions per role, and --pairs all over them is on
+#                  the order of two weeks of single-GPU time.
+#   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
 #   --dry-run      print the plan and exit
@@ -30,7 +36,10 @@ PAIRS_SEL="nosearch"
 STAGES="similarity,merge,eval,aggregate"
 ROLES="instruct_baseline,rl_on_instruct,rl_on_base,shadow"
 LIMIT=""
+SAMPLE=""
 CLEANUP=0
+AUTO_RETRIEVER=0
+RETRIEVER_PID=""
 TP="${TP:-1}"
 DRY=0
 ASSUME_YES=0
@@ -49,6 +58,8 @@ while [[ $# -gt 0 ]]; do
         --stages)  STAGES="$2";    shift 2 ;;
         --roles)   ROLES="$2";     shift 2 ;;
         --limit)   LIMIT="$2";     shift 2 ;;
+        --sample)  SAMPLE="$2";    shift 2 ;;
+        --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
         --dry-run) DRY=1;          shift ;;
@@ -156,17 +167,78 @@ if [[ -n "${AVAIL_GB:-}" && "$AVAIL_GB" -lt "$NEED_GB" ]]; then
     fi
 fi
 
+retriever_alive() {
+    curl -fsS --max-time 5 -X POST "$RETRIEVER_URL" \
+        -H 'Content-Type: application/json' \
+        -d '{"queries":["test"],"topk":3,"return_scores":true}' >/dev/null 2>&1
+}
+
+# Started by us -> ours to stop, on any exit path including Ctrl-C.
+stop_retriever() {
+    if [[ -n "$RETRIEVER_PID" ]] && kill -0 "$RETRIEVER_PID" 2>/dev/null; then
+        log "stopping the retrieval server we started (pid $RETRIEVER_PID)"
+        kill "$RETRIEVER_PID" 2>/dev/null || true
+        wait "$RETRIEVER_PID" 2>/dev/null || true
+    fi
+}
+trap stop_retriever EXIT INT TERM
+
 if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
-    if curl -fsS --max-time 5 -X POST "$RETRIEVER_URL" \
-         -H 'Content-Type: application/json' \
-         -d '{"queries":["test"],"topk":3,"return_scores":true}' >/dev/null 2>&1; then
+    if retriever_alive; then
         ok "retrieval server responding at $RETRIEVER_URL"
+    elif [[ $AUTO_RETRIEVER -eq 1 ]]; then
+        RETR_LOG="$LOG_DIR/retriever.log"
+        log "starting the BM25 retriever (log: $RETR_LOG)"
+        ./shadow_rl/launch_bm25_retriever.sh >>"$RETR_LOG" 2>&1 &
+        RETRIEVER_PID=$!
+        log "waiting for it to come up (first run downloads ~70GB of corpus+index)"
+        for i in $(seq 1 720); do
+            if retriever_alive; then break; fi
+            if ! kill -0 "$RETRIEVER_PID" 2>/dev/null; then
+                die "the retriever exited during startup. Last lines of $RETR_LOG:
+$(tail -20 "$RETR_LOG" 2>/dev/null)"
+            fi
+            sleep 10
+            [[ $((i % 30)) -eq 0 ]] && log "  still waiting ($((i / 6))m)..."
+        done
+        retriever_alive || die "retriever did not become ready. See $RETR_LOG"
+        ok "retrieval server up at $RETRIEVER_URL (pid $RETRIEVER_PID)"
     else
         die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
-       Start one first (in another shell, it stays in the foreground):
-         ./shadow_rl/launch_bm25_retriever.sh"
+       Either start one in another shell:
+         ./shadow_rl/launch_bm25_retriever.sh
+       or re-run with --auto-retriever to have this script manage it."
     fi
 fi
+
+# ---- runtime estimate ------------------------------------------------------ #
+# Rough, from vLLM throughput on one H200 and the multi-turn rollout cost. Meant
+# to prevent a two-week surprise, not to be accurate to the hour.
+EST_HOURS=$(python3 - "$SAMPLE" "$LIMIT" "$ROLES" "$TP" "${PAIR_LIST[@]}" <<'ESTPY'
+import sys
+sys.path.insert(0, "shadow_rl")
+from pairs import PAIRS_BY_ID
+
+sample, limit, roles, tp = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4] or 1)
+pair_ids = sys.argv[5:]
+
+FULL = {"nq": 3610, "triviaqa": 11313, "popqa": 14267, "hotpotqa": 7405,
+        "2wikimultihopqa": 12576, "musique": 2417, "bamboogle": 125}
+n = int(sample) if sample else (int(limit) if limit else None)
+per_role = sum(min(n, v) if n else v for v in FULL.values())
+
+rate = {("3b", False): 14.0, ("3b", True): 6.0, ("7b", False): 6.0, ("7b", True): 2.5}
+n_roles = len([r for r in roles.split(",") if r.strip()])
+speedup = min(tp, 2.0)
+
+total = 0.0
+for pid in pair_ids:
+    p = PAIRS_BY_ID[pid]
+    total += n_roles * per_role / (rate[(p.size, p.with_search)] * speedup)
+h = total / 3600
+print(f"~{h:.0f}h (~{h/24:.1f} days)" if h >= 24 else f"~{h:.1f}h")
+ESTPY
+)
 
 # ---- plan ------------------------------------------------------------------ #
 cat <<EOF | tee -a "$RUN_LOG"
@@ -179,7 +251,9 @@ cat <<EOF | tee -a "$RUN_LOG"
  merged   : $MERGED_DIR
  results  : $RESULTS
  log      : $RUN_LOG
- tp       : $TP $( [[ -n "$LIMIT" ]] && echo " | limit: $LIMIT q/dataset" )
+ tp       : $TP
+ questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset (~$((SAMPLE*7)) per role)"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset (biased; smoke only)"; else echo "FULL test sets (~51,700 per role)"; fi )
+ est. time: $EST_HOURS
  cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo no )
 ==============================================================
 EOF
@@ -271,7 +345,8 @@ PY
             log "  eval: $role"
             EXTRA=()
             [[ "$role" == "shadow" ]] && EXTRA=(--model-path "$SHADOW_PATH")
-            [[ -n "$LIMIT" ]] && EXTRA+=(--limit "$LIMIT")
+            [[ -n "$LIMIT" ]]  && EXTRA+=(--limit "$LIMIT")
+            [[ -n "$SAMPLE" ]] && EXTRA+=(--sample "$SAMPLE")
             if python3 shadow_rl/evaluate.py \
                     --search-r1-root "$SEARCH_R1_ROOT" \
                     --pair "$pid" --role "$role" --out "$RESULTS" \

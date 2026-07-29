@@ -29,6 +29,7 @@ import csv
 import importlib.util
 import json
 import os
+import random
 import re
 import sys
 from typing import Dict, List, Optional
@@ -36,7 +37,15 @@ from typing import Dict, List, Optional
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from pairs import DATASETS, MODEL_ROLES, PAIRS_BY_ID, Pair  # noqa: E402
 
-CSV_FIELDS = ["version", "size", "algo", "with_search", "model_role", "dataset", "em"]
+# The seven columns the experiment specifies, plus n_questions -- without it a
+# sampled run and a full run are indistinguishable in the CSV, and the two are
+# not comparable.
+CSV_FIELDS = ["version", "size", "algo", "with_search", "model_role", "dataset",
+              "em", "n_questions"]
+
+# Fixed so that every model role sees exactly the same subsample. Comparing roles
+# across different question sets would be meaningless.
+SAMPLE_SEED = 20240917
 
 # The Search-R1 agentic prompt, byte-identical to make_prefix() in
 # scripts/data_process/qa_search_test_merge.py.  Do not reflow: the checkpoints
@@ -101,8 +110,14 @@ def load_qa_em(search_r1_root: str):
 # --------------------------------------------------------------------------- #
 # data
 # --------------------------------------------------------------------------- #
-def load_questions(dataset: str, limit: Optional[int]) -> List[Dict]:
-    """Load a test split the way scripts/data_process/qa_search_test_merge.py does."""
+def load_questions(dataset: str, limit: Optional[int], sample: Optional[int]) -> List[Dict]:
+    """Load a test split the way scripts/data_process/qa_search_test_merge.py does.
+
+    `sample` takes a deterministic random subset -- the same questions for every
+    model role, so the four roles stay comparable. `limit` takes the first N
+    instead, which is only for smoke tests: these files are not shuffled, so a
+    prefix is a biased sample.
+    """
     import datasets as hfds
 
     ds = hfds.load_dataset("RUC-NLPIR/FlashRAG_datasets", dataset)
@@ -114,8 +129,19 @@ def load_questions(dataset: str, limit: Optional[int]) -> List[Dict]:
     else:
         raise KeyError(f"no usable split for {dataset}")
 
+    indices = range(len(rows))
+    if sample and sample < len(rows):
+        # Seeded on the dataset name too, so different sets draw different rows
+        # while any given set is identical across roles and across runs.
+        rng = random.Random(f"{SAMPLE_SEED}:{dataset}")
+        indices = sorted(rng.sample(range(len(rows)), sample))
+        print(f"[data] {dataset}: sampled {sample} of {len(rows)} (seed {SAMPLE_SEED})")
+    elif sample:
+        print(f"[data] {dataset}: {len(rows)} rows, smaller than --sample {sample}; using all")
+
     out = []
-    for row in rows:
+    for i in indices:
+        row = rows[int(i)]
         question = row["question"].strip()
         if question[-1] != "?":
             question += "?"
@@ -288,7 +314,11 @@ def main() -> None:
                     help="override the model location; required for --role shadow")
     ap.add_argument("--out", default="shadow_rl/results.csv")
     ap.add_argument("--datasets", default=",".join(DATASETS))
-    ap.add_argument("--limit", type=int, default=None, help="questions per dataset (smoke tests)")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="first N questions per dataset; biased, smoke tests only")
+    ap.add_argument("--sample", type=int, default=None,
+                    help="deterministic random subsample of N questions per dataset; "
+                         "identical across roles, so the four stay comparable")
     ap.add_argument("--retriever-url", default="http://127.0.0.1:8000/retrieve")
     ap.add_argument("--topk", type=int, default=3)
     ap.add_argument("--max-turns", type=int, default=4, help="max action budget")
@@ -346,7 +376,7 @@ def main() -> None:
     rows = []
 
     for dataset in todo:
-        questions = load_questions(dataset, args.limit)
+        questions = load_questions(dataset, args.limit, args.sample)
         prompts = []
         for q in questions:
             text = prompt_template.format(question=q["question"])
@@ -392,7 +422,7 @@ def main() -> None:
         row = {
             "version": pair.version, "size": pair.size, "algo": pair.algo,
             "with_search": pair.with_search, "model_role": args.role,
-            "dataset": dataset, "em": round(em, 4),
+            "dataset": dataset, "em": round(em, 4), "n_questions": len(questions),
         }
         rows.append(row)
         append_rows(args.out, [row])   # write as we go; long runs get interrupted

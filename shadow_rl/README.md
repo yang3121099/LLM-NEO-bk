@@ -72,7 +72,9 @@ python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
 | `--pairs X` | `all`, `nosearch`, `search`, `grpo`, `ppo`, `3b`, `7b`, or explicit ids |
 | `--stages X` | subset of `similarity,merge,eval,aggregate` |
 | `--roles X` | subset of the four model roles |
-| `--limit N` | N questions per dataset — smoke runs |
+| `--limit N` | first N questions per dataset — biased, smoke runs only |
+| `--sample N` | deterministic random N per dataset, identical across roles |
+| `--auto-retriever` | start and stop the BM25 server automatically |
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
 | `--dry-run` | print the plan and stop |
@@ -88,6 +90,11 @@ Per-pair logs land in `shadow_rl/logs/`.
 Useful invocations:
 
 ```bash
+# the full comprehensive sweep, unattended
+nohup ./shadow_rl/run_all.sh --pairs all --sample 500 \
+      --cleanup --auto-retriever --yes > shadow_rl/logs/nohup.out 2>&1 &
+tail -f shadow_rl/logs/nohup.out
+
 # quick end-to-end sanity run: 50 questions per dataset, ~15 min
 ./shadow_rl/run_all.sh --pairs ppo-nosearch-3b-v0.2 --limit 50 --yes
 
@@ -100,6 +107,48 @@ Useful invocations:
 # the whole thing, freeing disk as it goes
 ./shadow_rl/run_all.sh --pairs all --cleanup --yes
 ```
+
+## How long a comprehensive run takes
+
+The official harness evaluates the **full** test sets (`val_data_num: null`) —
+about 51,700 questions per model role:
+
+| dataset | rows | | dataset | rows |
+|---|---|---|---|---|
+| nq | 3,610 | | 2wikimultihopqa | 12,576 |
+| triviaqa | 11,313 | | musique | 2,417 |
+| popqa | 14,267 | | bamboogle | 125 |
+| hotpotqa | 7,405 | | **total** | **51,713** |
+
+`--pairs all` means 12 pairs × 4 roles × 51,713 = **~2.5M multi-turn rollouts**:
+
+| run | questions/role | estimated time, 1× H200 |
+|---|---|---|
+| `--pairs all` (full sets) | 51,713 | **~163 h (~7 days)** |
+| `--pairs all --sample 500` | 3,500 | **~10 h** |
+| `--pairs all --sample 1000` | 7,000 | ~20 h |
+| `--pairs nosearch` (full sets) | 51,713 | ~8 h |
+
+`run_all.sh` prints this estimate during preflight before you commit to a run.
+
+**`--sample 500` is the recommended setting for the first comprehensive sweep.**
+It draws a seeded random subset — the same questions for every role and every
+pair, so the four roles stay comparable — and gets the whole grid in a night
+instead of a week. The sample size is recorded per row in `results.csv` as
+`n_questions`, and `FINDINGS.md` flags a subsampled run and warns loudly if two
+roles were somehow scored on different question counts.
+
+The tradeoff is noise. At n=500 per dataset the standard error on a single EM
+number is roughly ±0.02, and on the 7-dataset average roughly ±0.008. Margins
+smaller than that are not real. Once the sweep identifies which pairs show a
+promising `shadow − rl_on_instruct`, re-run just those on the full sets:
+
+```bash
+./shadow_rl/run_all.sh --pairs grpo-search-3b-v0.3 --yes   # no --sample = full
+```
+
+Since `results.csv` is keyed by pair/role/dataset, delete the sampled rows for
+that pair first, or point `--out` at a separate file.
 
 ## Parameter-level similarity
 

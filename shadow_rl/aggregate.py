@@ -49,13 +49,17 @@ def load(path: str):
         sys.exit(f"[fail] {path} not found. Run shadow_rl/evaluate.py first.")
     # results[pair_id][role][dataset] = em
     results: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
+    # counts[dataset] = set of question counts seen, to detect sampled runs
+    counts: Dict[str, set] = defaultdict(set)
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh):
             with_search = str(row["with_search"]).lower() == "true"
             tag = "search" if with_search else "nosearch"
             pair_id = f"{row['algo']}-{tag}-{row['size']}-{row['version']}"
             results[pair_id][row["model_role"]][row["dataset"]] = float(row["em"])
-    return results
+            if row.get("n_questions"):
+                counts[row["dataset"]].add(int(row["n_questions"]))
+    return results, counts
 
 
 def avg(per_dataset: Dict[str, float]) -> Optional[float]:
@@ -69,7 +73,7 @@ def partial_avg(per_dataset: Dict[str, float]) -> Optional[float]:
     return sum(per_dataset.values()) / len(per_dataset) if per_dataset else None
 
 
-def render(results, out_path: str) -> None:
+def render(results, counts, out_path: str) -> None:
     lines = [
         "# Shadow-FT weight grafting on matched RL checkpoint pairs",
         "",
@@ -258,9 +262,24 @@ def render(results, out_path: str) -> None:
             "",
         ]
 
+    lines += ["## Notes", ""]
+    if counts:
+        inconsistent = {d: sorted(v) for d, v in counts.items() if len(v) > 1}
+        total = sum(max(v) for v in counts.values())
+        detail = ", ".join(f"{d} {max(counts[d])}" for d in DATASETS if d in counts)
+        lines.append(f"- Questions evaluated per role: {detail} (total {total}).")
+        if total < 40000:
+            lines.append(
+                "  This is a **subsample** of the full test sets (~51,700 questions). EM on a"
+                "  subsample is noisier than the published numbers and the two are not"
+                "  strictly comparable; margins smaller than the sampling error should not be"
+                "  read as real.")
+        if inconsistent:
+            lines.append(
+                "- **WARNING: roles were evaluated on different numbers of questions** — "
+                + "; ".join(f"{d}: {v}" for d, v in inconsistent.items())
+                + ". The comparison between roles is not valid until these match.")
     lines += [
-        "## Notes",
-        "",
         "- `*` on an Avg marks a partial average — not all seven datasets are in yet.",
         "- Retrieval for the `SearchR1-*` pairs uses `PeterJinGo/wiki-18-bm25-index` for speed.",
         "  The paper uses a dense E5 index, so absolute numbers on the search pairs sit below",
@@ -280,7 +299,8 @@ def main() -> None:
     ap.add_argument("--results", default="shadow_rl/results.csv")
     ap.add_argument("--out", default="shadow_rl/FINDINGS.md")
     args = ap.parse_args()
-    render(load(args.results), args.out)
+    results, counts = load(args.results)
+    render(results, counts, args.out)
 
 
 if __name__ == "__main__":

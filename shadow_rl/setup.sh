@@ -61,11 +61,14 @@ log "upgrading pip"
 $PYBIN -m pip install --quiet --upgrade pip setuptools wheel
 
 # ---- 3. torch -------------------------------------------------------------- #
+# torchvision must come from the SAME index as torch. transformers imports it
+# inside image_utils, and a torch/torchvision CUDA major mismatch surfaces much
+# later as an unrelated-looking "Could not import module 'Qwen2ForCausalLM'".
 if $PYBIN -c 'import torch' 2>/dev/null; then
     log "torch already installed: $($PYBIN -c 'import torch; print(torch.__version__)')"
 else
-    log "installing torch from $TORCH_INDEX"
-    $PYBIN -m pip install --quiet torch --index-url "$TORCH_INDEX" \
+    log "installing torch + torchvision from $TORCH_INDEX"
+    $PYBIN -m pip install --quiet torch torchvision --index-url "$TORCH_INDEX" \
         || die "torch install failed. Pick the wheel matching your CUDA and retry:
        TORCH_INDEX=https://download.pytorch.org/whl/cu126 ./shadow_rl/setup.sh"
 fi
@@ -83,6 +86,24 @@ else
     $PYBIN -m pip install --quiet vllm \
         || die "vllm install failed. See https://docs.vllm.ai/en/latest/getting_started/installation.html"
 fi
+
+# ---- 4b. reconcile torch / torchvision ------------------------------------- #
+# vllm and others can pull a torchvision from default PyPI built against a
+# different CUDA major. Detect it here and repair, rather than letting a run die
+# after the merge has already completed.
+if ! $PYBIN shadow_rl/check_env.py >/tmp/shadow_env.log 2>&1; then
+    warn "environment check found problems; attempting repair"
+    TCUDA=$($PYBIN -c 'import torch; print(torch.version.cuda or "")' 2>/dev/null)
+    if [[ -n "$TCUDA" ]]; then
+        IDX="https://download.pytorch.org/whl/cu${TCUDA//./}"
+        log "reinstalling torchvision from $IDX to match torch CUDA $TCUDA"
+        $PYBIN -m pip install --quiet --force-reinstall torchvision --index-url "$IDX" || true
+    fi
+    if ! $PYBIN shadow_rl/check_env.py; then
+        die "environment still broken after repair; see the suggested fixes above"
+    fi
+fi
+log "torch / torchvision / transformers consistent"
 
 # ---- 5. Search-R1 harness -------------------------------------------------- #
 if [[ -d "$SEARCH_R1_ROOT/.git" ]]; then

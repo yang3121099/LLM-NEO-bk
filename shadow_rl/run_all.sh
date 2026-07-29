@@ -25,6 +25,7 @@
 #   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
+#   --force        redo work that is already complete (merge, smoke test)
 #   --dry-run      print the plan and exit
 #   --yes          skip the confirmation prompt
 set -uo pipefail
@@ -45,6 +46,7 @@ RETRIEVER_PID=""
 TP="${TP:-1}"
 DRY=0
 ASSUME_YES=0
+FORCE=0
 
 SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
 MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
@@ -65,6 +67,7 @@ while [[ $# -gt 0 ]]; do
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
+        --force)   FORCE=1;        shift ;;
         --dry-run) DRY=1;          shift ;;
         --yes|-y)  ASSUME_YES=1;   shift ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -82,6 +85,36 @@ err()  { printf '\033[1;31m[fail]\033[0m %s\n' "$*" | tee -a "$RUN_LOG" >&2; }
 die()  { err "$*"; exit 1; }
 
 has_stage() { [[ ",$STAGES," == *",$1,"* ]]; }
+
+# A merged model counts as done only if the merge ran to completion: merge.py
+# writes shadow_merge_stats.json last, after the shards and the config, and every
+# shard named in the index must actually exist. Checking only for config.json
+# would happily reuse a model left half-written by an interrupted run.
+merged_complete() {
+    local dir="$1"
+    [[ -f "$dir/shadow_merge_stats.json" ]] || return 1
+    python3 - "$dir" <<'MERGEDPY'
+import json, os, sys
+d = sys.argv[1]
+idx = os.path.join(d, "model.safetensors.index.json")
+if os.path.exists(idx):
+    shards = set(json.load(open(idx))["weight_map"].values())
+else:
+    shards = {f for f in os.listdir(d) if f.endswith(".safetensors")}
+    if not shards:
+        sys.exit(1)
+missing = [s for s in shards if not os.path.exists(os.path.join(d, s))]
+sys.exit(1 if missing else 0)
+MERGEDPY
+}
+
+# The smoke test loads a 7B model; no reason to repeat it once it has passed for
+# a merged model that has not changed since.
+smoke_passed() {
+    local dir="$1"
+    [[ -f "$dir/.smoke_ok" ]] || return 1
+    [[ "$dir/.smoke_ok" -nt "$dir/shadow_merge_stats.json" ]]
+}
 
 # ---- resolve the pair selection ------------------------------------------- #
 # Command substitution, not a process substitution into mapfile: mapfile reports
@@ -125,12 +158,14 @@ for p in "${PAIR_LIST[@]}"; do [[ "$p" == *"-search-"* ]] && NEEDS_SEARCH=1; don
 log "preflight"
 
 command -v python3 >/dev/null || die "python3 not found"
-for mod in torch safetensors huggingface_hub transformers; do
-    python3 -c "import $mod" 2>/dev/null || die "python module '$mod' missing. Run ./shadow_rl/setup.sh"
-done
-if has_stage eval; then
-    python3 -c "import vllm" 2>/dev/null || die "vllm missing. Run ./shadow_rl/setup.sh"
-    python3 -c "import datasets" 2>/dev/null || die "datasets missing. Run ./shadow_rl/setup.sh"
+
+# A real import check, not just "is it installed": a torch/torchvision CUDA
+# mismatch only shows up when a model class is actually resolved, and finding
+# that out after a 7-minute merge is a waste of everyone's time.
+ENV_ARGS=()
+has_stage eval && ENV_ARGS+=(--full --search-r1-root "$SEARCH_R1_ROOT")
+if ! python3 shadow_rl/check_env.py "${ENV_ARGS[@]}" 2>&1 | tee -a "$RUN_LOG"; then
+    die "environment check failed. Apply the fixes above, or re-run ./shadow_rl/setup.sh"
 fi
 
 [[ -f "$SEARCH_R1_ROOT/verl/utils/reward_score/qa_em.py" ]] \
@@ -257,7 +292,11 @@ cat <<EOF | tee -a "$RUN_LOG"
  tp       : $TP
  questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset (~$((SAMPLE*7)) per role)"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset (biased; smoke only)"; else echo "FULL test sets (~51,700 per role)"; fi )
  est. time: $EST_HOURS
- cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo no )
+ cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo "no (models kept)" )
+ reuse    : $( if [[ $FORCE -eq 1 ]]; then echo "nothing (--force)"; else
+   done_n=0; for _p in "${PAIR_LIST[@]}"; do merged_complete "$MERGED_DIR/$_p" && done_n=$((done_n+1)); done
+   rows=0; [[ -f "$RESULTS" ]] && rows=$(($(wc -l < "$RESULTS") - 1))
+   echo "$done_n/${#PAIR_LIST[@]} merged models, $rows result row(s) already present"; fi )
 ==============================================================
 EOF
 
@@ -316,8 +355,22 @@ PY
 
     # -- merge --
     if has_stage merge; then
-        if [[ -f "$SHADOW_PATH/config.json" ]]; then
-            log "  merge: already at $SHADOW_PATH, skipping"
+        if [[ $FORCE -eq 0 ]] && merged_complete "$SHADOW_PATH"; then
+            log "  merge: complete model already at $SHADOW_PATH, skipping"
+        elif [[ $FORCE -eq 0 && -d "$SHADOW_PATH" ]] && ! merged_complete "$SHADOW_PATH"; then
+            warn "  merge: $SHADOW_PATH exists but is incomplete; redoing it"
+            rm -rf "$SHADOW_PATH"
+            log "  merge: W_shadow = W_I + (RL(W_B) - W_B)"
+            if python3 shadow_rl/merge.py \
+                    --base "$BASE" --instruct "$INSTRUCT" \
+                    --rl-base "$RL_BASE" --rl-instruct "$RL_INSTRUCT" \
+                    --out "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
+                ok "  merged -> $SHADOW_PATH"
+            else
+                err "  merge failed (see $PAIR_LOG)"
+                rm -rf "$SHADOW_PATH"
+                FAILED_PAIRS+=("$pid:merge"); continue
+            fi
         else
             log "  merge: W_shadow = W_I + (RL(W_B) - W_B)"
             if python3 shadow_rl/merge.py \
@@ -332,12 +385,18 @@ PY
             fi
         fi
 
-        log "  smoke test"
-        if python3 shadow_rl/smoke_test.py --model "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
-            ok "  merged model loads and generates coherent text"
+        if [[ $FORCE -eq 0 ]] && smoke_passed "$SHADOW_PATH"; then
+            log "  smoke test: already passed for this model, skipping"
         else
-            err "  smoke test failed -- not evaluating this pair (see $PAIR_LOG)"
-            FAILED_PAIRS+=("$pid:smoke"); continue
+            log "  smoke test"
+            if python3 shadow_rl/smoke_test.py --model "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
+                touch "$SHADOW_PATH/.smoke_ok"
+                ok "  merged model loads and generates coherent text"
+            else
+                rm -f "$SHADOW_PATH/.smoke_ok"
+                err "  smoke test failed -- not evaluating this pair (see $PAIR_LOG)"
+                FAILED_PAIRS+=("$pid:smoke"); continue
+            fi
         fi
     fi
 

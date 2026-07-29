@@ -55,7 +55,8 @@ Before committing to a full run, look at the plan:
 | `smoke_test.py` | does the merged model load and generate coherent text? |
 | `run_pair.sh` | a single pair end to end (`run_all.sh` is usually what you want) |
 | `launch_bm25_retriever.sh` | corpus + BM25 index + retrieval server (search pairs only) |
-| `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract |
+| `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
+| `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
 The tests need no GPU and no model:
 
@@ -63,7 +64,33 @@ The tests need no GPU and no model:
 python shadow_rl/tests/test_merge.py
 python shadow_rl/tests/test_similarity.py
 python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
+python shadow_rl/tests/test_resume.py
 ```
+
+## Troubleshooting
+
+Run this first — it is also run automatically during `run_all.sh` preflight:
+
+```bash
+python shadow_rl/check_env.py --full
+```
+
+**`Could not import module 'Qwen2ForCausalLM'`** — almost always a torch /
+torchvision CUDA mismatch, not a transformers problem. pip installs torch from
+the CUDA-specific PyTorch index but torchvision from default PyPI, which may be
+built against a different CUDA major; transformers imports torchvision deep
+inside `image_utils`, so the first symptom is an unrelated-looking model-class
+error. `check_env.py` detects it and prints the matching index:
+
+```bash
+pip install --force-reinstall torchvision --index-url https://download.pytorch.org/whl/cu128
+```
+
+Use the CUDA version your torch reports (`python -c 'import torch; print(torch.version.cuda)'`).
+torchvision being absent entirely is fine — transformers works without it.
+
+**Merge stopped on a key mismatch** — see *Merging over mismatched key sets*
+below; the current default merges over the intersection and does not stop.
 
 ## `run_all.sh`
 
@@ -78,13 +105,23 @@ python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
 | `--auto-retriever` | start and stop the BM25 server automatically |
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
+| `--force` | redo work already complete (merge, smoke test) |
 | `--dry-run` | print the plan and stop |
 | `--yes` | skip the confirmation prompt |
 
-Everything is resumable. Finished datasets are detected in `results.csv` and
-skipped, existing merged models are reused, and pairs already in
-`similarity_summary.csv` are not recomputed — so re-running after an interruption
-picks up where it stopped. A failing pair is logged and the run moves to the next
+Everything is resumable, and the plan line reports what will be reused before
+anything runs:
+
+- **Merged models** are reused only when *complete* — `shadow_merge_stats.json`
+  present (merge.py writes it last) and every shard named in the index actually
+  on disk. A directory left half-written by an interrupted run is detected and
+  redone rather than silently reused; a bare `config.json` no longer counts.
+- **Smoke tests** are cached per merged model via a `.smoke_ok` marker, and
+  invalidated automatically if the model is re-merged after it.
+- **Finished datasets** are detected in `results.csv` and skipped.
+- **Similarity** skips pairs already in `similarity_summary.csv`.
+
+Pass `--force` to redo work that is already complete. A failing pair is logged and the run moves to the next
 rather than aborting the batch; the exit code is non-zero if anything failed.
 Per-pair logs land in `shadow_rl/logs/`.
 

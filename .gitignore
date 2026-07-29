@@ -123,3 +123,9 @@ turbomind/
 
 # aliyun
 core.*
+
+# Shadow-FT RL grafting: merged checkpoints and raw rollouts
+shadow_rl/merged/
+shadow_rl/*.jsonl
+# ...but results.csv is a tracked deliverable
+!shadow_rl/results.csv

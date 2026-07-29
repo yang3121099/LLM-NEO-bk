@@ -14,39 +14,133 @@ W_shadow = W_I + Delta_K     # graft it onto the instruct backbone
 Four models per pair — `W_I`, `RL(W_I)`, `RL(W_B)`, `W_shadow` — over seven QA
 sets, Exact Match. Zero training; weight arithmetic plus evaluation.
 
+## Quickstart, from nothing
+
+```bash
+# 1. clone this repo and switch to the branch
+git clone https://github.com/yang3121099/LLM-NEO-bk.git
+cd LLM-NEO-bk
+git checkout claude/shadow-ft-rl-weight-grafting-tc0uow
+
+# 2. install everything and verify (creates ~/shadow-rl-venv, clones Search-R1)
+./shadow_rl/setup.sh                 # add --with-bm25 if you want the search pairs too
+
+# 3. activate and go
+source ~/shadow-rl-venv/bin/activate
+export SEARCH_R1_ROOT=~/Search-R1
+
+./shadow_rl/run_all.sh --pairs nosearch          # ~2h on one H200, no retrieval needed
+```
+
+`setup.sh` finishes by running the three CPU test suites; if any fail it stops
+rather than letting you start a long run on a broken install.
+
+Before committing to a full run, look at the plan:
+
+```bash
+./shadow_rl/run_all.sh --pairs all --dry-run     # prints pairs, disk estimate, stages
+```
+
 ## Layout
 
 | file | what it does |
 |---|---|
-| `merge.py` | streaming safetensors merge + sigma / delta-magnitude sanity stats |
+| `setup.sh` | one-time install: venv, torch, vllm, Search-R1 checkout, self-test |
+| `run_all.sh` | **one-click**: similarity → merge → evaluate → aggregate, any pair subset |
+| `similarity.py` | per-parameter σ, cosines and RL-update magnitudes |
+| `merge.py` | streaming safetensors merge + sanity stats |
 | `pairs.py` | manifest of the 12 pairs and the published reference numbers |
 | `evaluate.py` | Search-R1 rollout + official EM scoring → `results.csv` |
 | `aggregate.py` | `results.csv` → `FINDINGS.md` |
 | `smoke_test.py` | does the merged model load and generate coherent text? |
-| `run_pair.sh` | one pair end to end: merge → smoke test → four roles → findings |
+| `run_pair.sh` | a single pair end to end (`run_all.sh` is usually what you want) |
 | `launch_bm25_retriever.sh` | corpus + BM25 index + retrieval server (search pairs only) |
-| `tests/` | CPU-only tests for the merge arithmetic and the eval contract |
-
-## Setup
-
-```bash
-git clone https://github.com/PeterGriffinJin/Search-R1.git ~/Search-R1
-export SEARCH_R1_ROOT=~/Search-R1
-pip install torch safetensors huggingface_hub transformers datasets vllm requests
-```
+| `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract |
 
 The tests need no GPU and no model:
 
 ```bash
 python shadow_rl/tests/test_merge.py
+python shadow_rl/tests/test_similarity.py
 python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
 ```
+
+## `run_all.sh`
+
+| option | meaning |
+|---|---|
+| `--pairs X` | `all`, `nosearch`, `search`, `grpo`, `ppo`, `3b`, `7b`, or explicit ids |
+| `--stages X` | subset of `similarity,merge,eval,aggregate` |
+| `--roles X` | subset of the four model roles |
+| `--limit N` | N questions per dataset — smoke runs |
+| `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
+| `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
+| `--dry-run` | print the plan and stop |
+| `--yes` | skip the confirmation prompt |
+
+Everything is resumable. Finished datasets are detected in `results.csv` and
+skipped, existing merged models are reused, and pairs already in
+`similarity_summary.csv` are not recomputed — so re-running after an interruption
+picks up where it stopped. A failing pair is logged and the run moves to the next
+rather than aborting the batch; the exit code is non-zero if anything failed.
+Per-pair logs land in `shadow_rl/logs/`.
+
+Useful invocations:
+
+```bash
+# quick end-to-end sanity run: 50 questions per dataset, ~15 min
+./shadow_rl/run_all.sh --pairs ppo-nosearch-3b-v0.2 --limit 50 --yes
+
+# similarity only, all 12 pairs, no GPU needed
+./shadow_rl/run_all.sh --pairs all --stages similarity --yes
+
+# reproduce the published numbers before trusting anything
+./shadow_rl/run_all.sh --pairs nosearch --roles rl_on_base,rl_on_instruct
+
+# the whole thing, freeing disk as it goes
+./shadow_rl/run_all.sh --pairs all --cleanup --yes
+```
+
+## Parameter-level similarity
+
+`similarity.py` runs before any merging and writes two CSVs —
+`similarity_params.csv` (one row per parameter tensor) and
+`similarity_summary.csv` (aggregated per module type, per layer, and overall).
+Per tensor it reports:
+
+| statistic | what it tells you |
+|---|---|
+| `sigma` | `Σ\|W_B−W_I\| / (Σ\|W_B\|+Σ\|W_I\|)` — the Shadow-FT applicability condition, working range 0.003–0.042 |
+| `cos_base_instruct` | angle between the two backbones |
+| `rel_delta_base` | `‖RL(W_B)−W_B‖/‖W_B‖` — how much RL moved the base model |
+| `rel_delta_instruct` | the same on the instruct side |
+| `cos_delta_base_instruct` | **`cos(Δ_B, Δ_I)`** — do the two RL runs point the same way? |
+
+That last one is the statistic worth reading first. It asks whether the update
+learned on the base model resembles the one learned on the instruct model. High
+cosine means transplanting it is well-posed; near zero means the two runs found
+unrelated solutions and the graft is a gamble regardless of what σ says. The
+aggregates are ratios of summed quantities, not averages of per-tensor ratios, so
+the `ALL` row is the exact whole-model figure.
+
+Group totals are exact under splitting — the test suite pins that folding two
+halves of a tensor gives the same numbers as folding it whole.
 
 ## Order of work
 
 The `R1-*` pairs are RL **without** a search engine, so they need no retrieval
 server and no index. They are both the cheapest experiment and the setting where
 the base-initialised model wins — start there.
+
+`run_all.sh --pairs nosearch` does steps 1–4 below in one command. The manual
+commands are spelled out so you can run a stage on its own or debug one.
+
+**0. Look at the parameter statistics first.** No GPU needed, and it tells you
+whether grafting is even well-posed for a pair before you spend time on it.
+
+```bash
+python shadow_rl/similarity.py --pair ppo-nosearch-3b-v0.2
+```
 
 **1. Merge the 3B `R1-*` pair and check it.**
 
@@ -163,16 +257,26 @@ Expectations differ by setting, and a modest gain is not a failure:
   checkpoint, so by our own applicability condition the expected margin is small.
   Anything above `RL(W_I)` counts as a positive result.
 
-## Cost
+## Cost and disk
 
-Rough disk and GPU needs, per pair. The RL checkpoints are frequently fp32, so
-they are about twice the size of the official bf16 weights.
+The RL checkpoints are frequently fp32, so they are roughly twice the size of the
+official bf16 weights. Per pair:
 
 | | 3B pair | 7B pair |
 |---|---|---|
-| download | ~40 GB | ~90 GB |
+| two RL checkpoints | ~24 GB | ~56 GB |
 | merged model | ~6 GB | ~15 GB |
-| GPU | 1×24 GB | 1×80 GB or 2×40 GB (`TP=2`) |
+| GPU | 1× H200 at `--tp 1` | 1× H200 at `--tp 1` |
 
-The search pairs additionally need ~70 GB for the Wikipedia corpus and BM25
-index, downloaded once and shared across pairs.
+Plus the shared originals, downloaded once: ~12 GB for the 3B base+instruct,
+~30 GB for the 7B.
+
+**All 12 pairs at once needs ~607 GB.** `run_all.sh` prints this estimate against
+your actual free space during preflight and warns if it will not fit. With
+`--cleanup` each pair's checkpoints are deleted after it is evaluated, which keeps
+the peak near **~130 GB** — that is the flag to use unless you have plenty of
+disk. The search pairs additionally need ~70 GB for the Wikipedia corpus and BM25
+index, downloaded once and shared.
+
+An H200 has 141 GB of HBM, so `--tp 1` is right for both sizes; raise `--tp` only
+to shorten wall-clock on the 7B pairs if you have GPUs to spare.

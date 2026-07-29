@@ -1,0 +1,328 @@
+#!/usr/bin/env bash
+# One-click driver: similarity -> merge -> evaluate -> aggregate, over any subset
+# of the 12 pairs.
+#
+#   ./shadow_rl/run_all.sh --pairs nosearch              # start here, no retrieval needed
+#   ./shadow_rl/run_all.sh --pairs all --cleanup         # everything, freeing disk as it goes
+#   ./shadow_rl/run_all.sh --pairs ppo-nosearch-3b-v0.2 --stages similarity
+#   ./shadow_rl/run_all.sh --pairs nosearch --limit 200  # quick smoke run
+#
+# Every stage is resumable: finished work is detected and skipped, so re-running
+# after an interruption picks up where it stopped. Each pair is isolated -- one
+# failure is logged and the run continues to the next.
+#
+# Options
+#   --pairs X      all | nosearch | search | grpo | ppo | 3b | 7b | <pair_id>[,<pair_id>...]
+#   --stages X     comma list of: similarity,merge,eval,aggregate   (default all)
+#   --roles X      comma list of roles to evaluate  (default all four)
+#   --limit N      questions per dataset; for smoke runs
+#   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
+#   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
+#   --dry-run      print the plan and exit
+#   --yes          skip the confirmation prompt
+set -uo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+
+# ---- defaults -------------------------------------------------------------- #
+PAIRS_SEL="nosearch"
+STAGES="similarity,merge,eval,aggregate"
+ROLES="instruct_baseline,rl_on_instruct,rl_on_base,shadow"
+LIMIT=""
+CLEANUP=0
+TP="${TP:-1}"
+DRY=0
+ASSUME_YES=0
+
+SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
+MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
+RESULTS="${RESULTS:-$REPO_ROOT/shadow_rl/results.csv}"
+LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"
+RETRIEVER_URL="${RETRIEVER_URL:-http://127.0.0.1:8000/retrieve}"
+MODEL_DIR="${SHADOW_RL_MODEL_DIR:-$HOME/models}"
+export SHADOW_RL_MODEL_DIR="$MODEL_DIR"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --pairs)   PAIRS_SEL="$2"; shift 2 ;;
+        --stages)  STAGES="$2";    shift 2 ;;
+        --roles)   ROLES="$2";     shift 2 ;;
+        --limit)   LIMIT="$2";     shift 2 ;;
+        --tp)      TP="$2";        shift 2 ;;
+        --cleanup) CLEANUP=1;      shift ;;
+        --dry-run) DRY=1;          shift ;;
+        --yes|-y)  ASSUME_YES=1;   shift ;;
+        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        *) echo "unknown option: $1" >&2; exit 2 ;;
+    esac
+done
+
+mkdir -p "$LOG_DIR" "$MERGED_DIR" "$MODEL_DIR"
+RUN_LOG="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
+
+log()  { printf '\033[1;34m[run]\033[0m  %s\n'  "$*" | tee -a "$RUN_LOG"; }
+ok()   { printf '\033[1;32m[ok]\033[0m   %s\n'  "$*" | tee -a "$RUN_LOG"; }
+warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" | tee -a "$RUN_LOG" >&2; }
+err()  { printf '\033[1;31m[fail]\033[0m %s\n' "$*" | tee -a "$RUN_LOG" >&2; }
+die()  { err "$*"; exit 1; }
+
+has_stage() { [[ ",$STAGES," == *",$1,"* ]]; }
+
+# ---- resolve the pair selection ------------------------------------------- #
+# Command substitution, not a process substitution into mapfile: mapfile reports
+# its own exit status, so a failure in the resolver would be silently swallowed.
+PAIR_LIST_RAW=$(python3 - "$PAIRS_SEL" <<'PY'
+import sys, os
+sys.path.insert(0, "shadow_rl")
+from pairs import PAIRS, PAIRS_BY_ID
+
+sel = sys.argv[1]
+groups = {
+    "all":      lambda p: True,
+    "nosearch": lambda p: not p.with_search,
+    "search":   lambda p: p.with_search,
+    "grpo":     lambda p: p.algo == "grpo",
+    "ppo":      lambda p: p.algo == "ppo",
+    "3b":       lambda p: p.size == "3b",
+    "7b":       lambda p: p.size == "7b",
+}
+if sel in groups:
+    chosen = [p.pair_id for p in PAIRS if groups[sel](p)]
+else:
+    chosen = []
+    for name in sel.split(","):
+        name = name.strip()
+        if name not in PAIRS_BY_ID:
+            sys.exit(f"unknown pair '{name}'. Known: {', '.join(sorted(PAIRS_BY_ID))}")
+        chosen.append(name)
+if not chosen:
+    sys.exit(f"selection '{sel}' matched no pairs")
+print("\n".join(chosen))
+PY
+) || die "could not resolve --pairs '$PAIRS_SEL'"
+mapfile -t PAIR_LIST <<< "$PAIR_LIST_RAW"
+[[ ${#PAIR_LIST[@]} -gt 0 && -n "${PAIR_LIST[0]}" ]] || die "--pairs '$PAIRS_SEL' matched no pairs"
+
+NEEDS_SEARCH=0
+for p in "${PAIR_LIST[@]}"; do [[ "$p" == *"-search-"* ]] && NEEDS_SEARCH=1; done
+
+# ---- preflight ------------------------------------------------------------- #
+log "preflight"
+
+command -v python3 >/dev/null || die "python3 not found"
+for mod in torch safetensors huggingface_hub transformers; do
+    python3 -c "import $mod" 2>/dev/null || die "python module '$mod' missing. Run ./shadow_rl/setup.sh"
+done
+if has_stage eval; then
+    python3 -c "import vllm" 2>/dev/null || die "vllm missing. Run ./shadow_rl/setup.sh"
+    python3 -c "import datasets" 2>/dev/null || die "datasets missing. Run ./shadow_rl/setup.sh"
+fi
+
+[[ -f "$SEARCH_R1_ROOT/verl/utils/reward_score/qa_em.py" ]] \
+    || die "Search-R1 not found at SEARCH_R1_ROOT=$SEARCH_R1_ROOT. Run ./shadow_rl/setup.sh"
+
+NGPU=0
+if command -v nvidia-smi >/dev/null 2>&1; then
+    NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+fi
+if has_stage eval; then
+    [[ "$NGPU" -gt 0 ]] || die "no GPU visible, but the eval stage needs one"
+    [[ "$TP" -le "$NGPU" ]] || die "--tp $TP exceeds the $NGPU visible GPU(s)"
+    log "$NGPU GPU(s), tensor_parallel_size=$TP"
+fi
+
+# Disk: the RL checkpoints are frequently fp32, so roughly double the bf16 size.
+AVAIL_GB=$(df -PBG "$MODEL_DIR" 2>/dev/null | awk 'NR==2 {gsub("G","",$4); print $4}')
+NEED_GB=$(python3 - "${PAIR_LIST[@]}" <<'PY'
+import sys
+sys.path.insert(0, "shadow_rl")
+from pairs import PAIRS_BY_ID
+# per pair: two RL checkpoints (fp32) + merged model (bf16); originals shared.
+per = {"3b": 2 * 12 + 6, "7b": 2 * 28 + 15}
+need = sum(per[PAIRS_BY_ID[p].size] for p in sys.argv[1:])
+sizes = {PAIRS_BY_ID[p].size for p in sys.argv[1:]}
+need += sum({"3b": 6 + 6, "7b": 15 + 15}[s] for s in sizes)   # shared originals
+print(need)
+PY
+)
+log "disk: ~${NEED_GB}GB needed under $MODEL_DIR, ${AVAIL_GB:-?}GB free"
+if [[ -n "${AVAIL_GB:-}" && "$AVAIL_GB" -lt "$NEED_GB" ]]; then
+    if [[ $CLEANUP -eq 1 ]]; then
+        warn "less free space than the full total, but --cleanup frees each pair as it finishes"
+    else
+        warn "NOT enough free space for all pairs at once. Re-run with --cleanup,"
+        warn "or work through the pairs in smaller batches."
+    fi
+fi
+
+if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
+    if curl -fsS --max-time 5 -X POST "$RETRIEVER_URL" \
+         -H 'Content-Type: application/json' \
+         -d '{"queries":["test"],"topk":3,"return_scores":true}' >/dev/null 2>&1; then
+        ok "retrieval server responding at $RETRIEVER_URL"
+    else
+        die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
+       Start one first (in another shell, it stays in the foreground):
+         ./shadow_rl/launch_bm25_retriever.sh"
+    fi
+fi
+
+# ---- plan ------------------------------------------------------------------ #
+cat <<EOF | tee -a "$RUN_LOG"
+
+==============================================================
+ pairs    : ${#PAIR_LIST[@]}  ($(IFS=,; echo "${PAIR_LIST[*]}"))
+ stages   : $STAGES
+ roles    : $ROLES
+ models   : $MODEL_DIR
+ merged   : $MERGED_DIR
+ results  : $RESULTS
+ log      : $RUN_LOG
+ tp       : $TP $( [[ -n "$LIMIT" ]] && echo " | limit: $LIMIT q/dataset" )
+ cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo no )
+==============================================================
+EOF
+
+[[ $DRY -eq 1 ]] && { log "dry run, stopping here"; exit 0; }
+
+if [[ $ASSUME_YES -eq 0 && -t 0 ]]; then
+    read -r -p "proceed? [y/N] " reply
+    [[ "$reply" =~ ^[Yy]$ ]] || { log "aborted"; exit 0; }
+fi
+
+START_TS=$(date +%s)
+declare -a FAILED_PAIRS=()
+
+# ---- stage 1: similarity (all pairs at once, one CSV) ---------------------- #
+if has_stage similarity; then
+    log "stage: parameter-level similarity"
+    SIM_LOG="$LOG_DIR/similarity.log"
+    APPEND=""
+    [[ -f "$REPO_ROOT/shadow_rl/similarity_summary.csv" ]] && APPEND="--append"
+    for pid in "${PAIR_LIST[@]}"; do
+        if [[ -n "$APPEND" ]] && grep -q "^$pid," "$REPO_ROOT/shadow_rl/similarity_summary.csv" 2>/dev/null; then
+            log "  skip $pid (already in similarity_summary.csv)"
+            continue
+        fi
+        log "  $pid"
+        if python3 shadow_rl/similarity.py --pair "$pid" \
+                --params-out  "$REPO_ROOT/shadow_rl/similarity_params.csv" \
+                --summary-out "$REPO_ROOT/shadow_rl/similarity_summary.csv" \
+                $APPEND 2>&1 | tee -a "$SIM_LOG"; then
+            APPEND="--append"
+        else
+            err "  similarity failed for $pid (see $SIM_LOG)"
+        fi
+    done
+    ok "similarity -> shadow_rl/similarity_{params,summary}.csv"
+fi
+
+# ---- stages 2-3: merge + evaluate, pair by pair ---------------------------- #
+for pid in "${PAIR_LIST[@]}"; do
+    PAIR_START=$(date +%s)
+    PAIR_LOG="$LOG_DIR/$pid.log"
+    SHADOW_PATH="$MERGED_DIR/$pid"
+    PAIR_OK=1
+
+    log ""
+    log "=============== $pid ==============="
+
+    read -r BASE INSTRUCT RL_BASE RL_INSTRUCT < <(python3 - "$pid" <<'PY'
+import sys
+sys.path.insert(0, "shadow_rl")
+from pairs import PAIRS_BY_ID
+p = PAIRS_BY_ID[sys.argv[1]]
+print(p.base, p.instruct, p.repo("rl_on_base"), p.repo("rl_on_instruct"))
+PY
+)
+
+    # -- merge --
+    if has_stage merge; then
+        if [[ -f "$SHADOW_PATH/config.json" ]]; then
+            log "  merge: already at $SHADOW_PATH, skipping"
+        else
+            log "  merge: W_shadow = W_I + (RL(W_B) - W_B)"
+            if python3 shadow_rl/merge.py \
+                    --base "$BASE" --instruct "$INSTRUCT" \
+                    --rl-base "$RL_BASE" --rl-instruct "$RL_INSTRUCT" \
+                    --out "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
+                ok "  merged -> $SHADOW_PATH"
+            else
+                err "  merge failed (see $PAIR_LOG)"
+                rm -rf "$SHADOW_PATH"      # never leave a half-written model behind
+                FAILED_PAIRS+=("$pid:merge"); continue
+            fi
+        fi
+
+        log "  smoke test"
+        if python3 shadow_rl/smoke_test.py --model "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
+            ok "  merged model loads and generates coherent text"
+        else
+            err "  smoke test failed -- not evaluating this pair (see $PAIR_LOG)"
+            FAILED_PAIRS+=("$pid:smoke"); continue
+        fi
+    fi
+
+    # -- evaluate --
+    if has_stage eval; then
+        IFS=',' read -ra ROLE_ARR <<< "$ROLES"
+        for role in "${ROLE_ARR[@]}"; do
+            log "  eval: $role"
+            EXTRA=()
+            [[ "$role" == "shadow" ]] && EXTRA=(--model-path "$SHADOW_PATH")
+            [[ -n "$LIMIT" ]] && EXTRA+=(--limit "$LIMIT")
+            if python3 shadow_rl/evaluate.py \
+                    --search-r1-root "$SEARCH_R1_ROOT" \
+                    --pair "$pid" --role "$role" --out "$RESULTS" \
+                    --retriever-url "$RETRIEVER_URL" \
+                    --tensor-parallel-size "$TP" \
+                    "${EXTRA[@]}" 2>&1 | tee -a "$PAIR_LOG"; then
+                ok "  $role done"
+            else
+                err "  eval failed for $role (see $PAIR_LOG)"
+                FAILED_PAIRS+=("$pid:eval:$role"); PAIR_OK=0
+            fi
+        done
+    fi
+
+    # -- cleanup --
+    if [[ $CLEANUP -eq 1 && $PAIR_OK -eq 1 ]]; then
+        log "  cleanup: freeing this pair's checkpoints"
+        for repo in "$RL_BASE" "$RL_INSTRUCT"; do
+            d="$MODEL_DIR/${repo//\//__}"
+            [[ -d "$d" ]] && { rm -rf "$d"; log "    removed $d"; }
+        done
+        [[ -d "$SHADOW_PATH" ]] && { rm -rf "$SHADOW_PATH"; log "    removed $SHADOW_PATH"; }
+    elif [[ $CLEANUP -eq 1 ]]; then
+        warn "  keeping checkpoints: this pair had failures, so they may be needed for a retry"
+    fi
+
+    ok "$pid finished in $(( ($(date +%s) - PAIR_START) / 60 ))m"
+done
+
+# ---- stage 4: aggregate ---------------------------------------------------- #
+if has_stage aggregate; then
+    log ""
+    log "stage: aggregate"
+    python3 shadow_rl/aggregate.py --results "$RESULTS" \
+        --out "$REPO_ROOT/shadow_rl/FINDINGS.md" 2>&1 | tee -a "$RUN_LOG"
+fi
+
+# ---- summary --------------------------------------------------------------- #
+ELAPSED=$(( ($(date +%s) - START_TS) / 60 ))
+log ""
+log "=============================================================="
+if [[ ${#FAILED_PAIRS[@]} -eq 0 ]]; then
+    ok "all ${#PAIR_LIST[@]} pair(s) completed in ${ELAPSED}m"
+else
+    warn "${#FAILED_PAIRS[@]} failure(s) in ${ELAPSED}m:"
+    for f in "${FAILED_PAIRS[@]}"; do warn "    $f"; done
+    warn "logs in $LOG_DIR/ -- re-running skips whatever already succeeded"
+fi
+log "results  : $RESULTS"
+log "findings : shadow_rl/FINDINGS.md"
+log "log      : $RUN_LOG"
+log "=============================================================="
+
+[[ ${#FAILED_PAIRS[@]} -eq 0 ]] || exit 1

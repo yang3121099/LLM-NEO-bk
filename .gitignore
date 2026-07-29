@@ -129,3 +129,5 @@ shadow_rl/merged/
 shadow_rl/*.jsonl
 # ...but results.csv is a tracked deliverable
 !shadow_rl/results.csv
+shadow_rl/logs/
+shadow_rl/similarity_params.csv

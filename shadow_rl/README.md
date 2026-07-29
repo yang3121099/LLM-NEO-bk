@@ -56,6 +56,7 @@ Before committing to a full run, look at the plan:
 | `smoke_test.py` | does the merged model load and generate coherent text? |
 | `run_pair.sh` | a single pair end to end (`run_all.sh` is usually what you want) |
 | `launch_bm25_retriever.sh` | corpus + BM25 index + retrieval server (search pairs only) |
+| `report.py` | terminal comparison table — printed automatically after every run |
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
 | `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
@@ -188,17 +189,27 @@ about 51,700 questions per model role:
 
 ### Start here: `--fast`
 
-The smallest run that still answers the question — one 3B pair, the two
-in-domain datasets, 200 sampled questions, all five models:
+The smallest run that still answers the question — one 3B pair, four datasets
+(NQ and HotpotQA in-domain, Musique and Bamboogle out-of-domain), 200 sampled
+questions, all five models:
 
 ```bash
-./shadow_rl/run_all.sh --fast --yes            # ~2 min of generation
+./shadow_rl/run_all.sh --fast --yes            # ~4 min of generation
 ```
 
 That covers `W_B` (raw HF base), `W_I` (raw HF instruct), `RL(W_I)`, `RL(W_B)`
-and `W_shadow`. It proves the pipeline runs end to end and shows the sign of the
-effect. It is **not** publishable: at 200 questions the standard error on one EM
-number is around ±0.03, wider than the margins being measured.
+and `W_shadow`, and gives both in-domain and generalisation signal. It proves
+the pipeline runs end to end and shows the sign of the effect. It is **not**
+publishable: at 200 questions the standard error on one EM number is around
+±0.03, wider than the margins being measured.
+
+Add a GRPO pair — note this one needs the retrieval server, so the first run
+also downloads ~70 GB of corpus and index:
+
+```bash
+./shadow_rl/setup.sh --with-bm25
+./shadow_rl/run_all.sh --fast --pairs grpo-search-3b-v0.3 --auto-retriever --yes
+```
 
 Then the real alignment run, still with no retrieval server:
 
@@ -422,6 +433,40 @@ script says so loudly instead:
 Pass `--strict-keys` to restore the old behaviour of failing on any difference.
 
 ## Reading the result
+
+`run_all.sh` prints a comparison table when it finishes; re-print it any time
+without re-running anything:
+
+```bash
+python shadow_rl/report.py                                  # every pair
+python shadow_rl/report.py --pair ppo-nosearch-3b-v0.2      # one pair
+python shadow_rl/report.py --no-color > results.txt         # for pasting
+```
+
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ppo-nosearch-3b-v0.2   PPO · 3B · no search · v0.2   4/7 datasets · n=200
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  model                                  NQ* HotpotQA*   Musique Bamboogle      Avg
+  ──────────────────────────────────────────────────────────────────────────────────
+  W_B       untuned base               0.045     0.047     0.011     0.050    0.038
+  W_I       untuned instruct           0.113     0.092     0.021     0.111    0.084
+  RL(W_I)   direct RL on instruct      0.205     0.188     0.069     0.199    0.165
+  RL(W_B)   direct RL on base          0.237     0.211     0.067     0.211    0.182
+  W_shadow  ours                       0.251     0.235     0.070     0.240    0.199
+
+  WIN   shadow − RL(W_I)  = +0.0340    (0.1991 vs 0.1652)
+  WIN   shadow − RL(W_B)  = +0.0175    (0.1991 vs 0.1816)
+
+  harness check:  RL(W_B) 0.182 vs 0.177 published (+0.005) ok | ...
+```
+
+`*` marks in-domain sets, `!` marks a role missing data the others have, and the
+best value in each column is bolded. With two or more pairs an overview table is
+appended tallying how often `W_shadow` beat `RL(W_I)`.
+
+`FINDINGS.md` now opens with a **Verdict** section stating that tally directly,
+before the detailed tables.
 
 `FINDINGS.md` reports, per pair, the four averages plus
 `shadow − rl_on_instruct` and `shadow − rl_on_base`.

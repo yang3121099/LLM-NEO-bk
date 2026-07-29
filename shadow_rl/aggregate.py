@@ -146,6 +146,40 @@ def render(results, counts, out_path: str) -> None:
 
     missing = [p.pair_id for p in PAIRS if p.pair_id not in results]
 
+    # ------------------------------------------------------------------ verdict
+    # Lead with the answer. The margin against RL(W_I) is the whole experiment:
+    # RL(W_B) is what the update was learned on, so beating it is expected;
+    # beating direct RL on the instruct model is the claim.
+    wins, losses, pending = [], [], []
+    for pair in evaluated:
+        roles = results[pair.pair_id]
+        a_s, a_i = avg(roles.get("shadow", {})), avg(roles.get("rl_on_instruct", {}))
+        if a_s is None or a_i is None:
+            pending.append(pair.pair_id)
+        elif a_s > a_i:
+            wins.append((pair.pair_id, a_s - a_i))
+        else:
+            losses.append((pair.pair_id, a_s - a_i))
+
+    lines += ["## Verdict", ""]
+    if wins or losses:
+        n = len(wins) + len(losses)
+        lines.append(f"`W_shadow` beats `RL(W_I)` on **{len(wins)} of {n}** evaluated pair(s).")
+        lines.append("")
+        for pid, d in sorted(wins, key=lambda kv: -kv[1]):
+            lines.append(f"- ✅ `{pid}` — **{fmt(d, sign=True)}** over direct RL on instruct")
+        for pid, d in sorted(losses, key=lambda kv: kv[1]):
+            lines.append(f"- ❌ `{pid}` — {fmt(d, sign=True)} against direct RL on instruct")
+        lines.append("")
+    if pending:
+        lines += [f"Incomplete (missing `shadow` or `rl_on_instruct`): "
+                  + ", ".join(f"`{p}`" for p in pending), ""]
+    lines += [
+        "Beating `RL(W_B)` is the weaker claim — that is the run the update was",
+        "learned from. Beating `RL(W_I)` is the result the experiment is after.",
+        "",
+    ]
+
     # ---------------------------------------------------------------- summary
     lines += [
         "## Summary",

@@ -26,8 +26,8 @@
 #   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
-#   --fast         smallest useful run: one 3B pair, nq+hotpotqa, 200 questions,
-#                  all five models. ~15 min on one H200. Proves it runs.
+#   --fast         smallest useful run: one 3B pair, 4 datasets (2 in-domain +
+#                  2 OOD), 200 questions, all five models. A few minutes.
 #   --force        redo work that is already complete (merge, smoke test)
 #   --skip-env-check  do not run the environment check at all
 #   --strict-env      abort if the environment check reports problems
@@ -93,7 +93,11 @@ if [[ $FAST -eq 1 ]]; then
     [[ "$PAIRS_SEL" == "nosearch" ]] && PAIRS_SEL="ppo-nosearch-3b-v0.2"
     [[ -z "$SAMPLE" && -z "$LIMIT" ]] && SAMPLE=200
     [[ "$STAGES" == "similarity,merge,eval,aggregate" ]] && STAGES="merge,eval,aggregate"
-    SKIP_DATASETS="${SKIP_DATASETS:-triviaqa,popqa,2wikimultihopqa,musique,bamboogle}"
+    # nq + hotpotqa are in-domain; musique + bamboogle are out-of-domain and
+    # small (2.4k and 125 rows), so they add generalisation signal almost free.
+    # Skipped: triviaqa/popqa/2wiki, the three largest, which say little that
+    # the cheaper OOD sets do not.
+    SKIP_DATASETS="${SKIP_DATASETS:-triviaqa,popqa,2wikimultihopqa}"
 fi
 
 mkdir -p "$LOG_DIR" "$MERGED_DIR" "$MODEL_DIR"
@@ -495,6 +499,10 @@ if has_stage aggregate; then
     log "stage: aggregate"
     python3 shadow_rl/aggregate.py --results "$RESULTS" \
         --out "$REPO_ROOT/shadow_rl/FINDINGS.md" 2>&1 | tee -a "$RUN_LOG"
+
+    # Comparison table straight to the terminal; the log copy is colour-free.
+    python3 shadow_rl/report.py --results "$RESULTS"
+    python3 shadow_rl/report.py --results "$RESULTS" --no-color >>"$RUN_LOG" 2>&1 || true
 fi
 
 # ---- summary --------------------------------------------------------------- #

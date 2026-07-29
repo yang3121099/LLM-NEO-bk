@@ -33,7 +33,8 @@ DATASETS: List[str] = [
 ]
 IN_DOMAIN = {"nq", "hotpotqa"}
 
-MODEL_ROLES = ["instruct_baseline", "rl_on_instruct", "rl_on_base", "shadow"]
+MODEL_ROLES = ["base_baseline", "instruct_baseline",
+               "rl_on_instruct", "rl_on_base", "shadow"]
 
 
 @dataclass(frozen=True)
@@ -60,6 +61,8 @@ class Pair:
 
     def repo(self, role: str) -> Optional[str]:
         """HuggingFace id for a role, or None for `shadow` (produced locally)."""
+        if role == "base_baseline":
+            return self.base
         if role == "instruct_baseline":
             return self.instruct
         if role == "rl_on_instruct":
@@ -163,7 +166,8 @@ def reference_for(pair: Pair, role: str) -> Optional[Dict[str, float]]:
 
     `shadow` has no published number by construction -- that is the experiment.
     """
-    if role == "shadow":
+    if role in ("shadow", "base_baseline"):
+        # No published direct-inference numbers exist for the raw base model.
         return None
     if role == "instruct_baseline":
         return REFERENCE.get(f"instruct_baseline/{pair.size}/direct")

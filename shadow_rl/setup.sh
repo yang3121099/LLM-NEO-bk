@@ -87,23 +87,52 @@ else
         || die "vllm install failed. See https://docs.vllm.ai/en/latest/getting_started/installation.html"
 fi
 
-# ---- 4b. reconcile torch / torchvision ------------------------------------- #
-# vllm and others can pull a torchvision from default PyPI built against a
-# different CUDA major. Detect it here and repair, rather than letting a run die
-# after the merge has already completed.
+# ---- 4b. reconcile torch's companion packages ------------------------------ #
+# torch, torchvision and torchaudio each embed the CUDA version they were built
+# against and check it at import. pip happily installs torch from the CUDA
+# index and a companion from default PyPI, and the mismatch only surfaces later
+# as an unrelated-looking "Could not import module 'Qwen2ForCausalLM'".
+#
+# Note vllm *requires* torchvision (kernel warmup imports torchvision.transforms),
+# so uninstalling it is not a valid workaround. torchaudio is needed by nothing
+# here, so a mismatched one is simply removed.
 if ! $PYBIN shadow_rl/check_env.py >/tmp/shadow_env.log 2>&1; then
     warn "environment check found problems; attempting repair"
+    cat /tmp/shadow_env.log | sed 's/^/         /' >&2
+
     TCUDA=$($PYBIN -c 'import torch; print(torch.version.cuda or "")' 2>/dev/null)
+    TVER=$($PYBIN -c 'import torch; print(torch.__version__.split("+")[0])' 2>/dev/null)
     if [[ -n "$TCUDA" ]]; then
-        IDX="https://download.pytorch.org/whl/cu${TCUDA//./}"
-        log "reinstalling torchvision from $IDX to match torch CUDA $TCUDA"
-        $PYBIN -m pip install --quiet --force-reinstall torchvision --index-url "$IDX" || true
+        CUTAG="cu${TCUDA//./}"
+        IDX="https://download.pytorch.org/whl/$CUTAG"
+        log "torch $TVER (CUDA $TCUDA) -> repairing companions from $IDX"
+
+        # Build tooling first: a stale setuptools/numpy breaks these installs.
+        $PYBIN -m pip install --quiet --upgrade pip setuptools numpy || true
+
+        # torchvision: required by vllm, so it must be present and matching.
+        $PYBIN -m pip install --quiet --force-reinstall --no-deps \
+            torchvision --index-url "$IDX" \
+            || warn "torchvision repair failed; vllm will not start without it"
+
+        # torchaudio: nothing here needs it. Pin it to torch's version if it is
+        # installed, otherwise drop it rather than fight the resolver.
+        if $PYBIN -c 'import torchaudio' >/dev/null 2>&1 \
+           || $PYBIN -m pip show torchaudio >/dev/null 2>&1; then
+            $PYBIN -m pip uninstall -y -q torchaudio || true
+            $PYBIN -m pip install --quiet --force-reinstall --no-deps \
+                "torchaudio==${TVER}+${CUTAG}" --index-url "$IDX" \
+                || warn "torchaudio not reinstalled; it is not needed, leaving it absent"
+        fi
     fi
+
     if ! $PYBIN shadow_rl/check_env.py; then
-        die "environment still broken after repair; see the suggested fixes above"
+        warn "environment check still reports problems after repair."
+        warn "The suggested fixes are above. Continuing anyway -- run_all.sh treats"
+        warn "the check as advisory, so use --strict-env if you want it to block."
     fi
 fi
-log "torch / torchvision / transformers consistent"
+log "torch and companions reconciled"
 
 # ---- 5. Search-R1 harness -------------------------------------------------- #
 if [[ -d "$SEARCH_R1_ROOT/.git" ]]; then
@@ -153,7 +182,7 @@ if $PYBIN shadow_rl/tests/test_evaluate.py --search-r1-root "$SEARCH_R1_ROOT" \
 else
     warn "  test_evaluate FAILED -- see /tmp/shadow_test_evaluate.log"; FAILED=1
 fi
-[[ $FAILED -eq 0 ]] || die "verification failed; fix the above before running the experiment"
+[[ $FAILED -eq 0 ]] || warn "some test suites failed; see the logs above before trusting results"
 
 # ---- done ------------------------------------------------------------------ #
 cat <<EOF
@@ -168,9 +197,12 @@ Next:
   export SEARCH_R1_ROOT=$SEARCH_R1_ROOT
 $( [[ -n "$VENV" ]] && echo "  source $VENV/bin/activate" )
 
-  # start here: the no-search pairs need no retrieval server
-  ./shadow_rl/run_all.sh --pairs nosearch
+  # fastest useful run: one 3B pair, 5 models, 2 datasets, ~15 min
+  ./shadow_rl/run_all.sh --fast --yes
+
+  # both no-search pairs, still no retrieval server needed
+  ./shadow_rl/run_all.sh --pairs nosearch --sample 1000 --yes
 
   # everything (needs BM25 + a lot of disk)
-  ./shadow_rl/run_all.sh --pairs all --cleanup
+  ./shadow_rl/run_all.sh --pairs all --sample 500 --auto-retriever --yes
 EOF

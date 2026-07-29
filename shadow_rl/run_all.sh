@@ -5,6 +5,7 @@
 #   ./shadow_rl/run_all.sh --pairs nosearch              # start here, no retrieval needed
 #   ./shadow_rl/run_all.sh --pairs all --cleanup         # everything, freeing disk as it goes
 #   ./shadow_rl/run_all.sh --pairs ppo-nosearch-3b-v0.2 --stages similarity
+#   ./shadow_rl/run_all.sh --fast --yes                  # start here
 #   ./shadow_rl/run_all.sh --pairs all --sample 500 --cleanup --auto-retriever --yes
 #   ./shadow_rl/run_all.sh --pairs nosearch --limit 200  # quick smoke run
 #
@@ -25,6 +26,8 @@
 #   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
+#   --fast         smallest useful run: one 3B pair, nq+hotpotqa, 200 questions,
+#                  all five models. ~15 min on one H200. Proves it runs.
 #   --force        redo work that is already complete (merge, smoke test)
 #   --skip-env-check  do not run the environment check at all
 #   --strict-env      abort if the environment check reports problems
@@ -38,7 +41,8 @@ cd "$REPO_ROOT"
 # ---- defaults -------------------------------------------------------------- #
 PAIRS_SEL="nosearch"
 STAGES="similarity,merge,eval,aggregate"
-ROLES="instruct_baseline,rl_on_instruct,rl_on_base,shadow"
+ROLES="base_baseline,instruct_baseline,rl_on_instruct,rl_on_base,shadow"
+FAST=0
 LIMIT=""
 SAMPLE=""
 SKIP_DATASETS=""
@@ -71,6 +75,7 @@ while [[ $# -gt 0 ]]; do
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
+        --fast)    FAST=1;         shift ;;
         --force)   FORCE=1;        shift ;;
         --skip-env-check) SKIP_ENV_CHECK=1; shift ;;
         --strict-env)     STRICT_ENV=1;     shift ;;
@@ -80,6 +85,16 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+
+# --fast: one 3B pair, two in-domain datasets, 200 sampled questions, and the
+# five models the question is actually about. Enough to prove the pipeline runs
+# and to see the sign of the effect; not enough to publish.
+if [[ $FAST -eq 1 ]]; then
+    [[ "$PAIRS_SEL" == "nosearch" ]] && PAIRS_SEL="ppo-nosearch-3b-v0.2"
+    [[ -z "$SAMPLE" && -z "$LIMIT" ]] && SAMPLE=200
+    [[ "$STAGES" == "similarity,merge,eval,aggregate" ]] && STAGES="merge,eval,aggregate"
+    SKIP_DATASETS="${SKIP_DATASETS:-triviaqa,popqa,2wikimultihopqa,musique,bamboogle}"
+fi
 
 mkdir -p "$LOG_DIR" "$MERGED_DIR" "$MODEL_DIR"
 RUN_LOG="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
@@ -270,18 +285,20 @@ fi
 # ---- runtime estimate ------------------------------------------------------ #
 # Rough, from vLLM throughput on one H200 and the multi-turn rollout cost. Meant
 # to prevent a two-week surprise, not to be accurate to the hour.
-EST_HOURS=$(python3 - "$SAMPLE" "$LIMIT" "$ROLES" "$TP" "${PAIR_LIST[@]}" <<'ESTPY'
+EST_HOURS=$( { python3 - "$SAMPLE" "$LIMIT" "$ROLES" "$TP" "$SKIP_DATASETS" "${PAIR_LIST[@]}" <<'ESTPY'
 import sys
 sys.path.insert(0, "shadow_rl")
 from pairs import PAIRS_BY_ID
 
 sample, limit, roles, tp = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4] or 1)
-pair_ids = sys.argv[5:]
+skip = {d.strip() for d in sys.argv[5].split(",") if d.strip()}
+pair_ids = sys.argv[6:]
 
 FULL = {"nq": 3610, "triviaqa": 11313, "popqa": 14267, "hotpotqa": 7405,
         "2wikimultihopqa": 12576, "musique": 2417, "bamboogle": 125}
 n = int(sample) if sample else (int(limit) if limit else None)
-per_role = sum(min(n, v) if n else v for v in FULL.values())
+per_role = sum(min(n, v) if n else v for d, v in FULL.items() if d not in skip)
+print(f"{per_role}", file=sys.stderr)   # picked up by the plan line
 
 rate = {("3b", False): 14.0, ("3b", True): 6.0, ("7b", False): 6.0, ("7b", True): 2.5}
 n_roles = len([r for r in roles.split(",") if r.strip()])
@@ -292,9 +309,23 @@ for pid in pair_ids:
     p = PAIRS_BY_ID[pid]
     total += n_roles * per_role / (rate[(p.size, p.with_search)] * speedup)
 h = total / 3600
-print(f"~{h:.0f}h (~{h/24:.1f} days)" if h >= 24 else f"~{h:.1f}h")
+if h >= 24:
+    print(f"~{h:.0f}h (~{h/24:.1f} days)")
+elif h >= 1:
+    print(f"~{h:.1f}h")
+else:
+    print(f"~{max(1, round(h * 60))}min")
 ESTPY
-)
+} 2>"$LOG_DIR/.per_role" )
+PER_ROLE=$(cat "$LOG_DIR/.per_role" 2>/dev/null | tail -1)
+PER_ROLE="${PER_ROLE:-?}"
+N_DATASETS=$(python3 -c "
+import sys; sys.path.insert(0,'shadow_rl')
+from pairs import DATASETS
+skip={d.strip() for d in '$SKIP_DATASETS'.split(',') if d.strip()}
+print(len([d for d in DATASETS if d not in skip]))")
+rm -f "$LOG_DIR/.per_role"
+
 
 # ---- plan ------------------------------------------------------------------ #
 cat <<EOF | tee -a "$RUN_LOG"
@@ -308,7 +339,8 @@ cat <<EOF | tee -a "$RUN_LOG"
  results  : $RESULTS
  log      : $RUN_LOG
  tp       : $TP
- questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset (~$((SAMPLE*7)) per role)"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset (biased; smoke only)"; else echo "FULL test sets (~51,700 per role)"; fi )
+ datasets : $N_DATASETS of 7$( [[ -n "$SKIP_DATASETS" ]] && echo " (skipping $SKIP_DATASETS)" )
+ questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset, $PER_ROLE per role"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset, $PER_ROLE per role (biased; smoke only)"; else echo "FULL test sets, $PER_ROLE per role"; fi )
  est. time: $EST_HOURS
  cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo "no (models kept)" )
  reuse    : $( if [[ $FORCE -eq 1 ]]; then echo "nothing (--force)"; else

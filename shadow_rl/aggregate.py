@@ -28,6 +28,7 @@ from pairs import (  # noqa: E402
 )
 
 ROLE_LABEL = {
+    "base_baseline": "W_B (untuned base)",
     "instruct_baseline": "W_I (untuned instruct)",
     "rl_on_instruct": "RL(W_I) (direct RL on instruct)",
     "rl_on_base": "RL(W_B) (direct RL on base)",
@@ -149,9 +150,9 @@ def render(results, counts, out_path: str) -> None:
     lines += [
         "## Summary",
         "",
-        "| pair | algo | size | search | W_I | RL(W_I) | RL(W_B) | **W_shadow** "
+        "| pair | algo | size | search | W_B | W_I | RL(W_I) | RL(W_B) | **W_shadow** "
         "| shadow − RL(W_I) | shadow − RL(W_B) |",
-        "|---|---|---|---|---|---|---|---|---|---|",
+        "|---|---|---|---|---|---|---|---|---|---|---|",
     ]
     for pair in evaluated:
         roles = results[pair.pair_id]
@@ -163,6 +164,7 @@ def render(results, counts, out_path: str) -> None:
         lines.append(
             f"| `{pair.pair_id}` | {pair.algo} | {pair.size} | "
             f"{'yes' if pair.with_search else 'no'} | "
+            f"{mark(roles.get('base_baseline', {}), a['base_baseline'])} | "
             f"{mark(roles.get('instruct_baseline', {}), a['instruct_baseline'])} | "
             f"{mark(roles.get('rl_on_instruct', {}), a['rl_on_instruct'])} | "
             f"{mark(roles.get('rl_on_base', {}), a['rl_on_base'])} | "

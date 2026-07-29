@@ -11,8 +11,9 @@ Delta_K  = RL(W_B) - W_B     # what the base model learned
 W_shadow = W_I + Delta_K     # graft it onto the instruct backbone
 ```
 
-Four models per pair — `W_I`, `RL(W_I)`, `RL(W_B)`, `W_shadow` — over seven QA
-sets, Exact Match. Zero training; weight arithmetic plus evaluation.
+Five models per pair — `W_B` and `W_I` (the raw HF checkpoints), `RL(W_I)`,
+`RL(W_B)`, and `W_shadow` — over seven QA sets, Exact Match. Zero training;
+weight arithmetic plus evaluation.
 
 ## Quickstart, from nothing
 
@@ -117,6 +118,7 @@ below; the current default merges over the intersection and does not stop.
 | `--skip-datasets X` | omit datasets entirely; published averages are restricted to match |
 | `--auto-retriever` | start and stop the BM25 server automatically |
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
+| `--fast` | smallest useful run: one 3B pair, nq+hotpotqa, 200 questions, 5 models |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
 | `--force` | redo work already complete (merge, smoke test) |
 | `--skip-env-check` | do not run the environment check |
@@ -184,13 +186,24 @@ about 51,700 questions per model role:
 
 `run_all.sh` prints this estimate during preflight before you commit to a run.
 
-### Start here: the fast alignment run
+### Start here: `--fast`
 
-Before any sweep, run the one configuration that shows whether Shadow-FT works
-at all, in under an hour:
+The smallest run that still answers the question — one 3B pair, the two
+in-domain datasets, 200 sampled questions, all five models:
 
 ```bash
-./shadow_rl/run_all.sh --pairs nosearch --sample 1000 --yes    # ~1.6 h
+./shadow_rl/run_all.sh --fast --yes            # ~2 min of generation
+```
+
+That covers `W_B` (raw HF base), `W_I` (raw HF instruct), `RL(W_I)`, `RL(W_B)`
+and `W_shadow`. It proves the pipeline runs end to end and shows the sign of the
+effect. It is **not** publishable: at 200 questions the standard error on one EM
+number is around ±0.03, wider than the margins being measured.
+
+Then the real alignment run, still with no retrieval server:
+
+```bash
+./shadow_rl/run_all.sh --pairs nosearch --sample 1000 --yes    # ~2 h
 ```
 
 Two pairs, both sizes, **no retrieval server and no 70 GB index download**. This
@@ -201,7 +214,8 @@ harness-validation diff against the published numbers *and* the first real
 
 | run | pairs | time, 1× H200 |
 |---|---|---|
-| `--pairs nosearch --sample 1000` | 2 | **~1.6 h** |
+| `--fast` | 1 | **~2 min** |
+| `--pairs nosearch --sample 1000` | 2 | **~2 h** |
 | `--pairs nosearch` (full sets) | 2 | ~13.7 h |
 | `--pairs 3b --sample 500` | 7 | ~3.7 h |
 | `--pairs all --sample 500` | 12 | ~9.9 h |

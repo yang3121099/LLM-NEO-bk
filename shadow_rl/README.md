@@ -75,19 +75,26 @@ Run this first — it is also run automatically during `run_all.sh` preflight:
 python shadow_rl/check_env.py --full
 ```
 
-**`Could not import module 'Qwen2ForCausalLM'`** — almost always a torch /
-torchvision CUDA mismatch, not a transformers problem. pip installs torch from
-the CUDA-specific PyTorch index but torchvision from default PyPI, which may be
-built against a different CUDA major; transformers imports torchvision deep
-inside `image_utils`, so the first symptom is an unrelated-looking model-class
-error. `check_env.py` detects it and prints the matching index:
+**`Could not import module 'Qwen2ForCausalLM'`** — almost always a CUDA
+mismatch between torch and one of its companion packages (`torchvision`,
+`torchaudio`, `torchcodec`), not a transformers problem. pip installs torch from
+the CUDA-specific PyTorch index but the companions from default PyPI, which may
+be built against a different CUDA version; transformers imports them deep inside
+`image_utils`, so the first symptom is an unrelated-looking model-class error.
+
+Read the message to see **which** package is named — reinstalling the wrong one
+achieves nothing. `check_env.py` extracts it for you:
 
 ```bash
-pip install --force-reinstall torchvision --index-url https://download.pytorch.org/whl/cu128
+pip install --force-reinstall torchaudio --index-url https://download.pytorch.org/whl/cu128
 ```
 
-Use the CUDA version your torch reports (`python -c 'import torch; print(torch.version.cuda)'`).
-torchvision being absent entirely is fine — transformers works without it.
+Use the CUDA version your torch reports
+(`python -c 'import torch; print(torch.version.cuda)'`). A companion package
+being absent entirely is fine — transformers works without it.
+
+The check is **advisory**: `run_all.sh` reports problems and continues. Use
+`--strict-env` to make it abort, or `--skip-env-check` to skip it entirely.
 
 **Merge stopped on a key mismatch** — see *Merging over mismatched key sets*
 below; the current default merges over the intersection and does not stop.
@@ -106,6 +113,8 @@ below; the current default merges over the intersection and does not stop.
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
 | `--force` | redo work already complete (merge, smoke test) |
+| `--skip-env-check` | do not run the environment check |
+| `--strict-env` | abort if the environment check reports problems |
 | `--dry-run` | print the plan and stop |
 | `--yes` | skip the confirmation prompt |
 

@@ -34,7 +34,10 @@ def main():
     cases = [
         ("12.8", "12", "torch-style string"),
         ("13.0", "13", "string, other major"),
-        (128, "12", "packed int (the case that crashed)"),
+        (128, "12", "wheel-tag int"),
+        (12080, "12", "CUDA runtime int (12.8) -- was misread as 1208"),
+        (13000, "13", "CUDA runtime int (13.0)"),
+        (11080, "11", "CUDA runtime int (11.8)"),
         (130, "13", "packed int, other major"),
         (12, "12", "bare int major"),
         (12.8, "12", "float"),
@@ -51,6 +54,10 @@ def main():
           ce.cuda_major("12.8") != ce.cuda_major(130))
     check("12.8 vs 128 is not a mismatch",
           ce.cuda_major("12.8") == ce.cuda_major(128))
+    check("12.8 vs 12080 is not a mismatch (the false positive)",
+          ce.cuda_major("12.8") == ce.cuda_major(12080))
+    check("12.8 vs 13000 is a mismatch",
+          ce.cuda_major("12.8") != ce.cuda_major(13000))
     check("12.8 vs 12.6 is not a major mismatch",
           ce.cuda_major("12.8") == ce.cuda_major("12.6"))
 
@@ -89,7 +96,32 @@ def main():
     check("no AttributeError", "AttributeError" not in out)
     check("no traceback", "Traceback" not in out)
 
-    print("\n[6] a dependency that raises on import does not abort the run")
+    print("\n[6] the fix names the package the error actually blames")
+    check("TorchAudio message -> torchaudio",
+          ce.blame_sibling("PyTorch and TorchAudio were compiled with different "
+                           "CUDA versions. PyTorch has CUDA version 12.8 whereas "
+                           "TorchAudio has CUDA version 13.0.") == "torchaudio")
+    check("torchvision message -> torchvision",
+          ce.blame_sibling("PyTorch and torchvision were compiled with different "
+                           "CUDA major versions.") == "torchvision")
+    check("unrelated message -> None", ce.blame_sibling("some other error") is None)
+
+    stub4 = tempfile.mkdtemp()
+    os.makedirs(os.path.join(stub4, "torchaudio"))
+    with open(os.path.join(stub4, "torchaudio", "__init__.py"), "w") as fh:
+        fh.write('raise RuntimeError("Detected that PyTorch and TorchAudio were '
+                 'compiled with different CUDA versions. PyTorch has CUDA version '
+                 '12.8 whereas TorchAudio has CUDA version 13.0.")\n')
+    proc = subprocess.run([sys.executable, os.path.join(ROOT, "check_env.py")],
+                          capture_output=True, text=True,
+                          env=dict(os.environ, PYTHONPATH=stub4))
+    out = proc.stdout + proc.stderr
+    check("broken torchaudio is detected", "torchaudio" in out)
+    check("fix targets torchaudio, not torchvision",
+          "--force-reinstall torchaudio" in out)
+    check("no traceback", "Traceback" not in out)
+
+    print("\n[7] a dependency that raises on import does not abort the run")
     stub3 = tempfile.mkdtemp()
     os.makedirs(os.path.join(stub3, "safetensors"))
     with open(os.path.join(stub3, "safetensors", "__init__.py"), "w") as fh:

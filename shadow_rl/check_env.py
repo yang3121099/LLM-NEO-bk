@@ -54,7 +54,14 @@ def cuda_major(value) -> str | None:
         return value.split(".")[0]
     if isinstance(value, (int, float)):
         n = int(value)
-        return str(n // 10) if n >= 100 else str(n)   # 128 -> 12, 12 -> 12
+        # Two int encodings are in the wild:
+        #   CUDA runtime  major*1000 + minor*10   12080 -> 12.8,  13000 -> 13.0
+        #   wheel tag     major*10   + minor      128   -> 12.8,  130   -> 13.0
+        if n >= 1000:
+            return str(n // 1000)
+        if n >= 100:
+            return str(n // 10)
+        return str(n)
     return str(value).split(".")[0]
 
 
@@ -64,6 +71,25 @@ def torch_index(torch_cuda) -> str:
         return "https://download.pytorch.org/whl/cu128"
     tag = str(torch_cuda).replace(".", "")
     return f"https://download.pytorch.org/whl/cu{tag}"
+
+
+# torch's C++ extensions each embed the CUDA version they were built against and
+# check it at import. Any one of them can be the mismatched package, and the
+# error surfaces from whichever transformers happens to import first.
+SIBLINGS = ("torchvision", "torchaudio", "torchcodec")
+
+
+def blame_sibling(message: str):
+    """Return the sibling package a CUDA-mismatch message names, if any.
+
+    The message says e.g. "PyTorch and TorchAudio were compiled with different
+    CUDA versions" -- pointing the fix at the wrong package wastes a reinstall.
+    """
+    low = message.lower()
+    for name in SIBLINGS:
+        if name in low:
+            return name
+    return None
 
 
 def check_torch():
@@ -111,6 +137,33 @@ def check_torchvision(torch_mod):
              f"but CUDA version is unreported (torch={t_cuda!r}, torchvision={tv_cuda!r})")
 
 
+def check_siblings(torch_mod):
+    """Import each torch companion package and compare its CUDA major."""
+    t_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None)
+    t_major = cuda_major(t_cuda)
+    fix = f"pip install --force-reinstall {{pkg}} --index-url {torch_index(t_cuda)}"
+
+    for name in SIBLINGS:
+        try:
+            mod = __import__(name)
+        except ModuleNotFoundError:
+            continue                      # absent is fine; transformers copes
+        except Exception as exc:
+            culprit = blame_sibling(str(exc)) or name
+            bad(f"{name} is installed but fails to import: {str(exc)[:140]}",
+                fix.format(pkg=culprit))
+            continue
+        m_cuda = getattr(getattr(mod, "version", None), "cuda", None)
+        m_major = cuda_major(m_cuda)
+        if t_major and m_major and t_major != m_major:
+            bad(f"torch CUDA {t_cuda} vs {name} CUDA {m_cuda} (major mismatch)",
+                fix.format(pkg=name))
+        elif m_major:
+            ok(f"{name} {getattr(mod, '__version__', '?')} (CUDA {m_cuda}) matches torch")
+        else:
+            ok(f"{name} {getattr(mod, '__version__', '?')} imports")
+
+
 def check_transformers(torch_mod):
     """Import the real model class -- the lazy loader hides breakage until then."""
     try:
@@ -120,20 +173,24 @@ def check_transformers(torch_mod):
         return
     ok(f"transformers {transformers.__version__}")
 
-    t_cuda = getattr(torch_mod, "version", None) and torch_mod.version.cuda if torch_mod else None
-    fix = (f"pip install --force-reinstall torchvision --index-url {torch_index(t_cuda)}"
-           if t_cuda else "reinstall torchvision to match your torch CUDA build")
+    t_cuda = getattr(getattr(torch_mod, "version", None), "cuda", None) if torch_mod else None
+
+    def fix_for(message: str) -> str:
+        pkg = blame_sibling(message) or "torchvision"
+        return f"pip install --force-reinstall {pkg} --index-url {torch_index(t_cuda)}"
+
     try:
         from transformers.models.qwen2.modeling_qwen2 import Qwen2ForCausalLM  # noqa: F401
         ok("Qwen2ForCausalLM resolves")
     except Exception as exc:
-        bad(f"Qwen2ForCausalLM will not load: {type(exc).__name__}: {str(exc)[:160]}", fix)
+        bad(f"Qwen2ForCausalLM will not load: {type(exc).__name__}: {str(exc)[:160]}",
+            fix_for(str(exc)))
 
     try:
         from transformers import AutoModelForCausalLM, AutoTokenizer  # noqa: F401
         ok("AutoModelForCausalLM / AutoTokenizer import")
     except Exception as exc:
-        bad(f"transformers auto classes broken: {exc}", fix)
+        bad(f"transformers auto classes broken: {exc}", fix_for(str(exc)))
 
 
 def check_simple(name, pip_name=None, label=None):
@@ -175,7 +232,7 @@ def main():
     print("environment check")
     torch_mod = guarded("torch", check_torch)
     if torch_mod:
-        guarded("torchvision", check_torchvision, torch_mod)
+        guarded("torch companions", check_siblings, torch_mod)
     guarded("transformers", check_transformers, torch_mod)
     for name, pip_name in (("safetensors", "safetensors"),
                            ("huggingface_hub", "huggingface_hub")):

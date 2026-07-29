@@ -26,6 +26,8 @@
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
 #   --force        redo work that is already complete (merge, smoke test)
+#   --skip-env-check  do not run the environment check at all
+#   --strict-env      abort if the environment check reports problems
 #   --dry-run      print the plan and exit
 #   --yes          skip the confirmation prompt
 set -uo pipefail
@@ -47,6 +49,8 @@ TP="${TP:-1}"
 DRY=0
 ASSUME_YES=0
 FORCE=0
+SKIP_ENV_CHECK=0
+STRICT_ENV=0
 
 SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
 MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
@@ -68,6 +72,8 @@ while [[ $# -gt 0 ]]; do
         --tp)      TP="$2";        shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
         --force)   FORCE=1;        shift ;;
+        --skip-env-check) SKIP_ENV_CHECK=1; shift ;;
+        --strict-env)     STRICT_ENV=1;     shift ;;
         --dry-run) DRY=1;          shift ;;
         --yes|-y)  ASSUME_YES=1;   shift ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
@@ -162,10 +168,22 @@ command -v python3 >/dev/null || die "python3 not found"
 # A real import check, not just "is it installed": a torch/torchvision CUDA
 # mismatch only shows up when a model class is actually resolved, and finding
 # that out after a 7-minute merge is a waste of everyone's time.
-ENV_ARGS=()
-has_stage eval && ENV_ARGS+=(--full --search-r1-root "$SEARCH_R1_ROOT")
-if ! python3 shadow_rl/check_env.py "${ENV_ARGS[@]}" 2>&1 | tee -a "$RUN_LOG"; then
-    die "environment check failed. Apply the fixes above, or re-run ./shadow_rl/setup.sh"
+# Advisory by default. The checker's job is to name the problem early, and it
+# has been wrong before; a bug in it must not be able to block a working box.
+# --strict-env makes it fatal, --skip-env-check skips it entirely.
+if [[ $SKIP_ENV_CHECK -eq 1 ]]; then
+    warn "environment check skipped (--skip-env-check)"
+else
+    ENV_ARGS=()
+    has_stage eval && ENV_ARGS+=(--full --search-r1-root "$SEARCH_R1_ROOT")
+    if python3 shadow_rl/check_env.py "${ENV_ARGS[@]}" 2>&1 | tee -a "$RUN_LOG"; then
+        ok "environment check passed"
+    elif [[ $STRICT_ENV -eq 1 ]]; then
+        die "environment check failed (--strict-env). Apply the fixes above."
+    else
+        warn "environment check reported problems -- continuing anyway."
+        warn "If a model fails to load later, the fixes printed above are why."
+    fi
 fi
 
 [[ -f "$SEARCH_R1_ROOT/verl/utils/reward_score/qa_em.py" ]] \

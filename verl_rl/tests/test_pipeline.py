@@ -269,10 +269,110 @@ def test_run_all_dry():
 
 
 # --------------------------------------------------------------------------- #
+HYDRA_CARD = """
+```bash
+python3 -m verl.trainer.main_ppo \\
+    algorithm.adv_estimator=grpo \\
+    data.train_batch_size=1024 \\
+    data.max_response_length=8192 \\
+    actor_rollout_ref.model.path=Qwen/Qwen3-4B-Base \\
+    actor_rollout_ref.actor.optim.lr=1e-6 \\
+    actor_rollout_ref.actor.kl_loss_coef=0.001 \\
+    actor_rollout_ref.rollout.n=16
+```
+"""
+
+TABLE_CARD = """
+| Hyperparameter | Value |
+| --- | --- |
+| Algorithm | GRPO |
+| Learning rate | 1e-6 |
+| Group size | 8 |
+| Batch size | 512 |
+"""
+
+PROSE_CARD = """
+Base model: Qwen/Qwen3-4B-Base
+learning_rate: 0.000001
+rollout.n = 8
+train_batch_size: 512
+"""
+
+
+def run_compare(card_text, extra=()):
+    path = os.path.join(tempfile.mkdtemp(), "card.md")
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(card_text)
+    return subprocess.run(
+        [sys.executable, os.path.join(VERL_RL, "compare_recipe.py"),
+         "--card", path, "--no-color", *extra],
+        capture_output=True, text=True)
+
+
+def test_compare_recipe():
+    print("\n[8] the recipe comparator reads the three shapes cards come in")
+    # This is what makes "is our run the same as theirs" a mechanical check
+    # rather than an eyeball diff, so its parsing has to be right.
+    sys.path.insert(0, VERL_RL)
+    import compare_recipe as cr
+
+    hydra = cr.parse_card(HYDRA_CARD)
+    check("hydra overrides parsed",
+          hydra.get("actor_rollout_ref.actor.optim.lr") == "1e-6",
+          str(hydra.get("actor_rollout_ref.actor.optim.lr")))
+    table = cr.parse_card(TABLE_CARD)
+    check("markdown table parsed", table.get("learning rate") == "1e-6",
+          str(table.get("learning rate")))
+    check("table separator row ignored", "---" not in table)
+    prose = cr.parse_card(PROSE_CARD)
+    check("prose parsed", prose.get("learning_rate") == "0.000001",
+          str(prose.get("learning_rate")))
+
+    # 1e-6 and 0.000001 are the same setting; reporting them as a difference
+    # would send someone chasing a mismatch that is not there.
+    lr = [f for f in cr.FIELDS if f.name == "learning rate"][0]
+    check("1e-6 == 0.000001", cr.same(lr, "1e-6", "0.000001"))
+    check("1e-6 != 5e-6", not cr.same(lr, "1e-6", "5e-6"))
+    model = [f for f in cr.FIELDS if f.name == "base model"][0]
+    check("Qwen/X == X", cr.same(model, "Qwen/Qwen3-4B-Base", "Qwen3-4B-Base"))
+    check("Base != Instruct",
+          not cr.same(model, "Qwen/Qwen3-4B-Base", "Qwen/Qwen3-4B"))
+    n = [f for f in cr.FIELDS if f.name.startswith("rollout n")][0]
+    check("8 != 16", not cr.same(n, "16", "8"))
+
+    print("\n[9] a differing recipe is reported, not silently accepted")
+    proc = run_compare(HYDRA_CARD)
+    check("differences exit non-zero", proc.returncode != 0)
+    check("names the differing group size", "rollout n" in proc.stdout)
+    check("prints the override that aligns us", "ROLLOUT_N=16" in proc.stdout)
+    check("says the group size changes the algorithm",
+          "advantage estimate" in proc.stdout)
+    check("a matching field is not reported as differing",
+          "learning rate" in proc.stdout and proc.stdout.count("DIFFERS") >= 1)
+
+    proc = run_compare(HYDRA_CARD, ["--apply"])
+    check("--apply emits shell assignments",
+          "export ROLLOUT_N=16" in proc.stdout, proc.stdout.strip()[:80])
+    check("--apply emits nothing else",
+          all(line.startswith(("export ", "#")) or not line.strip()
+              for line in proc.stdout.splitlines()))
+
+    print("\n[10] a matching recipe is confirmed")
+    # config.sh's own defaults, restated as a card: must come back clean.
+    proc = run_compare(PROSE_CARD)
+    check("an aligned card exits zero", proc.returncode == 0,
+          proc.stdout.strip()[-200:])
+    check("says so explicitly", "matches this config" in proc.stdout)
+    # Silence about an unstated field would read as agreement; it must not.
+    check("unstated fields are called out", "does not state" in proc.stdout)
+
+
+# --------------------------------------------------------------------------- #
 def main():
     print("verl_rl pipeline tests")
     for fn in (test_reward, test_data_schema, test_val_split_is_shared,
-               test_eval_config, test_config_sh, test_run_all_dry):
+               test_eval_config, test_config_sh, test_run_all_dry,
+               test_compare_recipe):
         try:
             fn()
         except Exception as exc:  # a broken test must not hide the others

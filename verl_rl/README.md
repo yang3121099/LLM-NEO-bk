@@ -29,25 +29,46 @@ anything. The graft arithmetic is shared — `shadow_rl/merge.py`, unchanged.
 
 ## Read this before you start
 
-**Two things here are assumptions, not transcriptions.** The model card at
-`huggingface.co/lllyx/Qwen3-4B-Base-GRPO` is unreachable from the sandbox this
-was written in (the environment's network policy returns 403 for
-`huggingface.co`), so the GRPO recipe and the benchmark list were chosen as
-defaults rather than copied:
+**This is not yet a confirmed reproduction of any published recipe.** The model
+card at `huggingface.co/lllyx/Qwen3-4B-Base-GRPO` cannot be read from the
+environment this was built in: the organisation's egress policy rejects
+`huggingface.co` (and `hf-mirror.com`) at the CONNECT, so every value below was
+*chosen*, not transcribed.
 
-* **RL data**: DeepMath-103K with a rule-based reward on the boxed answer.
-  Chosen because every row carries a verifiable answer and the repo already
-  prepares this dataset. → `RL_DATASET` in `config.sh`.
-* **Eval suite**: AIME24, AIME25, MATH-500, GSM8K, OlympiadBench, GPQA-Diamond —
-  what a GRPO'd math model is normally reported on. → `EVAL_SUITE` in
-  `config.sh`, or `--datasets` on `make_eval_config.py`.
+| | what we use | why | change it with |
+|---|---|---|---|
+| RL data | DeepMath-103K | every row has a verifiable answer; the repo already prepares it | `RL_DATASET` |
+| reward | rule-based on `\boxed{}` | matches the prompt and the eval harnesses | `REWARD_FN_PATH` |
+| GRPO | 512 prompts × 8 samples, lr 1e-6, KL 0.001 | conventional values for a 4B actor on 8×B300 | `config.sh` |
+| eval | AIME24/25, MATH-500, GSM8K, OlympiadBench, GPQA-D | what a GRPO'd math model is normally reported on | `EVAL_SUITE` |
 
-Both are one-line changes. If the card lists a different dataset, reward, or
-benchmark set, set them in `config.sh` and nothing else needs to move.
+### Confirming against the real card
 
-The hyperparameters (`TRAIN_BATCH_SIZE=512`, `ROLLOUT_N=8`, `lr=1e-6`,
-`kl_loss_coef=0.001`) are conventional GRPO values sized for a 4B actor on
-8×B300, not values read from the card.
+Paste the card in and let the comparator do the diff, rather than reading two
+lists of numbers side by side:
+
+```bash
+python verl_rl/compare_recipe.py --card card.md      # or: pbpaste | ... --card -
+```
+
+It reads hydra overrides pasted from a launch command, markdown tables and plain
+`key: value` prose; normalises spellings that mean the same thing (`1e-6` vs
+`0.000001`, `Qwen/Qwen3-4B-Base` vs `Qwen3-4B-Base`); prints the exact
+environment overrides that would align this config; and exits non-zero if
+anything differs, so it can gate a run:
+
+```bash
+python verl_rl/compare_recipe.py --card card.md && ./verl_rl/run_all.sh
+```
+
+Two things it deliberately does **not** do. It does not treat a field the card
+omits as agreement — those are listed separately, because silence is not a
+match. And it does not rewrite `config.sh`; `--apply` prints the assignments and
+leaves the decision to you.
+
+One field is not a knob: if the card says DAPO or PPO rather than GRPO, that is a
+different algorithm and needs different code, not different values. The
+comparator says so instead of offering an override.
 
 ---
 
@@ -195,5 +216,6 @@ Two things need the B300 itself and could not be exercised here:
 | `export_hf.py` | verl FSDP checkpoint → HF directory |
 | `merge_shadow.sh` | the graft, via `shadow_rl/merge.py`, plus a smoke test |
 | `make_eval_config.py` | OpenCompass config for all five roles |
+| `compare_recipe.py` | diff a published recipe against `config.sh` |
 | `run_all.sh` | one-click, resumable |
 | `tests/test_pipeline.py` | CPU tests |

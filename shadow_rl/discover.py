@@ -52,17 +52,31 @@ def exists(repo_id: str, token=None) -> bool:
         return False
 
 
+SIZES = ("3b", "7b", "14b", "32b", "llama3.2-3b", "llama3.1-8b")
+
+
+def repo_name(size: str, algo: str, version: str, instruct: bool) -> str:
+    """Released repo name for a (backbone, algorithm, version).
+
+    v0.1 predates the suffix convention: its repos end at the algorithm, with no
+    `-v0.1`. Later releases append the version tag.
+    """
+    slug = size if size.startswith("llama") else f"qwen2.5-{size}"
+    it = "-it" if instruct else ""
+    suffix = "" if version == "v0.1" else f"-{version}"
+    return f"SearchR1-nq_hotpotqa_train-{slug}{it}-em-{algo}{suffix}"
+
+
 def synthesise(versions: List[str]) -> List[Pair]:
-    """Extra candidates for versions not covered by the hardcoded list."""
+    """Candidate pairs across the full backbone x algorithm grid for a version."""
     out = []
     for version in versions:
-        for size in ("3b", "7b", "14b", "llama3.2-3b", "llama3.1-8b"):
-            slug = size if size.startswith("llama") else f"qwen2.5-{size}"
+        for size in SIZES:
             for algo in ("grpo", "ppo"):
                 out.append(Pair(
                     version, size, algo, True,
-                    f"SearchR1-nq_hotpotqa_train-{slug}-em-{algo}-{version}",
-                    f"SearchR1-nq_hotpotqa_train-{slug}-it-em-{algo}-{version}",
+                    repo_name(size, algo, version, instruct=False),
+                    repo_name(size, algo, version, instruct=True),
                 ))
     return out
 
@@ -74,6 +88,9 @@ def main() -> None:
                     help=f"record confirmed pairs to {os.path.basename(VERIFIED)}")
     ap.add_argument("--extra-versions", default="",
                     help="comma list of extra version tags to probe, e.g. v0.4")
+    ap.add_argument("--sweep", action="store_true",
+                    help="probe the whole backbone x algorithm grid for every known "
+                         "version (v0.1 unsuffixed, v0.2, v0.3) -- the thorough option")
     ap.add_argument("--also-originals", action="store_true",
                     help="also check the base/instruct originals are reachable")
     ap.add_argument("--token", default=None, help="HF token for gated repos")
@@ -86,6 +103,9 @@ def main() -> None:
 
     candidates = list(CANDIDATES)
     extra = [v.strip() for v in args.extra_versions.split(",") if v.strip()]
+    if args.sweep:
+        extra = ["v0.1", "v0.2", "v0.3"] + [v for v in extra if v not in
+                                            ("v0.1", "v0.2", "v0.3")]
     if extra:
         seen = {p.pair_id for p in candidates} | set(PAIRS_BY_ID)
         for p in synthesise(extra):

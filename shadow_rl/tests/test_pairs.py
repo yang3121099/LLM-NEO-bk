@@ -151,6 +151,37 @@ def main():
                           capture_output=True, text=True)
     check("discover.py --help works", proc.returncode == 0)
 
+    print("\n[7] v0.1 repo names carry no version suffix")
+    # The first release predates the convention: `...-em-grpo`, not
+    # `...-em-grpo-v0.1`. Getting this wrong means every v0.1 probe 404s.
+    check("v0.1 base has no suffix",
+          D.repo_name("7b", "grpo", "v0.1", instruct=False)
+          == "SearchR1-nq_hotpotqa_train-qwen2.5-7b-em-grpo")
+    check("v0.1 instruct has no suffix",
+          D.repo_name("7b", "grpo", "v0.1", instruct=True)
+          == "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-grpo")
+    check("v0.2 is suffixed",
+          D.repo_name("7b", "ppo", "v0.2", instruct=False).endswith("-em-ppo-v0.2"))
+    check("v0.3 is suffixed",
+          D.repo_name("3b", "grpo", "v0.3", instruct=False).endswith("-em-grpo-v0.3"))
+    check("llama slug omits the qwen prefix",
+          D.repo_name("llama3.1-8b", "grpo", "v0.1", instruct=False)
+          == "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-grpo")
+
+    # The three v0.1 pairs we were originally given must round-trip exactly.
+    for pid, size, algo in [("grpo-search-3b-v0.1", "3b", "grpo"),
+                            ("ppo-search-3b-v0.1", "3b", "ppo"),
+                            ("ppo-search-7b-v0.1", "7b", "ppo")]:
+        want = P.PAIRS_BY_ID[pid]
+        check(f"{pid} matches the generated name",
+              D.repo_name(size, algo, "v0.1", False) == want.rl_base
+              and D.repo_name(size, algo, "v0.1", True) == want.rl_instruct,
+              want.rl_base)
+
+    check("--sweep covers every known version",
+          {p.version for p in D.synthesise(["v0.1", "v0.2", "v0.3"])}
+          == {"v0.1", "v0.2", "v0.3"})
+
     print("\n" + "=" * 60)
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

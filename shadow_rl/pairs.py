@@ -23,6 +23,8 @@ ORIGINALS: Dict[str, Dict[str, str]] = {
     "3b": {"base": "Qwen/Qwen2.5-3B", "instruct": "Qwen/Qwen2.5-3B-Instruct"},
     "7b": {"base": "Qwen/Qwen2.5-7B", "instruct": "Qwen/Qwen2.5-7B-Instruct"},
     "14b": {"base": "Qwen/Qwen2.5-14B", "instruct": "Qwen/Qwen2.5-14B-Instruct"},
+    # v0.3 studied scale up to 32B. Evaluating one needs multiple GPUs (--tp).
+    "32b": {"base": "Qwen/Qwen2.5-32B", "instruct": "Qwen/Qwen2.5-32B-Instruct"},
     # Search-R1 trained these too. Note both are gated on HuggingFace -- accept
     # the licence on the model page, or `huggingface-cli login`, before use.
     "llama3.2-3b": {"base": "meta-llama/Llama-3.2-3B",
@@ -167,6 +169,19 @@ CANDIDATES: List[Pair] = [
     Pair("v0.3", "llama3.1-8b", "ppo", True,
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-ppo-v0.3",
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-ppo-v0.3"),
+
+    # v0.1 gaps. The first release carries NO version suffix on the repo name --
+    # `...-em-grpo` rather than `...-em-grpo-v0.1` -- and the set we were given
+    # covered 3B GRPO plus 3B/7B PPO, leaving 7B GRPO and the 14B pairs unlisted.
+    Pair("v0.1", "7b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-7b-em-grpo",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-grpo"),
+    Pair("v0.1", "14b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-grpo",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-grpo"),
+    Pair("v0.1", "14b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-ppo",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-ppo"),
 
     # Llama backbones, unversioned (v0.1) tagging, matching the scripts they
     # actually appear in

@@ -297,9 +297,16 @@ assumed to exist; `discover.py` asks the Hub:
 ```bash
 python shadow_rl/discover.py                    # report what exists
 python shadow_rl/discover.py --write            # record it into the manifest
-python shadow_rl/discover.py --write --extra-versions v0.4
+python shadow_rl/discover.py --sweep --write    # probe the whole grid, every version
 python shadow_rl/discover.py --also-originals   # check the base/instruct too
 ```
+
+**Version tags in repo names.** v0.1 predates the convention and carries *no*
+suffix — `SearchR1-nq_hotpotqa_train-qwen2.5-3b-em-grpo`. v0.2 and v0.3 append
+theirs. So an unsuffixed repo name is a **v0.1** checkpoint, not a newer one, and
+the three unsuffixed pairs are already in the manifest as `grpo-search-3b-v0.1`,
+`ppo-search-3b-v0.1` and `ppo-search-7b-v0.1`. `--sweep` fills the v0.1 grid in
+too, since the original list omitted 7B GRPO and the 14B pairs.
 
 Confirmed pairs land in `verified_pairs.json`, which `pairs.py` merges on import,
 so they become selectable by every group above. A pair with only one side

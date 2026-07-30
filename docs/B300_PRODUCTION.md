@@ -130,6 +130,11 @@ These need a human decision on the node. They are flagged by
 * **FP8 / NVFP4.** B300's headline feature is not used by this pipeline at all —
   training is bf16, as it was on H100. Enabling it is new work, not a port.
 
+RL runs have one more Blackwell-specific catch: verl's sequence-packing path
+calls flash-attn's varlen kernels directly, so it is off unless flash-attn is
+built for `sm_103`. See [`verl_rl/README.md`](../verl_rl/README.md) — the
+pipeline detects it and reports which path it took.
+
 ## 5. Overrides
 
 Every value is overridable, which is also how you test a B300 config from a CPU

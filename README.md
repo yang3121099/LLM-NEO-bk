@@ -82,6 +82,24 @@ python upload_hf.py
 
 ---
 
+## Shadow-FT on RL
+
+The workflow above tunes with LoRA. The same grafting idea applies to RL updates,
+in two flavours:
+
+| | what it does | start here |
+|---|---|---|
+| `verl_rl/` | trains GRPO yourself on both `Qwen3-4B-Base` and `Qwen3-4B`, grafts, evaluates | [`verl_rl/README.md`](verl_rl/README.md) |
+| `shadow_rl/` | grafts *released* base/instruct RL checkpoint pairs — no training | [`shadow_rl/README.md`](shadow_rl/README.md) |
+
+```bash
+./verl_rl/setup.sh
+./verl_rl/run_all.sh --demo --yes   # whole pipeline, ~minutes, plumbing check
+./verl_rl/run_all.sh                # the real run
+```
+
+---
+
 ## Project Structure
 
 ```
@@ -90,6 +108,8 @@ python upload_hf.py
 ├── setup_env.sh                # One-shot env build (hardware-aware)
 ├── docs/
 │   └── B300_PRODUCTION.md      # Running on Blackwell / B300 instead of H100
+├── verl_rl/                    # Shadow-FT on RL you train yourself (verl GRPO)
+├── shadow_rl/                  # Shadow-FT on released RL checkpoint pairs
 ├── scripts/
 │   ├── gpu_profile.sh          # GPU generation -> torch/attention/batch stack
 │   └── ...                     # Auto-generated training scripts

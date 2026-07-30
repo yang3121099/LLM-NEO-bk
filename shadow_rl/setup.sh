@@ -9,12 +9,15 @@
 # Environment:
 #   SEARCH_R1_ROOT  where to clone the harness   (default $HOME/Search-R1)
 #   VENV            virtualenv to create/use     (default $HOME/shadow-rl-venv, "" to skip)
-#   TORCH_INDEX     torch wheel index            (default CUDA 12.8, right for H200)
+#   TORCH_INDEX     torch wheel index            (default CUDA 13.0, for B200/B300)
 set -euo pipefail
 
 SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
 VENV="${VENV-$HOME/shadow-rl-venv}"
-TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"
+# CUDA 13.0 by default: B200/B300 are Blackwell (sm_100) and a cu12 wheel has no
+# kernels for them. Override for older fleets, e.g.
+#   TORCH_INDEX=https://download.pytorch.org/whl/cu128 ./shadow_rl/setup.sh
+TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}"
 WITH_BM25=0
 [[ "${1:-}" == "--with-bm25" ]] && WITH_BM25=1
 
@@ -31,7 +34,17 @@ if command -v nvidia-smi >/dev/null 2>&1; then
     nvidia-smi --query-gpu=index,name,memory.total,driver_version \
                --format=csv,noheader | sed 's/^/         /'
     NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
-    log "$NGPU GPU(s) available"
+    CAP=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1)
+    log "$NGPU GPU(s) available, compute capability ${CAP:-unknown}"
+    # 10.x / 12.x are Blackwell; they need a CUDA 13 build of torch.
+    case "${CAP:-}" in
+        10.*|12.*)
+            if [[ "$TORCH_INDEX" != *cu13* ]]; then
+                warn "Blackwell GPU (cc $CAP) detected but TORCH_INDEX is $TORCH_INDEX."
+                warn "Switching to CUDA 13.0; a cu12 build has no sm_100 kernels."
+                TORCH_INDEX="https://download.pytorch.org/whl/cu130"
+            fi ;;
+    esac
 else
     warn "nvidia-smi not found. The merge and the similarity pass run on CPU,"
     warn "but evaluation needs a GPU."
@@ -70,7 +83,7 @@ else
     log "installing torch + torchvision from $TORCH_INDEX"
     $PYBIN -m pip install --quiet torch torchvision --index-url "$TORCH_INDEX" \
         || die "torch install failed. Pick the wheel matching your CUDA and retry:
-       TORCH_INDEX=https://download.pytorch.org/whl/cu126 ./shadow_rl/setup.sh"
+       TORCH_INDEX=https://download.pytorch.org/whl/cu128 ./shadow_rl/setup.sh"
 fi
 
 # ---- 4. the rest ----------------------------------------------------------- #

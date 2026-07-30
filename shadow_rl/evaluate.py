@@ -35,7 +35,9 @@ import sys
 from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from pairs import DATASETS, MODEL_ROLES, PAIRS_BY_ID, Pair  # noqa: E402
+from pairs import (  # noqa: E402
+    DATASET_SPECS, DATASETS, MODEL_ROLES, PAIRS_BY_ID, Pair,
+)
 
 # The seven columns the experiment specifies, plus n_questions -- without it a
 # sampled run and a full run are indistinguishable in the CSV, and the two are
@@ -120,14 +122,24 @@ def load_questions(dataset: str, limit: Optional[int], sample: Optional[int]) ->
     """
     import datasets as hfds
 
-    ds = hfds.load_dataset("RUC-NLPIR/FlashRAG_datasets", dataset)
-    for split in ("test", "dev", "train"):
+    spec = DATASET_SPECS[dataset]
+    args = (spec.hf_repo, spec.config) if spec.config else (spec.hf_repo,)
+    try:
+        ds = hfds.load_dataset(*args)
+    except Exception as exc:
+        hint = f"\n       note: {spec.note}" if spec.note else ""
+        raise RuntimeError(
+            f"could not load {dataset} from {spec.hf_repo}"
+            f"{'/' + spec.config if spec.config else ''}: {exc}{hint}"
+        ) from exc
+
+    for split in spec.splits:
         if split in ds:
             rows = ds[split]
             print(f"[data] {dataset}: using '{split}' split ({len(rows)} rows)")
             break
     else:
-        raise KeyError(f"no usable split for {dataset}")
+        raise KeyError(f"no usable split for {dataset}; have {list(ds)}")
 
     indices = range(len(rows))
     if sample and sample < len(rows):
@@ -142,13 +154,44 @@ def load_questions(dataset: str, limit: Optional[int], sample: Optional[int]) ->
     out = []
     for i in indices:
         row = rows[int(i)]
-        question = row["question"].strip()
-        if question[-1] != "?":
-            question += "?"
-        out.append({"question": question, "golden_answers": row["golden_answers"]})
+        out.append(_build(row, spec, seed=i))
         if limit and len(out) >= limit:
             break
     return out
+
+
+def _build(row, spec, seed: int) -> Dict:
+    """Turn one dataset row into {question, golden_answers}.
+
+    Multiple-choice sets get their options rendered into the question with
+    deterministic letter assignment, and accept either the letter or the answer
+    text as correct -- so the official qa_em scorer needs no modification.
+    """
+    question = str(row[spec.question_field]).strip()
+
+    if spec.kind == "mcq":
+        correct = str(row[spec.answer_field]).strip()
+        options = [correct] + [str(row[f]).strip() for f in spec.distractor_fields
+                               if row.get(f) is not None]
+        # Seeded on the row index so the letter for a given question is the same
+        # for every model and every run; otherwise roles are not comparable.
+        rng = random.Random(f"{SAMPLE_SEED}:{spec.name}:{seed}")
+        rng.shuffle(options)
+        letters = "ABCDEFGH"[:len(options)]
+        rendered = "\n".join(f"{l}) {o}" for l, o in zip(letters, options))
+        letter = letters[options.index(correct)]
+        return {
+            "question": f"{question}\n{rendered}",
+            # Accept the bare letter, the letter with a paren, or the text.
+            "golden_answers": [letter, f"{letter})", correct],
+        }
+
+    if question and question[-1] != "?":
+        question += "?"
+    gold = row[spec.answer_field]
+    if isinstance(gold, str):
+        gold = [gold]
+    return {"question": question, "golden_answers": list(gold)}
 
 
 # --------------------------------------------------------------------------- #

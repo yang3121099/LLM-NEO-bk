@@ -33,6 +33,7 @@ SHORT = {
 ABBREV = {
     "nq": "NQ", "triviaqa": "TriviaQA", "popqa": "PopQA", "hotpotqa": "HotpotQA",
     "2wikimultihopqa": "2Wiki", "musique": "Musique", "bamboogle": "Bamboogle",
+    "gpqa_diamond": "GPQA-D", "simpleqa": "SimpleQA",
 }
 
 

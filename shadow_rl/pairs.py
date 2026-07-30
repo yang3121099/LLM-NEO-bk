@@ -33,18 +33,62 @@ ORIGINALS: Dict[str, Dict[str, str]] = {
                     "instruct": "meta-llama/Llama-3.1-8B-Instruct"},
 }
 
-# The seven evaluation sets.  NQ and HotpotQA are in-domain (the checkpoints
-# were trained on nq_hotpotqa_train); the other five are out-of-domain.
-DATASETS: List[str] = [
-    "nq",
-    "triviaqa",
-    "popqa",
-    "hotpotqa",
-    "2wikimultihopqa",
-    "musique",
-    "bamboogle",
-]
+# --------------------------------------------------------------------------- #
+# Evaluation sets. The seven FlashRAG QA sets are the Search-R1 protocol; NQ and
+# HotpotQA are in-domain (the checkpoints trained on nq_hotpotqa_train). GPQA-D
+# and SimpleQA are added on top and are a different shape -- see DatasetSpec.
+# --------------------------------------------------------------------------- #
+@dataclass(frozen=True)
+class DatasetSpec:
+    name: str
+    hf_repo: str
+    config: Optional[str]          # HF dataset config, if the repo needs one
+    splits: tuple                  # tried in order; first present wins
+    question_field: str
+    answer_field: str
+    kind: str = "qa"               # "qa" (free-form short answer) | "mcq"
+    # For mcq: fields holding the distractors, shuffled into lettered options.
+    distractor_fields: tuple = ()
+    note: str = ""
+
+
+_FLASHRAG = "RUC-NLPIR/FlashRAG_datasets"
+
+
+def _qa(name: str) -> DatasetSpec:
+    return DatasetSpec(name, _FLASHRAG, name, ("test", "dev", "train"),
+                       "question", "golden_answers")
+
+
+DATASET_SPECS: Dict[str, DatasetSpec] = {
+    d: _qa(d) for d in
+    ("nq", "triviaqa", "popqa", "hotpotqa", "2wikimultihopqa", "musique", "bamboogle")
+}
+
+# GPQA-Diamond: 198 graduate-level science questions, multiple choice. The repo
+# is gated -- accept the licence on the model page or huggingface-cli login.
+# Scored by exact match against either the option letter or the answer text, so
+# the official qa_em scorer still applies unchanged.
+DATASET_SPECS["gpqa_diamond"] = DatasetSpec(
+    "gpqa_diamond", "Idavidrein/gpqa", "gpqa_diamond", ("train", "test"),
+    "Question", "Correct Answer", kind="mcq",
+    distractor_fields=("Incorrect Answer 1", "Incorrect Answer 2", "Incorrect Answer 3"),
+    note="gated repo; MCQ scored on letter or answer text",
+)
+
+# SimpleQA: short-factoid questions with a single reference answer. NOTE the
+# official protocol grades with an LLM judge, not exact match -- EM here is a
+# strict lower bound and will read lower than published SimpleQA numbers.
+DATASET_SPECS["simpleqa"] = DatasetSpec(
+    "simpleqa", "basicv8vc/SimpleQA", None, ("test", "train"),
+    "problem", "answer",
+    note="official protocol uses an LLM grader; EM here is a strict lower bound",
+)
+
+DATASETS: List[str] = list(DATASET_SPECS)
 IN_DOMAIN = {"nq", "hotpotqa"}
+# Not part of the Search-R1 protocol; no published reference numbers exist.
+EXTRA_DATASETS = {"gpqa_diamond", "simpleqa"}
 
 MODEL_ROLES = ["base_baseline", "instruct_baseline",
                "rl_on_instruct", "rl_on_base", "shadow"]
@@ -131,6 +175,17 @@ PAIRS: List[Pair] = [
     Pair("v0.1", "7b", "ppo", True,
          "SearchR1-nq_hotpotqa_train-qwen2.5-7b-em-ppo",
          "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-ppo"),
+
+    # ---- Confirmed present by discovery against the Hub.
+    Pair("v0.3", "14b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-grpo-v0.3",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-grpo-v0.3"),
+    Pair("v0.1", "llama3.2-3b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-grpo",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-grpo"),
+    Pair("v0.1", "llama3.2-3b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-ppo",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-ppo"),
 ]
 
 # --------------------------------------------------------------------------- #
@@ -149,9 +204,6 @@ CANDIDATES: List[Pair] = [
     Pair("v0.3", "7b", "ppo", True,
          "SearchR1-nq_hotpotqa_train-qwen2.5-7b-em-ppo-v0.3",
          "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-ppo-v0.3"),
-    Pair("v0.3", "14b", "grpo", True,
-         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-grpo-v0.3",
-         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-grpo-v0.3"),
     Pair("v0.3", "14b", "ppo", True,
          "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-ppo-v0.3",
          "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-ppo-v0.3"),
@@ -185,15 +237,9 @@ CANDIDATES: List[Pair] = [
 
     # Llama backbones, unversioned (v0.1) tagging, matching the scripts they
     # actually appear in
-    Pair("v0.1", "llama3.2-3b", "grpo", True,
-         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-grpo",
-         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-grpo"),
     Pair("v0.1", "llama3.1-8b", "grpo", True,
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-grpo",
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-grpo"),
-    Pair("v0.1", "llama3.2-3b", "ppo", True,
-         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-ppo",
-         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-ppo"),
     Pair("v0.1", "llama3.1-8b", "ppo", True,
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-ppo",
          "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-ppo"),
@@ -228,8 +274,17 @@ CANDIDATES_BY_ID = {p.pair_id: p for p in CANDIDATES}
 # model is trusted.  Taken from the v0.1 paper, so expect only ballpark
 # agreement for the v0.2 / v0.3 checkpoints.
 # --------------------------------------------------------------------------- #
+# The published tables cover exactly these seven, in this order. Spelled out
+# rather than zipped against DATASETS: that list now also holds GPQA-D and
+# SimpleQA, and a silent zip() truncation would misalign every reference number.
+_REFERENCE_ORDER = ("nq", "triviaqa", "popqa", "hotpotqa",
+                    "2wikimultihopqa", "musique", "bamboogle")
+
+
 def _row(nq, tqa, pop, hqa, wiki, mus, bam):
-    return dict(zip(DATASETS, (nq, tqa, pop, hqa, wiki, mus, bam)))
+    values = (nq, tqa, pop, hqa, wiki, mus, bam)
+    assert len(values) == len(_REFERENCE_ORDER)
+    return dict(zip(_REFERENCE_ORDER, values))
 
 
 REFERENCE: Dict[str, Dict[str, float]] = {

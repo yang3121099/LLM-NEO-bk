@@ -70,7 +70,8 @@ def main():
         check("win against RL(W_I)", "WIN" in out and "+0.0400" in out)
         check("in-domain datasets starred", "NQ*" in out and "HotpotQA*" in out)
         check("OOD datasets not starred", "Musique*" not in out)
-        check("dataset coverage stated", "4/7 datasets" in out)
+        # 9 registered sets now: the 7 FlashRAG ones plus GPQA-D and SimpleQA.
+        check("dataset coverage stated", "4/9 datasets" in out, out[out.find("datasets") - 20:][:40])
         check("sample size stated", "n=200/dataset" in out)
         check("subsample warning shown", "subsampled run" in out)
 

@@ -14,9 +14,10 @@
 # failure is logged and the run continues to the next.
 #
 # Options
-#   --pairs X      groups: all nosearch search grpo ppo 3b 7b 14b qwen llama
-#                          v0.1 v0.2 v0.3 latest
-#                  several groups intersect: 'v0.3,grpo' = the v0.3 GRPO pairs
+#   --pairs X      groups: all demo nosearch search grpo ppo 3b 7b 14b qwen
+#                          llama v0.1 v0.2 v0.3 latest
+#                  groups intersect:  'v0.3,grpo'  = the v0.3 GRPO pairs
+#                  a leading - excludes: 'all,-v0.2' = everything but v0.2
 #                  or explicit ids: <pair_id>[,<pair_id>...]
 #   --stages X     comma list of: similarity,merge,eval,aggregate   (default all)
 #   --roles X      comma list of roles to evaluate  (default all four)
@@ -169,17 +170,31 @@ groups = {
     "v0.2":     lambda p: p.version == "v0.2",
     "v0.3":     lambda p: p.version == "v0.3",
     "latest":   lambda p: p.version == "v0.3",
+    # The single pair to sanity-check a change against.
+    "demo":     lambda p: p.pair_id == "grpo-search-3b-v0.3",
 }
 # Comma-separated group names intersect on version and union otherwise, e.g.
 # "v0.3,grpo" means the v0.3 GRPO pairs.
 parts = [x.strip() for x in sel.split(",") if x.strip()]
-if all(x in groups for x in parts):
+# A leading "-" excludes: "all,-v0.2" is everything except the v0.2 pairs.
+include = [x for x in parts if not x.startswith("-")]
+exclude = [x[1:] for x in parts if x.startswith("-")]
+unknown_ex = [x for x in exclude if x not in groups]
+if unknown_ex:
+    sys.exit(f"unknown group to exclude: {', '.join(unknown_ex)}")
+
+if include and all(x in groups for x in include):
     # Every term is a group: a pair must satisfy all of them (intersection), so
     # "v0.3,grpo" narrows rather than widens.
-    chosen = [p.pair_id for p in PAIRS if all(groups[x](p) for x in parts)]
-elif any(x in groups for x in parts):
+    chosen = [p.pair_id for p in PAIRS
+              if all(groups[x](p) for x in include)
+              and not any(groups[x](p) for x in exclude)]
+elif any(x in groups for x in include):
     sys.exit(f"do not mix group names with pair ids: {sel}")
+elif exclude and not include:
+    sys.exit("an exclusion needs something to exclude from, e.g. 'all,-v0.2'")
 else:
+    parts = include
     chosen = []
     for name in parts:
         if name not in PAIRS_BY_ID:
@@ -333,9 +348,21 @@ skip = {d.strip() for d in sys.argv[5].split(",") if d.strip()}
 pair_ids = sys.argv[6:]
 
 FULL = {"nq": 3610, "triviaqa": 11313, "popqa": 14267, "hotpotqa": 7405,
-        "2wikimultihopqa": 12576, "musique": 2417, "bamboogle": 125}
+        "2wikimultihopqa": 12576, "musique": 2417, "bamboogle": 125,
+        "gpqa_diamond": 198, "simpleqa": 4326}
+# Any dataset added to the registry without a row count here would silently
+# vanish from the estimate, so fall back to a placeholder and say so.
+from pairs import DATASETS as _ALL
+_missing = [d for d in _ALL if d not in FULL]
+for d in _missing:
+    FULL[d] = 1000
+if _missing:
+    print(f"[warn] no row count for {', '.join(_missing)}; estimate assumes 1000 each",
+          file=sys.stderr)
+
 n = int(sample) if sample else (int(limit) if limit else None)
-per_role = sum(min(n, v) if n else v for d, v in FULL.items() if d not in skip)
+per_role = sum(min(n, v) if n else v for d, v in FULL.items()
+               if d in _ALL and d not in skip)
 print(f"{per_role}", file=sys.stderr)   # picked up by the plan line
 
 import re
@@ -355,13 +382,24 @@ def rate_for(size, with_search):
     return base / 2.4 if with_search else base
 
 
-n_roles = len([r for r in roles.split(",") if r.strip()])
+role_list = [r.strip() for r in roles.split(",") if r.strip()]
+# W_B and W_I are shared by every pair of a size, so they are scored once per
+# size rather than once per pair -- charge them to the first pair of that size.
+shared = {"base_baseline", "instruct_baseline"}
+per_pair_roles = [r for r in role_list if r not in shared]
+shared_roles = [r for r in role_list if r in shared]
 speedup = min(tp, 2.0)
 
 total = 0.0
+seen_sizes = set()
 for pid in pair_ids:
     p = PAIRS_BY_ID[pid]
-    total += n_roles * per_role / (rate_for(p.size, p.with_search) * speedup)
+    rate = rate_for(p.size, p.with_search) * speedup
+    n = len(per_pair_roles)
+    if p.size not in seen_sizes:
+        n += len(shared_roles)
+        seen_sizes.add(p.size)
+    total += n * per_role / rate
 h = total / 3600
 if h >= 24:
     print(f"~{h:.0f}h (~{h/24:.1f} days)")
@@ -373,11 +411,11 @@ ESTPY
 } 2>"$LOG_DIR/.per_role" )
 PER_ROLE=$(cat "$LOG_DIR/.per_role" 2>/dev/null | tail -1)
 PER_ROLE="${PER_ROLE:-?}"
-N_DATASETS=$(python3 -c "
+read -r N_DATASETS N_DATASETS_ALL < <(python3 -c "
 import sys; sys.path.insert(0,'shadow_rl')
 from pairs import DATASETS
 skip={d.strip() for d in '$SKIP_DATASETS'.split(',') if d.strip()}
-print(len([d for d in DATASETS if d not in skip]))")
+print(len([d for d in DATASETS if d not in skip]), len(DATASETS))")
 rm -f "$LOG_DIR/.per_role"
 
 
@@ -393,7 +431,7 @@ cat <<EOF | tee -a "$RUN_LOG"
  results  : $RESULTS
  log      : $RUN_LOG
  tp       : $TP
- datasets : $N_DATASETS of 7$( [[ -n "$SKIP_DATASETS" ]] && echo " (skipping $SKIP_DATASETS)" )
+ datasets : $N_DATASETS of $N_DATASETS_ALL$( [[ -n "$SKIP_DATASETS" ]] && echo " (skipping $SKIP_DATASETS)" )
  questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset, $PER_ROLE per role"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset, $PER_ROLE per role (biased; smoke only)"; else echo "FULL test sets, $PER_ROLE per role"; fi )
  est. time: $EST_HOURS
  cleanup  : $( [[ $CLEANUP -eq 1 ]] && echo "yes (frees each pair after eval)" || echo "no (models kept)" )
@@ -508,6 +546,36 @@ PY
     if has_stage eval; then
         IFS=',' read -ra ROLE_ARR <<< "$ROLES"
         for role in "${ROLE_ARR[@]}"; do
+            # W_B and W_I are the *same* checkpoints for every pair of a given
+            # size, so evaluating them once per pair would burn GPU hours
+            # re-deriving identical numbers. Score each size once; the other
+            # pairs leave the row blank and the report shows "-".
+            if [[ "$role" == "base_baseline" || "$role" == "instruct_baseline" ]] \
+               && [[ $FORCE -eq 0 ]]; then
+                OWNER=$(python3 - "$RESULTS" "$pid" "$role" <<'DEDUPPY'
+import csv, os, sys
+sys.path.insert(0, "shadow_rl")
+from pairs import PAIRS_BY_ID
+results, pid, role = sys.argv[1], sys.argv[2], sys.argv[3]
+if not os.path.exists(results):
+    raise SystemExit(0)
+size = PAIRS_BY_ID[pid].size
+with open(results, newline="") as fh:
+    for r in csv.DictReader(fh):
+        if r["model_role"] != role or r["size"] != size:
+            continue
+        tag = "search" if str(r["with_search"]).lower() == "true" else "nosearch"
+        other = f"{r['algo']}-{tag}-{r['size']}-{r['version']}"
+        if other != pid:
+            print(other)
+            break
+DEDUPPY
+)
+                if [[ -n "$OWNER" ]]; then
+                    log "  eval: $role — shared with $OWNER (same $role checkpoint), skipping"
+                    continue
+                fi
+            fi
             log "  eval: $role"
             EXTRA=()
             [[ "$role" == "shadow" ]] && EXTRA=(--model-path "$SHADOW_PATH")

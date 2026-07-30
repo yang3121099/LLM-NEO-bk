@@ -113,12 +113,42 @@ def check_torch():
         bad(f"torch does not import: {exc}",
             "pip install torch --index-url https://download.pytorch.org/whl/cu128")
         return None
-    ok(f"torch {torch.__version__}")
-    if torch.cuda.is_available():
-        ok(f"CUDA available, {torch.cuda.device_count()} device(s): "
-           f"{torch.cuda.get_device_name(0)}")
-    else:
+    ok(f"torch {torch.__version__}  (CUDA {torch.version.cuda})")
+    if not torch.cuda.is_available():
         warn("no CUDA device visible (fine for merge/similarity, not for eval)")
+        return torch
+
+    ok(f"CUDA available, {torch.cuda.device_count()} device(s): "
+       f"{torch.cuda.get_device_name(0)}")
+
+    # The decisive check is not the CUDA version but whether this torch build
+    # actually carries kernels for the installed GPU. Blackwell (B200/B300) is
+    # sm_100; a cu12 wheel has no sm_100 and every kernel launch fails at
+    # runtime with a confusing error rather than at import.
+    try:
+        cap = torch.cuda.get_device_capability(0)
+        sm = f"sm_{cap[0]}{cap[1]}"
+        archs = torch.cuda.get_arch_list()
+    except Exception as exc:
+        warn(f"could not read the device capability: {exc}")
+        return torch
+
+    if sm in archs:
+        ok(f"{sm} is in this torch build ({', '.join(archs[-4:])})")
+    else:
+        # sm_100 kernels also run on sm_103 etc. via the same major family, but
+        # only if the build shipped them; PTX JIT from a lower arch is not
+        # reliable for these, so treat a miss as fatal.
+        family = [a for a in archs if a.startswith(f"sm_{cap[0]}")]
+        detail = f"build has {', '.join(archs)}"
+        if family:
+            warn(f"{sm} not in the arch list but {', '.join(family)} is — "
+                 f"same family, likely fine ({detail})")
+        else:
+            bad(f"this torch has no kernels for {sm} "
+                f"({torch.cuda.get_device_name(0)}); {detail}",
+                "pip install --force-reinstall torch torchvision "
+                "--index-url https://download.pytorch.org/whl/cu130")
     return torch
 
 

@@ -44,7 +44,7 @@ def main():
     import pairs as P
 
     print("\n[1] the shipped manifest is internally consistent")
-    check("12 released pairs", len(P.PAIRS) >= 12, f"{len(P.PAIRS)}")
+    check("15 released pairs", len(P.PAIRS) == 15, f"{len(P.PAIRS)}")
     check("pair ids unique", len({p.pair_id for p in P.PAIRS}) == len(P.PAIRS))
     check("every size resolves to originals",
           all(p.size in P.ORIGINALS for p in P.PAIRS))
@@ -58,7 +58,8 @@ def main():
 
     print("\n[2] group selectors")
     for spec, expect in [
-        ("v0.3", {"grpo-search-3b-v0.3", "grpo-search-7b-v0.3", "ppo-search-3b-v0.3"}),
+        ("v0.3", {"grpo-search-3b-v0.3", "grpo-search-7b-v0.3", "ppo-search-3b-v0.3",
+                  "grpo-search-14b-v0.3"}),
         ("nosearch", {"ppo-nosearch-3b-v0.2", "ppo-nosearch-7b-v0.2"}),
     ]:
         rc, got, err = select(spec)
@@ -67,7 +68,8 @@ def main():
 
     rc, got, _ = select("v0.3,grpo")
     check("groups intersect, not union",
-          rc == 0 and set(got) == {"grpo-search-3b-v0.3", "grpo-search-7b-v0.3"},
+          rc == 0 and set(got) == {"grpo-search-3b-v0.3", "grpo-search-7b-v0.3",
+                                   "grpo-search-14b-v0.3"},
           f"got {sorted(got)}")
 
     rc, got, _ = select("v0.3,ppo")
@@ -78,10 +80,25 @@ def main():
     check("latest aliases v0.3", got == got2 and rc == rc2 == 0)
 
     rc, got, _ = select("qwen")
-    check("qwen covers everything shipped", rc == 0 and len(got) == len(P.PAIRS), f"{len(got)}")
+    n_llama = sum(1 for p in P.PAIRS if p.size.startswith("llama"))
+    check("qwen excludes the llama pairs",
+          rc == 0 and len(got) == len(P.PAIRS) - n_llama, f"{len(got)} of {len(P.PAIRS)}")
 
     rc, got, _ = select("llama")
-    check("llama empty until discovered", rc != 0 or not got, f"{got}")
+    check("llama selects the llama pairs", rc == 0 and len(got) == n_llama, f"{got}")
+
+    print("\n[2b] exclusion syntax")
+    rc, got, _ = select("all,-v0.2")
+    check("all,-v0.2 drops every v0.2 pair",
+          rc == 0 and not any(g.endswith("v0.2") for g in got), f"{sorted(got)}")
+    check("all,-v0.2 keeps the rest",
+          len(got) == len([p for p in P.PAIRS if p.version != "v0.2"]), f"{len(got)}")
+    rc, got, _ = select("demo")
+    check("demo is exactly one pair", rc == 0 and got == ["grpo-search-3b-v0.3"], f"{got}")
+    rc, got, err = select("-v0.2")
+    check("a bare exclusion is rejected", rc != 0, err.strip()[:60])
+    rc, got, err = select("all,-nosuchgroup")
+    check("excluding an unknown group fails", rc != 0 and "unknown group" in err)
 
     print("\n[3] bad selections are rejected, not silently widened")
     rc, got, err = select("v0.3,ppo-search-3b-v0.3")
@@ -106,7 +123,7 @@ def main():
             }]}, fh)
         rc, got, _ = select("llama")
         check("a verified pair becomes selectable",
-              rc == 0 and got == ["grpo-search-llama3.2-3b-v0.3"], f"{got}")
+              rc == 0 and "grpo-search-llama3.2-3b-v0.3" in got, f"{got}")
         rc, got, _ = select("v0.3")
         check("and joins its version group",
               "grpo-search-llama3.2-3b-v0.3" in got, f"{sorted(got)}")
@@ -126,7 +143,8 @@ def main():
         with open(verified, "w") as fh:
             fh.write("{ this is not json")
         rc, got, err = select("v0.3")
-        check("manifest still loads", rc == 0 and len(got) == 3, f"rc={rc} got={got}")
+        n_v03 = len([p for p in P.PAIRS if p.version == "v0.3"])
+        check("manifest still loads", rc == 0 and len(got) == n_v03, f"rc={rc} got={got}")
         check("warns about the bad file", "ignoring" in err or "warn" in err.lower(),
               err.strip()[:80])
     finally:

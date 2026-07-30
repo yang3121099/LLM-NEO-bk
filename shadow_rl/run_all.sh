@@ -26,10 +26,14 @@
 #                  Recommended for multi-pair sweeps: the full test sets are
 #                  ~51,700 questions per role, and --pairs all over them is on
 #                  the order of two weeks of single-GPU time.
+#   --datasets X   evaluate only these datasets (comma list)
 #   --skip-datasets X comma list of datasets to omit entirely
 #   --auto-retriever  start and stop the BM25 server automatically
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
-#   --tp N         tensor parallel size (default 1; H200 fits 7B comfortably at 1)
+#   --tp N         GPUs per worker (default 1; a 3B/7B model needs only 1)
+#   --jobs N       concurrent eval workers, one GPU group each.
+#                  'auto' (default) = visible GPUs / tp, so 8 GPUs run 8
+#                  (role, dataset) cells at once instead of one at a time.
 #   --fast         smallest useful run: one 3B pair, 4 datasets (2 in-domain +
 #                  2 OOD), 200 questions, all five models. A few minutes.
 #   --force        redo work that is already complete (merge, smoke test)
@@ -50,10 +54,12 @@ FAST=0
 LIMIT=""
 SAMPLE=""
 SKIP_DATASETS=""
+DATASETS_SEL=""
 CLEANUP=0
 AUTO_RETRIEVER=0
 RETRIEVER_PID=""
 TP="${TP:-1}"
+JOBS="auto"
 DRY=0
 ASSUME_YES=0
 FORCE=0
@@ -90,8 +96,10 @@ while [[ $# -gt 0 ]]; do
         --limit)   LIMIT="$2";     shift 2 ;;
         --sample)  SAMPLE="$2";    shift 2 ;;
         --skip-datasets) SKIP_DATASETS="$2"; shift 2 ;;
+        --datasets) DATASETS_SEL="$2"; shift 2 ;;
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
+        --jobs)    JOBS="$2";      shift 2 ;;
         --cleanup) CLEANUP=1;      shift ;;
         --fast)    FAST=1;         shift ;;
         --force)   FORCE=1;        shift ;;
@@ -116,6 +124,18 @@ if [[ $FAST -eq 1 ]]; then
     # Skipped: triviaqa/popqa/2wiki, the three largest, which say little that
     # the cheaper OOD sets do not.
     SKIP_DATASETS="${SKIP_DATASETS:-triviaqa,popqa,2wikimultihopqa}"
+fi
+
+if [[ -n "$DATASETS_SEL" ]]; then
+    SKIP_DATASETS=$(python3 -c "
+import sys; sys.path.insert(0,'shadow_rl')
+from pairs import DATASETS
+want={d.strip() for d in '$DATASETS_SEL'.split(',') if d.strip()}
+bad=want-set(DATASETS)
+if bad:
+    sys.exit('unknown dataset(s): '+', '.join(sorted(bad)))
+print(','.join(d for d in DATASETS if d not in want))") \
+        || { echo "[fail] bad --datasets" >&2; exit 1; }
 fi
 
 mkdir -p "$LOG_DIR" "$MERGED_DIR" "$MODEL_DIR"
@@ -254,9 +274,14 @@ fi
 [[ -f "$SEARCH_R1_ROOT/verl/utils/reward_score/qa_em.py" ]] \
     || die "Search-R1 not found at SEARCH_R1_ROOT=$SEARCH_R1_ROOT. Run ./shadow_rl/setup.sh"
 
-NGPU=0
-if command -v nvidia-smi >/dev/null 2>&1; then
+# CUDA_VISIBLE_DEVICES wins over nvidia-smi: it is what the workers will
+# actually see, and pinning is how the parallel runner divides the machine.
+if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+    NGPU=$(awk -F, '{print NF}' <<< "$CUDA_VISIBLE_DEVICES")
+elif command -v nvidia-smi >/dev/null 2>&1; then
     NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l)
+else
+    NGPU=0
 fi
 if has_stage eval; then
     [[ "$NGPU" -gt 0 ]] || die "no GPU visible, but the eval stage needs one"
@@ -352,14 +377,16 @@ fi
 # ---- runtime estimate ------------------------------------------------------ #
 # Rough, from vLLM throughput on one H200 and the multi-turn rollout cost. Meant
 # to prevent a two-week surprise, not to be accurate to the hour.
-EST_HOURS=$( { python3 - "$SAMPLE" "$LIMIT" "$ROLES" "$TP" "$SKIP_DATASETS" "${PAIR_LIST[@]}" <<'ESTPY'
+EST_WORKERS=$( if [[ "$JOBS" == "auto" ]]; then j=$(( NGPU / TP )); [[ $j -lt 1 ]] && j=1; echo $j; else echo "$JOBS"; fi )
+EST_HOURS=$( { python3 - "$SAMPLE" "$LIMIT" "$ROLES" "$TP" "$SKIP_DATASETS" "$EST_WORKERS" "${PAIR_LIST[@]}" <<'ESTPY'
 import sys
 sys.path.insert(0, "shadow_rl")
 from pairs import PAIRS_BY_ID
 
 sample, limit, roles, tp = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4] or 1)
 skip = {d.strip() for d in sys.argv[5].split(",") if d.strip()}
-pair_ids = sys.argv[6:]
+workers = max(1, int(sys.argv[6] or 1))
+pair_ids = sys.argv[7:]
 
 FULL = {"nq": 3610, "triviaqa": 11313, "popqa": 14267, "hotpotqa": 7405,
         "2wikimultihopqa": 12576, "musique": 2417, "bamboogle": 125,
@@ -414,6 +441,10 @@ for pid in pair_ids:
         n += len(shared_roles)
         seen_sizes.add(p.size)
     total += n * per_role / rate
+# Independent (role, dataset) cells run concurrently, one per worker. Not
+# perfectly linear -- the last wave is ragged -- so allow a little overhead.
+if workers > 1:
+    total /= workers * 0.85
 h = total / 3600
 if h >= 24:
     print(f"~{h:.0f}h (~{h/24:.1f} days)")
@@ -444,7 +475,8 @@ cat <<EOF | tee -a "$RUN_LOG"
  merged   : $MERGED_DIR
  results  : $RESULTS
  log      : $RUN_LOG
- tp       : $TP
+ gpus     : $NGPU visible, tp=$TP, workers=$( if [[ "$JOBS" == "auto" ]]; then
+   j=$(( NGPU / TP )); [[ $j -lt 1 ]] && j=1; echo "$j (auto)"; else echo "$JOBS"; fi )
  datasets : $N_DATASETS of $N_DATASETS_ALL$( [[ -n "$SKIP_DATASETS" ]] && echo " (skipping $SKIP_DATASETS)" )
  questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset, $PER_ROLE per role"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset, $PER_ROLE per role (biased; smoke only)"; else echo "FULL test sets, $PER_ROLE per role"; fi )
  est. time: $EST_HOURS
@@ -558,7 +590,36 @@ PY
 
     # -- evaluate --
     if has_stage eval; then
-        IFS=',' read -ra ROLE_ARR <<< "$ROLES"
+        # With more than one worker, hand the whole (role x dataset) grid to the
+        # parallel runner: a 3B model does not need tensor parallelism, so the
+        # speedup comes from running independent cells side by side.
+        EFFECTIVE_JOBS="$JOBS"
+        if [[ "$JOBS" == "auto" ]]; then
+            EFFECTIVE_JOBS=$(( NGPU / TP ))
+            [[ "$EFFECTIVE_JOBS" -lt 1 ]] && EFFECTIVE_JOBS=1
+        fi
+
+        if [[ "$EFFECTIVE_JOBS" -gt 1 ]]; then
+            log "  eval: $EFFECTIVE_JOBS parallel worker(s) x tp=$TP over $NGPU GPU(s)"
+            PAR=(--pair "$pid" --search-r1-root "$SEARCH_R1_ROOT"
+                 --out "$RESULTS" --roles "$ROLES"
+                 --retriever-url "$RETRIEVER_URL"
+                 --tp "$TP" --jobs "$EFFECTIVE_JOBS"
+                 --shadow-path "$SHADOW_PATH")
+            [[ -n "$SKIP_DATASETS" ]] && PAR+=(--skip-datasets "$SKIP_DATASETS")
+            [[ -n "$SAMPLE" ]] && PAR+=(--sample "$SAMPLE")
+            [[ -n "$LIMIT" ]]  && PAR+=(--limit "$LIMIT")
+            [[ $FORCE -eq 1 ]] && PAR+=(--force)
+            if python3 shadow_rl/run_eval_parallel.py "${PAR[@]}" 2>&1 | tee -a "$PAIR_LOG"; then
+                ok "  all cells done"
+            else
+                err "  some cells failed (see $PAIR_LOG)"
+                FAILED_PAIRS+=("$pid:eval"); PAIR_OK=0
+            fi
+            IFS=',' read -ra ROLE_ARR <<< ""
+        else
+            IFS=',' read -ra ROLE_ARR <<< "$ROLES"
+        fi
         for role in "${ROLE_ARR[@]}"; do
             # W_B and W_I are the *same* checkpoints for every pair of a given
             # size, so evaluating them once per pair would burn GPU hours

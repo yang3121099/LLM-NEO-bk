@@ -188,6 +188,47 @@ about 51,700 questions per model role:
 
 `run_all.sh` prints this estimate during preflight before you commit to a run.
 
+### Simplest possible check
+
+One pair, one dataset, 200 questions, five models — enough to confirm the whole
+path runs:
+
+```bash
+./shadow_rl/run_all.sh --pairs demo --datasets nq --sample 200 \
+    --auto-retriever --yes
+```
+
+`demo` is `grpo-search-3b-v0.3`. About **6 min on 1 GPU, 1 min on 8** — the GPUs
+are detected automatically and the work is spread across them.
+
+### Using 1 GPU or 8
+
+A 3B or 7B model fits on one GPU, so tensor parallelism buys nothing. The win on
+a multi-GPU box comes from running independent `(role, dataset)` cells side by
+side, which is what `--jobs auto` (the default) does: it pins one worker per GPU
+via `CUDA_VISIBLE_DEVICES`, each writes its own CSV shard, and the shards are
+merged at the end. Separate shards on purpose — concurrent appends to one CSV
+are not reliably atomic, and a torn row is a silently corrupt result.
+
+```bash
+./shadow_rl/run_all.sh --pairs demo --datasets nq --yes            # uses every GPU it sees
+./shadow_rl/run_all.sh --pairs demo --datasets nq --jobs 4 --yes   # cap at 4 workers
+CUDA_VISIBLE_DEVICES=0,1 ./shadow_rl/run_all.sh --pairs demo --yes # restrict to 2
+./shadow_rl/run_all.sh --pairs 14b-pair --tp 2 --yes               # a 14B/32B model needs tp>1
+```
+
+`--tp` is per worker, so `--tp 2` on 8 GPUs gives 4 workers. Asking for more than
+the machine has is refused up front rather than failing inside vLLM. With one
+GPU the runner falls back to the sequential path, which loads each model once
+instead of once per dataset.
+
+The runtime estimate in the plan accounts for the worker count:
+
+| run | 1 GPU | 8 GPUs |
+|---|---|---|
+| `--pairs demo --datasets nq --sample 200` | ~6 min | ~1 min |
+| `--pairs all,-v0.2`, 6 datasets, full sets | ~55 h | ~8 h |
+
 ### Start here: `--fast`
 
 The smallest run that still answers the question — one 3B pair, four datasets

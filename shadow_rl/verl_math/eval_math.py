@@ -49,6 +49,8 @@ def main() -> None:
     ap.add_argument("--out", default="shadow_rl/verl_math/math_results.csv")
     ap.add_argument("--benchmarks", default=",".join(BENCHMARKS))
     ap.add_argument("--k", type=int, default=4, help="samples per problem (avg@k)")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="first N problems per benchmark (demo runs only)")
     ap.add_argument("--temperature", type=float, default=0.6,
                     help="ignored when --k 1, which uses greedy decoding")
     ap.add_argument("--max-tokens", type=int, default=31744)
@@ -82,6 +84,8 @@ def main() -> None:
     rows = []
     for name in wanted:
         problems, repo = load_problems(name)
+        if args.limit:
+            problems = problems[:args.limit]
         prompts = []
         for p in problems:
             text = INSTRUCTION.format(problem=p["question"])

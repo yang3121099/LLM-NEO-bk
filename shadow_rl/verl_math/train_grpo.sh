@@ -12,10 +12,15 @@
 #   VERL_ROOT     verl checkout                (default $HOME/verl)
 #   DATA_DIR      prepared parquet files       (default $PWD/datasets)
 #   CKPT_DIR      where checkpoints are written(default $PWD/shadow_rl/verl_math/ckpt)
-#   N_GPUS        GPUs per node                (default 8)
+#   N_GPUS        GPUs per node                (default: all visible)
 set -euo pipefail
 
 SIDE="${1:-}"
+shift || true
+# Anything after the side is appended verbatim to the verl command line, so a
+# demo run can cap the step count without a separate script:
+#   ./train_grpo.sh base trainer.total_training_steps=4
+EXTRA=("$@")
 case "$SIDE" in
     base)     MODEL="Qwen/Qwen3-4B-Base" ;;
     instruct) MODEL="Qwen/Qwen3-4B-Instruct" ;;
@@ -28,7 +33,17 @@ cd "$REPO_ROOT"
 VERL_ROOT="${VERL_ROOT:-$HOME/verl}"
 DATA_DIR="${DATA_DIR:-$REPO_ROOT/datasets}"
 CKPT_DIR="${CKPT_DIR:-$REPO_ROOT/shadow_rl/verl_math/ckpt}"
-N_GPUS="${N_GPUS:-8}"
+detect_gpus() {
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        awk -F, '{print NF}' <<< "$CUDA_VISIBLE_DEVICES"
+    elif command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l
+    else
+        echo 0
+    fi
+}
+N_GPUS="${N_GPUS:-$(detect_gpus)}"
+[[ "$N_GPUS" -lt 1 ]] && { echo "[fail] no GPU visible; training needs at least one" >&2; exit 1; }
 REWARD_FN="$REPO_ROOT/shadow_rl/verl_math/math_reward.py"
 EXPERIMENT="qwen3-4b-${SIDE}-dapo-math-grpo"
 
@@ -47,6 +62,7 @@ echo " model      : $MODEL"
 echo " experiment : $EXPERIMENT"
 echo " checkpoints: $CKPT_DIR/$EXPERIMENT"
 echo " gpus       : $N_GPUS"
+[[ ${#EXTRA[@]} -gt 0 ]] && echo " overrides  : ${EXTRA[*]}"
 echo "=============================================================="
 
 # Validation generates far longer than training (31744 vs 7168) so the AIME
@@ -84,6 +100,7 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     trainer.project_name=shadow-ft-math \
     trainer.experiment_name="$EXPERIMENT" \
     trainer.default_local_dir="$CKPT_DIR/$EXPERIMENT" \
+    "${EXTRA[@]}" \
     2>&1 | tee "$CKPT_DIR/$EXPERIMENT.log"
 
 echo

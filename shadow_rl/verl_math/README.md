@@ -12,6 +12,22 @@ W_shadow = W_I + (RL(W_B) - W_B)
 
 Then all five models are scored on AIME24 / AIME25 / AMC23.
 
+## Demo first
+
+Everything runs, on a fraction of the data — 8 optimiser steps, 512 prompts, 8
+problems per benchmark:
+
+```bash
+./shadow_rl/verl_math/run_all_math.sh --demo --yes
+```
+
+That exercises data prep, GRPO on both sides, the verl→HF export, the graft, the
+smoke test and the eval. **The numbers are meaningless** — 8 steps will not move
+a 4B model — but if this completes, the full run is only a matter of time.
+
+GPU count is detected automatically; training uses all of them, evaluation uses
+`--tp 1` since a 4B model fits on one card. Override with `N_GPUS=` / `--tp`.
+
 ## Run it
 
 ```bash

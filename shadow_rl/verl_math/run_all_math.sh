@@ -2,6 +2,7 @@
 # Shadow-FT on RL we train ourselves: Qwen3-4B, GRPO on DAPO-Math.
 #
 #   ./shadow_rl/verl_math/run_all_math.sh            # everything, in order
+#   ./shadow_rl/verl_math/run_all_math.sh --demo --yes   # tiny end-to-end check
 #   ./shadow_rl/verl_math/run_all_math.sh --stages merge,eval
 #
 # Stages
@@ -21,7 +22,19 @@ HERE="shadow_rl/verl_math"
 
 STAGES="data,train,export,merge,eval"
 K=4
-N_GPUS="${N_GPUS:-8}"
+DEMO=0
+detect_gpus() {
+    if [[ -n "${CUDA_VISIBLE_DEVICES:-}" ]]; then
+        awk -F, '{print NF}' <<< "$CUDA_VISIBLE_DEVICES"
+    elif command -v nvidia-smi >/dev/null 2>&1; then
+        nvidia-smi --query-gpu=index --format=csv,noheader 2>/dev/null | wc -l
+    else
+        echo 0
+    fi
+}
+N_GPUS="${N_GPUS:-$(detect_gpus)}"
+# A 4B model fits on one GPU, so tensor parallelism buys nothing for eval; the
+# GPUs are better spent on training width.
 TP="${TP:-1}"
 ASSUME_YES=0
 while [[ $# -gt 0 ]]; do
@@ -29,10 +42,29 @@ while [[ $# -gt 0 ]]; do
         --stages) STAGES="$2"; shift 2 ;;
         --k)      K="$2";      shift 2 ;;
         --tp)     TP="$2";     shift 2 ;;
+        --demo)   DEMO=1;      shift ;;
         --yes|-y) ASSUME_YES=1; shift ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+
+# --demo: enough steps and data to exercise every stage end to end in well under
+# an hour. The resulting numbers are meaningless -- 8 optimiser steps will not
+# move a 4B model -- but every moving part runs, including the merge and the eval.
+LIMIT_TRAIN=""
+LIMIT_VAL=""
+TRAIN_EXTRA=()
+if [[ $DEMO -eq 1 ]]; then
+    LIMIT_TRAIN=512
+    LIMIT_VAL=8
+    TRAIN_EXTRA=(trainer.total_training_steps=8
+                 trainer.save_freq=4
+                 trainer.test_freq=4
+                 data.max_response_length=1024
+                 +data.val_max_response_length=2048
+                 actor_rollout_ref.rollout.n=4)
+    [[ "$K" == "4" ]] && K=1
+fi
 
 CKPT_DIR="${CKPT_DIR:-$REPO_ROOT/$HERE/ckpt}"
 HF_DIR="$REPO_ROOT/$HERE/hf"
@@ -49,6 +81,13 @@ has()  { [[ ",$STAGES," == *",$1,"* ]]; }
 
 trained() { compgen -G "$CKPT_DIR/$1/global_step_*" >/dev/null 2>&1; }
 
+if has train && [[ "$N_GPUS" -lt 1 ]]; then
+    die "no GPU visible; the train stage needs at least one"
+fi
+if has eval && [[ "$N_GPUS" -lt 1 ]]; then
+    die "no GPU visible; the eval stage needs at least one"
+fi
+
 cat <<EOF
 
 ==============================================================
@@ -58,8 +97,9 @@ cat <<EOF
  instruct : $INSTRUCT
  shadow   : $MERGED
  results  : $RESULTS
- gpus     : $N_GPUS (train), tp=$TP (eval)
+ gpus     : $N_GPUS visible — $N_GPUS for training, tp=$TP for eval
  avg@k    : $K
+ mode     : $( [[ $DEMO -eq 1 ]] && echo "DEMO (8 steps, 512 prompts, 8 problems/benchmark — numbers are not meaningful)" || echo "full" )
 ==============================================================
 EOF
 if [[ $ASSUME_YES -eq 0 && -t 0 ]]; then
@@ -73,7 +113,10 @@ if has data; then
     if [[ -f "datasets/math_val/val.parquet" && -f "datasets/DAPO-Math-17k-Processed/DAPO-Math.parquet" ]]; then
         ok "parquets already present, skipping"
     else
-        python3 "$HERE/prepare_data.py" --out datasets || die "data preparation failed"
+        PREP=(--out datasets)
+        [[ -n "$LIMIT_TRAIN" ]] && PREP+=(--limit-train "$LIMIT_TRAIN")
+        [[ -n "$LIMIT_VAL" ]] && PREP+=(--limit-val "$LIMIT_VAL")
+        python3 "$HERE/prepare_data.py" "${PREP[@]}" || die "data preparation failed"
     fi
 fi
 
@@ -85,7 +128,8 @@ if has train; then
             ok "train: $exp already has checkpoints, skipping"
         else
             log "stage: train ($side) — this is the long one"
-            N_GPUS="$N_GPUS" CKPT_DIR="$CKPT_DIR" "$HERE/train_grpo.sh" "$side" \
+            N_GPUS="$N_GPUS" CKPT_DIR="$CKPT_DIR" \
+                "$HERE/train_grpo.sh" "$side" "${TRAIN_EXTRA[@]}" \
                 || die "training failed for $side"
         fi
     done
@@ -144,8 +188,10 @@ if has eval; then
             continue
         fi
         log "  $role  <- $model"
-        python3 "$HERE/eval_math.py" --model "$model" --role "$role" \
-            --out "$RESULTS" --k "$K" --tensor-parallel-size "$TP" \
+        EV=(--model "$model" --role "$role" --out "$RESULTS" --k "$K"
+            --tensor-parallel-size "$TP")
+        [[ $DEMO -eq 1 ]] && EV+=(--limit 8 --max-tokens 2048 --max-model-len 4096)
+        python3 "$HERE/eval_math.py" "${EV[@]}" \
             || warn "eval failed for $role; continuing"
     done
     python3 "$HERE/report_math.py" --results "$RESULTS"

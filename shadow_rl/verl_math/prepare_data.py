@@ -97,6 +97,10 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="datasets")
     ap.add_argument("--skip-train", action="store_true")
+    ap.add_argument("--limit-train", type=int, default=None,
+                    help="keep only the first N training prompts (demo runs)")
+    ap.add_argument("--limit-val", type=int, default=None,
+                    help="keep only the first N problems per validation benchmark")
     args = ap.parse_args()
 
     try:
@@ -108,6 +112,9 @@ def main() -> None:
         print("[train] DAPO-Math-17k-Processed")
         rows, repo = load_first(SOURCES["dapo"])
         records = to_records(rows, "dapo_math")
+        if args.limit_train:
+            records = records[:args.limit_train]
+            print(f"       limited to {len(records)} prompt(s) for a demo run")
         d = os.path.join(args.out, "DAPO-Math-17k-Processed")
         os.makedirs(d, exist_ok=True)
         path = os.path.join(d, "DAPO-Math.parquet")
@@ -120,6 +127,8 @@ def main() -> None:
         print(f"  {name}")
         rows, repo = load_first(SOURCES[name])
         got = to_records(rows, name)
+        if args.limit_val:
+            got = got[:args.limit_val]
         val.extend(got)
         print(f"       {len(got)} rows from {repo}")
     d = os.path.join(args.out, "math_val")

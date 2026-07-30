@@ -14,7 +14,10 @@
 # failure is logged and the run continues to the next.
 #
 # Options
-#   --pairs X      all | nosearch | search | grpo | ppo | 3b | 7b | <pair_id>[,<pair_id>...]
+#   --pairs X      groups: all nosearch search grpo ppo 3b 7b 14b qwen llama
+#                          v0.1 v0.2 v0.3 latest
+#                  several groups intersect: 'v0.3,grpo' = the v0.3 GRPO pairs
+#                  or explicit ids: <pair_id>[,<pair_id>...]
 #   --stages X     comma list of: similarity,merge,eval,aggregate   (default all)
 #   --roles X      comma list of roles to evaluate  (default all four)
 #   --limit N      first N questions per dataset; biased, smoke runs only
@@ -158,13 +161,27 @@ groups = {
     "ppo":      lambda p: p.algo == "ppo",
     "3b":       lambda p: p.size == "3b",
     "7b":       lambda p: p.size == "7b",
+    "14b":      lambda p: p.size == "14b",
+    "qwen":     lambda p: not p.size.startswith("llama"),
+    "llama":    lambda p: p.size.startswith("llama"),
+    # Version tags: v0.3 is the current recipe, so "latest" aliases it.
+    "v0.1":     lambda p: p.version == "v0.1",
+    "v0.2":     lambda p: p.version == "v0.2",
+    "v0.3":     lambda p: p.version == "v0.3",
+    "latest":   lambda p: p.version == "v0.3",
 }
-if sel in groups:
-    chosen = [p.pair_id for p in PAIRS if groups[sel](p)]
+# Comma-separated group names intersect on version and union otherwise, e.g.
+# "v0.3,grpo" means the v0.3 GRPO pairs.
+parts = [x.strip() for x in sel.split(",") if x.strip()]
+if all(x in groups for x in parts):
+    # Every term is a group: a pair must satisfy all of them (intersection), so
+    # "v0.3,grpo" narrows rather than widens.
+    chosen = [p.pair_id for p in PAIRS if all(groups[x](p) for x in parts)]
+elif any(x in groups for x in parts):
+    sys.exit(f"do not mix group names with pair ids: {sel}")
 else:
     chosen = []
-    for name in sel.split(","):
-        name = name.strip()
+    for name in parts:
         if name not in PAIRS_BY_ID:
             sys.exit(f"unknown pair '{name}'. Known: {', '.join(sorted(PAIRS_BY_ID))}")
         chosen.append(name)
@@ -224,12 +241,29 @@ NEED_GB=$(python3 - "${PAIR_LIST[@]}" <<'PY'
 import sys
 sys.path.insert(0, "shadow_rl")
 from pairs import PAIRS_BY_ID
-# per pair: two RL checkpoints (fp32) + merged model (bf16); originals shared.
-per = {"3b": 2 * 12 + 6, "7b": 2 * 28 + 15}
-need = sum(per[PAIRS_BY_ID[p].size] for p in sys.argv[1:])
-sizes = {PAIRS_BY_ID[p].size for p in sys.argv[1:]}
-need += sum({"3b": 6 + 6, "7b": 15 + 15}[s] for s in sizes)   # shared originals
-print(need)
+import re
+
+
+def billions(size: str) -> float:
+    """Parameter count in billions, from the manifest key (3b, llama3.1-8b, ...)."""
+    m = re.search(r"(\d+(?:\.\d+)?)b$", size)
+    return float(m.group(1)) if m else 8.0    # unknown backbone: assume mid-size
+
+
+# bf16 is ~2 bytes/param; the released RL checkpoints are frequently fp32, so
+# ~4. Per pair: two RL checkpoints (fp32) + the merged model (bf16).
+def pair_gb(size):
+    b = billions(size)
+    return 2 * (4 * b) + (2 * b)
+
+
+def originals_gb(size):
+    return 2 * (2 * billions(size))           # base + instruct, bf16, shared
+
+
+need = sum(pair_gb(PAIRS_BY_ID[p].size) for p in sys.argv[1:])
+need += sum(originals_gb(s) for s in {PAIRS_BY_ID[p].size for p in sys.argv[1:]})
+print(int(need))
 PY
 )
 log "disk: ~${NEED_GB}GB needed under $MODEL_DIR, ${AVAIL_GB:-?}GB free"
@@ -304,14 +338,30 @@ n = int(sample) if sample else (int(limit) if limit else None)
 per_role = sum(min(n, v) if n else v for d, v in FULL.items() if d not in skip)
 print(f"{per_role}", file=sys.stderr)   # picked up by the plan line
 
-rate = {("3b", False): 14.0, ("3b", True): 6.0, ("7b", False): 6.0, ("7b", True): 2.5}
+import re
+
+
+def billions(size):
+    m = re.search(r"(\d+(?:\.\d+)?)b$", size)
+    return float(m.group(1)) if m else 8.0
+
+
+# Anchors measured on one H200: ~14 q/s for a 3B without search, ~2.5 q/s for a
+# 7B with it. Throughput falls roughly with parameter count, and search costs
+# extra turns per question.
+def rate_for(size, with_search):
+    b = billions(size)
+    base = 42.0 / b                 # 3B -> 14 q/s, 7B -> 6 q/s
+    return base / 2.4 if with_search else base
+
+
 n_roles = len([r for r in roles.split(",") if r.strip()])
 speedup = min(tp, 2.0)
 
 total = 0.0
 for pid in pair_ids:
     p = PAIRS_BY_ID[pid]
-    total += n_roles * per_role / (rate[(p.size, p.with_search)] * speedup)
+    total += n_roles * per_role / (rate_for(p.size, p.with_search) * speedup)
 h = total / 3600
 if h >= 24:
     print(f"~{h:.0f}h (~{h/24:.1f} days)")

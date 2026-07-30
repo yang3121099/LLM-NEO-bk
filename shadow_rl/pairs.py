@@ -10,14 +10,25 @@ Run this file directly to print the manifest.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
 HF_PREFIX = "PeterJinGo/"
 
+# Keyed by the `size` field of a Pair, which is really "which original pair of
+# checkpoints does this graft onto" -- it covers backbone family as well as scale.
 ORIGINALS: Dict[str, Dict[str, str]] = {
     "3b": {"base": "Qwen/Qwen2.5-3B", "instruct": "Qwen/Qwen2.5-3B-Instruct"},
     "7b": {"base": "Qwen/Qwen2.5-7B", "instruct": "Qwen/Qwen2.5-7B-Instruct"},
+    "14b": {"base": "Qwen/Qwen2.5-14B", "instruct": "Qwen/Qwen2.5-14B-Instruct"},
+    # Search-R1 trained these too. Note both are gated on HuggingFace -- accept
+    # the licence on the model page, or `huggingface-cli login`, before use.
+    "llama3.2-3b": {"base": "meta-llama/Llama-3.2-3B",
+                    "instruct": "meta-llama/Llama-3.2-3B-Instruct"},
+    "llama3.1-8b": {"base": "meta-llama/Llama-3.1-8B",
+                    "instruct": "meta-llama/Llama-3.1-8B-Instruct"},
 }
 
 # The seven evaluation sets.  NQ and HotpotQA are in-domain (the checkpoints
@@ -120,7 +131,81 @@ PAIRS: List[Pair] = [
          "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-ppo"),
 ]
 
+# --------------------------------------------------------------------------- #
+# Candidate pairs: plausible from Search-R1's naming convention and its v0.3
+# training scripts, but NOT confirmed to exist as released repos. Both sides of a
+# pair have to be published for it to be usable, and a training script only shows
+# what was trained. Rather than hardcode ids that may 404, these are probed by
+# shadow_rl/discover.py, which writes the confirmed ones to verified_pairs.json
+# for this module to pick up.
+#
+# The v0.3 scripts cover Qwen 3B/7B/14B (+ DeepSeek distills); Llama appears only
+# in the v0.1 scripts, so the Llama candidates are listed under both taggings.
+# --------------------------------------------------------------------------- #
+CANDIDATES: List[Pair] = [
+    # v0.3 completions of the Qwen grid
+    Pair("v0.3", "7b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-7b-em-ppo-v0.3",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-7b-it-em-ppo-v0.3"),
+    Pair("v0.3", "14b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-grpo-v0.3",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-grpo-v0.3"),
+    Pair("v0.3", "14b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-em-ppo-v0.3",
+         "SearchR1-nq_hotpotqa_train-qwen2.5-14b-it-em-ppo-v0.3"),
+
+    # Llama backbones, v0.3 tagging
+    Pair("v0.3", "llama3.2-3b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-grpo-v0.3",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-grpo-v0.3"),
+    Pair("v0.3", "llama3.1-8b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-grpo-v0.3",
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-grpo-v0.3"),
+    Pair("v0.3", "llama3.2-3b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-ppo-v0.3",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-ppo-v0.3"),
+    Pair("v0.3", "llama3.1-8b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-ppo-v0.3",
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-ppo-v0.3"),
+
+    # Llama backbones, unversioned (v0.1) tagging, matching the scripts they
+    # actually appear in
+    Pair("v0.1", "llama3.2-3b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-grpo",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-grpo"),
+    Pair("v0.1", "llama3.1-8b", "grpo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-grpo",
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-grpo"),
+    Pair("v0.1", "llama3.2-3b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-em-ppo",
+         "SearchR1-nq_hotpotqa_train-llama3.2-3b-it-em-ppo"),
+    Pair("v0.1", "llama3.1-8b", "ppo", True,
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-em-ppo",
+         "SearchR1-nq_hotpotqa_train-llama3.1-8b-it-em-ppo"),
+]
+
+# Pairs confirmed to exist by discover.py get merged in here, so nothing that
+# 404s ever reaches the run.
+_VERIFIED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "verified_pairs.json")
+if os.path.exists(_VERIFIED):
+    try:
+        with open(_VERIFIED) as _fh:
+            _known = {p.pair_id for p in PAIRS}
+            for _row in json.load(_fh).get("pairs", []):
+                _p = Pair(_row["version"], _row["size"], _row["algo"],
+                          bool(_row["with_search"]), _row["rl_base"], _row["rl_instruct"])
+                if _p.pair_id not in _known:
+                    PAIRS.append(_p)
+                    _known.add(_p.pair_id)
+    except Exception as _exc:
+        # A bad file must not break the manifest -- and the warning must go to
+        # stderr: run_all.sh captures this module's stdout as the pair list, so
+        # anything printed there would be parsed as a pair id.
+        import sys as _sys
+        print(f"[warn] ignoring {_VERIFIED}: {_exc}", file=_sys.stderr)
+
 PAIRS_BY_ID = {p.pair_id: p for p in PAIRS}
+CANDIDATES_BY_ID = {p.pair_id: p for p in CANDIDATES}
 
 
 # --------------------------------------------------------------------------- #

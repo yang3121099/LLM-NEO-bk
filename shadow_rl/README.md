@@ -57,6 +57,7 @@ Before committing to a full run, look at the plan:
 | `run_pair.sh` | a single pair end to end (`run_all.sh` is usually what you want) |
 | `launch_bm25_retriever.sh` | corpus + BM25 index + retrieval server (search pairs only) |
 | `report.py` | terminal comparison table — printed automatically after every run |
+| `discover.py` | probes HuggingFace for unreleased-but-plausible pairs |
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
 | `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
@@ -111,7 +112,7 @@ below; the current default merges over the intersection and does not stop.
 
 | option | meaning |
 |---|---|
-| `--pairs X` | `all`, `nosearch`, `search`, `grpo`, `ppo`, `3b`, `7b`, or explicit ids |
+| `--pairs X` | groups (see below) or explicit pair ids |
 | `--stages X` | subset of `similarity,merge,eval,aggregate` |
 | `--roles X` | subset of the four model roles |
 | `--limit N` | first N questions per dataset — biased, smoke runs only |
@@ -260,6 +261,60 @@ promising `shadow − rl_on_instruct`, re-run just those on the full sets:
 
 Since `results.csv` is keyed by pair/role/dataset, delete the sampled rows for
 that pair first, or point `--out` at a separate file.
+
+## Selecting pairs
+
+`--pairs` takes either explicit ids or group names. Several groups **intersect**,
+so the selection narrows rather than widens:
+
+| group | meaning |
+|---|---|
+| `all` | every pair in the manifest |
+| `v0.1` `v0.2` `v0.3` `latest` | by release version; `latest` aliases `v0.3` |
+| `grpo` `ppo` | by algorithm |
+| `search` `nosearch` | whether a retrieval server is needed |
+| `3b` `7b` `14b` | by scale |
+| `qwen` `llama` | by backbone family |
+
+```bash
+./shadow_rl/run_all.sh --pairs v0.3 --yes           # only the current recipe
+./shadow_rl/run_all.sh --pairs v0.3,grpo --yes      # v0.3 AND grpo
+./shadow_rl/run_all.sh --pairs v0.3,llama --yes     # v0.3 AND a Llama backbone
+```
+
+Mixing a group name with a pair id is rejected rather than guessed at.
+
+## Adding pairs that are not in the manifest
+
+The 12 shipped pairs are the ones confirmed released. Search-R1's v0.3 scripts
+also cover Qwen-14B and DeepSeek distills, and its v0.1 scripts cover
+Llama-3.2-3B and Llama-3.1-8B — but a training script is not a release, and
+grafting needs **both** sides of a pair published.
+
+`pairs.CANDIDATES` lists ids inferred from the naming convention. They are not
+assumed to exist; `discover.py` asks the Hub:
+
+```bash
+python shadow_rl/discover.py                    # report what exists
+python shadow_rl/discover.py --write            # record it into the manifest
+python shadow_rl/discover.py --write --extra-versions v0.4
+python shadow_rl/discover.py --also-originals   # check the base/instruct too
+```
+
+Confirmed pairs land in `verified_pairs.json`, which `pairs.py` merges on import,
+so they become selectable by every group above. A pair with only one side
+released is reported as incomplete and **not** added — the delta needs the base
+side and the comparison needs the instruct side.
+
+Llama originals (`meta-llama/Llama-3.2-3B`, `Llama-3.1-8B`) are **gated** on
+HuggingFace: accept the licence on the model page or `huggingface-cli login`
+first, or the download fails. `discover.py` reports a gated repo as existing
+rather than missing.
+
+Everything downstream is backbone-agnostic — config, tokenizer and chat template
+all come from `W_I` — so a Llama pair needs no code changes. Disk and runtime
+estimates are derived from the parameter count in the size key, so a 14B or 8B
+pair is costed correctly rather than assumed to be 3B.
 
 ## Parameter-level similarity
 

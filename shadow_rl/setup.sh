@@ -9,17 +9,36 @@
 # Environment:
 #   SEARCH_R1_ROOT  where to clone the harness   (default $HOME/Search-R1)
 #   VENV            virtualenv to create/use     (default $HOME/shadow-rl-venv, "" to skip)
-#   TORCH_INDEX     torch wheel index            (default CUDA 12.8, right for H200)
+#   TORCH_INDEX     torch wheel index            (default: matched to the GPU
+#                                                 found here, see
+#                                                 scripts/gpu_profile.sh)
 set -euo pipefail
 
 SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
 VENV="${VENV-$HOME/shadow-rl-venv}"
-TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"
 WITH_BM25=0
 [[ "${1:-}" == "--with-bm25" ]] && WITH_BM25=1
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
+
+# Sets TORCH_INDEX / TORCH_SPEC / TORCH_CUDA_ARCH_LIST for the GPU found here.
+# cu128 used to be hardcoded, which is right for H100/H200 and produces a torch
+# with no kernels at all on a B300 (sm_103).
+_USER_TORCH_INDEX="${TORCH_INDEX:-}"
+_USER_TORCH_SPEC="${TORCH_SPEC:-}"
+# shellcheck source=../scripts/gpu_profile.sh
+source "$REPO_ROOT/scripts/gpu_profile.sh"
+
+# This pipeline has always installed the newest torch from cu128 rather than the
+# LLaMA-Factory pin, and every torch since 2.4 has Hopper kernels -- so keep that
+# on Hopper and older. On Blackwell the profile's floor is not a preference: no
+# torch below it can run on the device at all.
+if ! gpu_is_blackwell; then
+    TORCH_INDEX="${_USER_TORCH_INDEX:-https://download.pytorch.org/whl/cu128}"
+    TORCH_SPEC="${_USER_TORCH_SPEC:-torch}"
+fi
+unset _USER_TORCH_INDEX _USER_TORCH_SPEC
 
 log()  { printf '\033[1;34m[setup]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
@@ -32,6 +51,7 @@ if command -v nvidia-smi >/dev/null 2>&1; then
                --format=csv,noheader | sed 's/^/         /'
     NGPU=$(nvidia-smi --query-gpu=index --format=csv,noheader | wc -l)
     log "$NGPU GPU(s) available"
+    log "generation: $GPU_LABEL -> $TORCH_SPEC from $TORCH_INDEX"
 else
     warn "nvidia-smi not found. The merge and the similarity pass run on CPU,"
     warn "but evaluation needs a GPU."
@@ -65,10 +85,26 @@ $PYBIN -m pip install --quiet --upgrade pip setuptools wheel
 # inside image_utils, and a torch/torchvision CUDA major mismatch surfaces much
 # later as an unrelated-looking "Could not import module 'Qwen2ForCausalLM'".
 if $PYBIN -c 'import torch' 2>/dev/null; then
-    log "torch already installed: $($PYBIN -c 'import torch; print(torch.__version__)')"
+    TVER=$($PYBIN -c 'import torch; print(torch.__version__)')
+    # "Installed" is not the same as "usable on this GPU". A torch built before
+    # this compute capability existed imports fine, names the device correctly,
+    # and then fails on the first matmul with "no kernel image is available for
+    # execution on the device" -- which is exactly what a Hopper-era torch does
+    # on a B300. --arch-only runs a real kernel and answers the question.
+    if $PYBIN shadow_rl/check_env.py --arch-only >/tmp/shadow_arch.log 2>&1; then
+        log "torch already installed: $TVER (kernels run on this GPU)"
+    else
+        warn "torch $TVER cannot run kernels on ${GPU_LABEL}:"
+        sed 's/^/         /' /tmp/shadow_arch.log >&2
+        log "reinstalling $TORCH_SPEC + torchvision from $TORCH_INDEX"
+        $PYBIN -m pip install --quiet --force-reinstall \
+            "$TORCH_SPEC" torchvision --index-url "$TORCH_INDEX" \
+            || die "torch reinstall failed. Pick the wheel matching your CUDA:
+       TORCH_INDEX=https://download.pytorch.org/whl/cu129 ./shadow_rl/setup.sh"
+    fi
 else
-    log "installing torch + torchvision from $TORCH_INDEX"
-    $PYBIN -m pip install --quiet torch torchvision --index-url "$TORCH_INDEX" \
+    log "installing $TORCH_SPEC + torchvision from $TORCH_INDEX"
+    $PYBIN -m pip install --quiet "$TORCH_SPEC" torchvision --index-url "$TORCH_INDEX" \
         || die "torch install failed. Pick the wheel matching your CUDA and retry:
        TORCH_INDEX=https://download.pytorch.org/whl/cu126 ./shadow_rl/setup.sh"
 fi
@@ -79,11 +115,16 @@ $PYBIN -m pip install --quiet \
     safetensors huggingface_hub transformers datasets accelerate requests pandas
 
 # vllm pins its own torch; install it last so it can resolve a consistent pair.
+# On Blackwell that pin is the hazard: the torch vllm names on PyPI is not built
+# for sm_103, so hand the resolver the CUDA-matched index as well and let it pick
+# a torch that satisfies both. Hopper needs no such help, so it is left alone.
 if $PYBIN -c 'import vllm' 2>/dev/null; then
     log "vllm already installed: $($PYBIN -c 'import vllm; print(vllm.__version__)')"
 else
-    log "installing vllm (this pulls a large wheel, be patient)"
-    $PYBIN -m pip install --quiet vllm \
+    VLLM_ARGS=()
+    gpu_is_blackwell && VLLM_ARGS+=(--extra-index-url "$TORCH_INDEX")
+    log "installing $VLLM_SPEC (this pulls a large wheel, be patient)"
+    $PYBIN -m pip install --quiet "${VLLM_ARGS[@]+"${VLLM_ARGS[@]}"}" "$VLLM_SPEC" \
         || die "vllm install failed. See https://docs.vllm.ai/en/latest/getting_started/installation.html"
 fi
 

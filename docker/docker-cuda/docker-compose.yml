@@ -4,6 +4,12 @@ services:
       dockerfile: ./docker/docker-cuda/Dockerfile
       context: ../..
       args:
+        # H100 defaults. For a B300 node, override both:
+        #   BASE_IMAGE: nvcr.io/nvidia/pytorch:25.09-py3   # CUDA >= 12.9
+        #   CUDA_ARCH_LIST: "10.3a"
+        # (`bash scripts/gpu_profile.sh --print` reports what this node needs.)
+        BASE_IMAGE: nvcr.io/nvidia/pytorch:24.12-py3
+        CUDA_ARCH_LIST: "9.0"
         INSTALL_BNB: "false"
         INSTALL_VLLM: "false"
         INSTALL_DEEPSPEED: "false"

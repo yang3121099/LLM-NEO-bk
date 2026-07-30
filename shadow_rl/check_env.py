@@ -1,14 +1,24 @@
 #!/usr/bin/env python3
 """Validate the environment before a long run, and say exactly how to fix it.
 
-The failure this exists to catch: pip installs torch from the CUDA-specific
-PyTorch index but torchvision from default PyPI, which may be built against a
-different CUDA major version. Nothing complains at install time. transformers
-imports torchvision deep inside `image_utils`, so the first symptom is an
-unrelated-looking `Could not import module 'Qwen2ForCausalLM'` -- after the merge
-has already run.
+Two failures this exists to catch.
+
+1. pip installs torch from the CUDA-specific PyTorch index but torchvision from
+   default PyPI, which may be built against a different CUDA major version.
+   Nothing complains at install time. transformers imports torchvision deep
+   inside `image_utils`, so the first symptom is an unrelated-looking
+   `Could not import module 'Qwen2ForCausalLM'` -- after the merge has already
+   run.
+
+2. torch imports, reports the GPU by name, and then dies on the first matmul
+   with `no kernel image is available for execution on the device`, because the
+   wheel carries no cubin for this compute capability. This is what the move
+   from H100 (sm_90) to B300 (sm_103) hits: every torch below 2.9 predates
+   sm_103, and even a Blackwell wheel built arch-conditionally for a B200
+   (sm_100a) has no kernels a B300 can run.
 
     python shadow_rl/check_env.py                     # core checks
+    python shadow_rl/check_env.py --arch-only         # just torch vs this GPU
     python shadow_rl/check_env.py --full              # also vllm + Search-R1
     python shadow_rl/check_env.py --search-r1-root ~/Search-R1 --full
 """
@@ -74,6 +84,81 @@ def torch_index(torch_cuda) -> str:
     return f"https://download.pytorch.org/whl/cu{tag}"
 
 
+# ---------------------------------------------------------------------------- #
+# compute capability
+# ---------------------------------------------------------------------------- #
+# Which wheel index and which minimum torch a GPU generation needs. This mirrors
+# scripts/gpu_profile.sh -- the bash side is what the setup scripts read, this
+# side keeps check_env.py runnable on its own. tests/env/test_gpu_profile.py
+# asserts the two tables agree.
+STACK_BY_SM = {
+    103: ("https://download.pytorch.org/whl/cu130", "2.9.0"),   # B300 / GB300
+    100: ("https://download.pytorch.org/whl/cu128", "2.7.0"),   # B200 / GB200
+    120: ("https://download.pytorch.org/whl/cu128", "2.7.0"),   # RTX Blackwell
+}
+LEGACY_STACK = ("https://download.pytorch.org/whl/cu126", "2.6.0")  # Hopper and older
+
+
+def stack_for_sm(sm: int):
+    """(wheel index, minimum torch) for a device of compute capability `sm`."""
+    return STACK_BY_SM.get(sm, LEGACY_STACK)
+
+
+def parse_arch_tag(tag: str):
+    """'sm_100a' -> (100, 'a'), 'compute_90' -> (90, ''), junk -> None.
+
+    torch.cuda.get_arch_list() returns a mix of both spellings: cubins as
+    sm_NNN[a|f], embedded PTX as compute_NNN.
+    """
+    tag = str(tag).strip()
+    for prefix in ("sm_", "compute_"):
+        if tag.startswith(prefix):
+            rest = tag[len(prefix):]
+            suffix = ""
+            if rest and rest[-1] in ("a", "f"):
+                rest, suffix = rest[:-1], rest[-1]
+            if rest.isdigit():
+                return int(rest), suffix
+    return None
+
+
+def arch_support(arch_list, sm: int):
+    """How a torch built for `arch_list` can run on a device of capability `sm`.
+
+    Returns "cubin" (native code for this arch), "compat" (code for an earlier
+    minor of the same major -- binary compatible, guaranteed forwards only),
+    "ptx" (has to JIT on first use, slow but works), or None (will raise
+    "no kernel image is available for execution on the device").
+
+    The rule that bites in the H100 -> B300 move is the arch-conditional one: a
+    cubin built as sm_100a runs on sm_100 and nothing else, so a wheel that
+    works on a B200 can still have nothing for a B300. Plain sm_100 code does
+    run on sm_103, by CUDA's minor-version binary compatibility.
+    """
+    best = None
+    rank = {"cubin": 3, "compat": 2, "ptx": 1}
+    for tag in arch_list or ():
+        parsed = parse_arch_tag(tag)
+        if parsed is None:
+            continue
+        arch, suffix = parsed
+        is_ptx = str(tag).startswith("compute_")
+        if arch == sm:
+            found = "ptx" if is_ptx else "cubin"
+        elif suffix == "a":
+            # Arch-conditional: exact match only, no forward compatibility.
+            continue
+        elif arch // 10 == sm // 10 and arch < sm:
+            # Same major, lower minor: cubins are forwards compatible, and PTX
+            # JITs. ('f' family-conditional code behaves like plain code here.)
+            found = "ptx" if is_ptx else "compat"
+        else:
+            continue
+        if best is None or rank[found] > rank[best]:
+            best = found
+    return best
+
+
 # torch's C++ extensions each embed the CUDA version they were built against and
 # check it at import. Any one of them can be the mismatched package, and the
 # error surfaces from whichever transformers happens to import first.
@@ -115,11 +200,149 @@ def check_torch():
         return None
     ok(f"torch {torch.__version__}")
     if torch.cuda.is_available():
+        major, minor = torch.cuda.get_device_capability(0)
         ok(f"CUDA available, {torch.cuda.device_count()} device(s): "
-           f"{torch.cuda.get_device_name(0)}")
+           f"{torch.cuda.get_device_name(0)} (sm_{major}{minor})")
     else:
         warn("no CUDA device visible (fine for merge/similarity, not for eval)")
     return torch
+
+
+def check_device_arch(torch_mod):
+    """Does this torch actually carry kernels for the GPU in this machine?"""
+    if not torch_mod.cuda.is_available():
+        return
+    major, minor = torch_mod.cuda.get_device_capability(0)
+    sm = major * 10 + minor
+    try:
+        arch_list = torch_mod.cuda.get_arch_list()
+    except Exception as exc:  # very old torch, or a CPU-only build
+        warn(f"torch cannot report its arch list ({exc}); skipping the arch check")
+        return
+
+    index, min_torch = stack_for_sm(sm)
+    fix = (f"pip install --force-reinstall 'torch>={min_torch}' torchvision "
+           f"--index-url {index}")
+    support = arch_support(arch_list, sm)
+
+    if support == "cubin":
+        ok(f"torch has sm_{sm} kernels")
+    elif support == "compat":
+        # Runs, but nothing arch-conditional (the FP8/NVFP4 CUTLASS paths) is
+        # there, so it is worth saying out loud rather than passing silently.
+        warn(f"torch has no sm_{sm} kernels but does have compatible ones "
+             f"({' '.join(arch_list)}); it will run, without the sm_{sm}a "
+             f"FP8/NVFP4 paths")
+    elif support == "ptx":
+        warn(f"torch has only PTX for sm_{sm}; every kernel JITs on first use "
+             f"(minutes of stall, then fine)")
+    else:
+        bad(f"torch {torch_mod.__version__} was built for [{' '.join(arch_list)}] "
+            f"and this GPU is sm_{sm}: kernels will fail with 'no kernel image "
+            f"is available for execution on the device'", fix)
+
+
+def check_device_kernels(torch_mod):
+    """Run the two kernels every stage here needs, on the GPU, for real.
+
+    The arch list is a claim; this is the test. A wheel can list an arch and
+    still fail on a specific kernel, and the error only appears at the first
+    launch -- historically 40 minutes into a run, after the merge.
+    """
+    if not torch_mod.cuda.is_available():
+        return
+    major, minor = torch_mod.cuda.get_device_capability(0)
+    sm = major * 10 + minor
+    index, min_torch = stack_for_sm(sm)
+    fix = (f"pip install --force-reinstall 'torch>={min_torch}' torchvision "
+           f"--index-url {index}")
+
+    try:
+        a = torch_mod.randn(64, 64, dtype=torch_mod.bfloat16, device="cuda")
+        (a @ a).sum().item()
+        ok("bf16 matmul runs on the GPU")
+    except Exception as exc:
+        bad(f"bf16 matmul fails on this GPU: {str(exc)[:160]}", fix)
+        return  # nothing else is going to work either
+
+    try:
+        q = torch_mod.randn(1, 4, 8, 64, dtype=torch_mod.bfloat16, device="cuda")
+        torch_mod.nn.functional.scaled_dot_product_attention(q, q, q, is_causal=True)
+        torch_mod.cuda.synchronize()
+        ok("scaled_dot_product_attention runs on the GPU")
+    except Exception as exc:
+        bad(f"sdpa fails on this GPU: {str(exc)[:160]}", fix)
+
+
+def check_flash_attn(torch_mod):
+    """FlashAttention-2 is optional, and on Blackwell it is often not usable.
+
+    The training scripts pass `--flash_attn`; picking fa2 when the installed
+    wheel has no kernels for this arch fails at the first forward pass. flash-attn
+    added sm_100 kernels in 2.8, and a wheel built for sm_100a has none for a
+    B300 -- so the only honest test is a call.
+    """
+    if not have("flash_attn"):
+        # sdpa is the fallback and is always present; on Blackwell it lands on
+        # the cuDNN attention backend, which is fast.
+        warn("flash_attn not installed; use --flash_attn sdpa (the default here)")
+        return
+    try:
+        import flash_attn
+    except Exception as exc:
+        bad(f"flash_attn is installed but fails to import: {str(exc)[:140]}",
+            "pip uninstall -y flash-attn   # then train with --flash_attn sdpa")
+        return
+    ver = getattr(flash_attn, "__version__", "?")
+    if not torch_mod.cuda.is_available():
+        warn(f"flash_attn {ver} installed; cannot test it without a GPU")
+        return
+
+    major, minor = torch_mod.cuda.get_device_capability(0)
+    sm = major * 10 + minor
+    try:
+        from flash_attn import flash_attn_func
+        q = torch_mod.randn(1, 8, 2, 64, dtype=torch_mod.bfloat16, device="cuda")
+        flash_attn_func(q, q, q, causal=True)
+        torch_mod.cuda.synchronize()
+        ok(f"flash_attn {ver} runs on sm_{sm} (--flash_attn fa2 is safe)")
+    except Exception as exc:
+        # Not fatal: sdpa covers it. But it must not be reported as fine, because
+        # the generated training scripts choose between the two.
+        warn(f"flash_attn {ver} does not run on sm_{sm} ({str(exc)[:110]}); "
+             f"train with --flash_attn sdpa")
+
+
+def check_engines(torch_mod):
+    """vllm / lmdeploy carry their own CUDA kernels, with their own arch lists.
+
+    Evaluation goes through lmdeploy TurboMind by default (see the generated
+    OpenCompass configs), and TurboMind ships prebuilt kernels: on a compute
+    capability its wheel predates, it fails at engine start, not at import.
+    """
+    if not torch_mod or not torch_mod.cuda.is_available():
+        return
+    major, minor = torch_mod.cuda.get_device_capability(0)
+    sm = major * 10 + minor
+    if sm < 100:
+        return  # Hopper and older: both engines have shipped kernels for years
+
+    for name, hint in (
+        ("vllm", "pip install -U 'vllm>=0.11.0'  # first releases with sm_103 kernels"),
+        ("lmdeploy", "pip install -U lmdeploy  # or set the OpenCompass model type "
+                     "to the vllm backend"),
+    ):
+        if not have(name):
+            continue
+        try:
+            mod = __import__(name)
+            ver = getattr(mod, "__version__", "?")
+        except Exception as exc:
+            bad(f"{name} is installed but fails to import: {str(exc)[:140]}", hint)
+            continue
+        warn(f"{name} {ver} on sm_{sm}: prebuilt kernels for Blackwell Ultra are "
+             f"recent; if the engine dies at start-up with 'no kernel image', "
+             f"upgrade it ({hint.split('#')[0].strip()})")
 
 
 def check_torchvision(torch_mod):
@@ -236,9 +459,29 @@ def check_search_r1(root):
             f"git clone https://github.com/PeterGriffinJin/Search-R1.git {root}")
 
 
+def report() -> int:
+    """Print the collected fixes, and return the exit status."""
+    print()
+    if not problems:
+        print(f"{GREEN}environment looks good{RESET}")
+        return 0
+
+    print(f"{RED}{len(problems)} problem(s) found.{RESET} Suggested fixes, in order:\n")
+    seen = set()
+    for _, fix in problems:
+        if fix not in seen:
+            seen.add(fix)
+            print(f"  {fix}")
+    print("\nThen re-run: python shadow_rl/check_env.py --full")
+    return 1
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="also check vllm and Search-R1")
+    ap.add_argument("--arch-only", action="store_true",
+                    help="only check torch against this GPU's compute capability "
+                         "(what the setup scripts use to decide on a reinstall)")
     ap.add_argument("--search-r1-root", default=os.environ.get("SEARCH_R1_ROOT",
                                                               os.path.expanduser("~/Search-R1")))
     args = ap.parse_args()
@@ -253,31 +496,30 @@ def main():
 
     print("environment check")
     torch_mod = guarded("torch", check_torch)
+
+    if args.arch_only:
+        if torch_mod:
+            guarded("device arch", check_device_arch, torch_mod)
+            guarded("gpu kernels", check_device_kernels, torch_mod)
+        return report()
+
     if torch_mod:
+        guarded("device arch", check_device_arch, torch_mod)
+        guarded("gpu kernels", check_device_kernels, torch_mod)
         guarded("torch companions", check_siblings, torch_mod)
+        guarded("flash-attn", check_flash_attn, torch_mod)
     guarded("transformers", check_transformers, torch_mod)
     for name, pip_name in (("safetensors", "safetensors"),
                            ("huggingface_hub", "huggingface_hub")):
         guarded(name, check_simple, name, pip_name)
+    guarded("inference engines", check_engines, torch_mod)
 
     if args.full:
         guarded("datasets", check_simple, "datasets", "datasets")
         guarded("vllm", check_simple, "vllm", "vllm")
         guarded("Search-R1", check_search_r1, args.search_r1_root)
 
-    print()
-    if not problems:
-        print(f"{GREEN}environment looks good{RESET}")
-        return 0
-
-    print(f"{RED}{len(problems)} problem(s) found.{RESET} Suggested fixes, in order:\n")
-    seen = set()
-    for _, fix in problems:
-        if fix not in seen:
-            seen.add(fix)
-            print(f"  {fix}")
-    print("\nThen re-run: python shadow_rl/check_env.py --full")
-    return 1
+    return report()
 
 
 if __name__ == "__main__":

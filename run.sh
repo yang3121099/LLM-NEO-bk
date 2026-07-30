@@ -23,6 +23,14 @@ RESULTS_DIR="$WORKSPACE_DIR/results"
 SCRIPT_OUTPUT_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_OUTPUT_DIR"
 
+# --- Hardware profile --------------------------------------------------------
+# Exports GPU_*, ATTN_IMPL and MICRO_BS_HINT for the machine this runs on. The
+# two settings below used to be H100 constants: `--flash_attn fa2`, which has no
+# kernels on a B300, and a micro-batch of 1, which wastes most of a 279 GB card.
+# shellcheck source=scripts/gpu_profile.sh
+source "$WORKSPACE_DIR/scripts/gpu_profile.sh"
+FLASH_ATTN="${FLASH_ATTN:-$ATTN_IMPL}"
+
 # --- Training mode -----------------------------------------------------------
 USE_LORA=true                   # true -> LoRA, false -> full SFT
 is_lora() { [[ "${USE_LORA,,}" == "true" ]]; }
@@ -58,6 +66,24 @@ PER_DEVICE_EVAL_BS=1
 EVAL_STRATEGY="steps"
 EVAL_STEPS=10000
 OVERWRITE_CACHE=false
+
+# Blackwell has room the H100 did not: raise the micro-batch and divide
+# gradient_accumulation_steps by the same factor, so the effective batch size --
+# and therefore the optimisation trajectory -- is exactly what the H100 runs
+# used. Hopper and older are left untouched. Set AUTO_MICRO_BS=false to opt out.
+AUTO_MICRO_BS="${AUTO_MICRO_BS:-true}"
+if [[ "${AUTO_MICRO_BS,,}" == "true" && "$MICRO_BS_HINT" -gt 1 ]]; then
+  if (( GRAD_ACCUM_STEPS % MICRO_BS_HINT == 0 )); then
+    PER_DEVICE_TRAIN_BS=$(( PER_DEVICE_TRAIN_BS * MICRO_BS_HINT ))
+    GRAD_ACCUM_STEPS=$(( GRAD_ACCUM_STEPS / MICRO_BS_HINT ))
+    echo "INFO: $GPU_LABEL -> per_device_train_batch_size=$PER_DEVICE_TRAIN_BS," \
+         "gradient_accumulation_steps=$GRAD_ACCUM_STEPS (effective batch unchanged)"
+  else
+    echo "INFO: gradient_accumulation_steps=$GRAD_ACCUM_STEPS is not divisible by" \
+         "$MICRO_BS_HINT; keeping the batch shape rather than changing the" \
+         "effective batch size"
+  fi
+fi
 
 # --- Helpers -----------------------------------------------------------------
 format_k() {
@@ -169,6 +195,12 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
     echo "# Model     : $MODEL_BASE"
     echo "# LoRA mode : $USE_LORA"
     echo "# Template  : $template"
+    # The hardware this was generated for. A script generated on a B300 and run
+    # on an H100 (or the reverse) has the wrong attention kernel and the wrong
+    # batch shape, and this line is how you find that out.
+    echo "# Generated for : $GPU_LABEL x${GPU_COUNT}${GPU_MEM_GB:+, ${GPU_MEM_GB}GB/GPU}"
+    echo "# Attention : $FLASH_ATTN"
+    echo "# Batch     : per_device=$PER_DEVICE_TRAIN_BS x grad_accum=$GRAD_ACCUM_STEPS"
     echo ""
     # Paths resolved at RUNTIME (where this script is located = scripts/)
     echo '##### Paths (resolved at runtime) #####'
@@ -241,7 +273,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         echo "  --eval_strategy $EVAL_STRATEGY \\"
         echo "  --eval_steps $EVAL_STEPS \\"
         echo "  --trust_remote_code True \\"
-        echo "  --flash_attn fa2 \\"
+        echo "  --flash_attn $FLASH_ATTN \\"
         echo "  --overwrite_cache $OVERWRITE_CACHE \\"
         echo "  --use_fast_tokenizer True"
         echo ""

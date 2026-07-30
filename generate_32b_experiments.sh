@@ -91,7 +91,23 @@ NUM_GPUS=\$(nvidia-smi -L 2>/dev/null | wc -l)
 [[ "\$NUM_GPUS" -lt 1 ]] && NUM_GPUS=1
 echo "INFO: Detected \$NUM_GPUS GPU(s)"
 
+# Attention kernel and micro-batch are resolved here, on the machine that runs
+# the training, not on whichever machine generated this script. \`fa2\` is right
+# on H100 and unavailable on B300 unless flash-attn was built for sm_103; the
+# profile probes it and falls back to sdpa (cuDNN attention) when it is not.
+GPU_PROFILE="\$WORKSPACE_DIR/scripts/gpu_profile.sh"
+FLASH_ATTN=\$(bash "\$GPU_PROFILE" --var ATTN_IMPL 2>/dev/null || true)
+[[ -n "\$FLASH_ATTN" ]] || FLASH_ATTN=fa2
+MICRO_BS_HINT=\$(bash "\$GPU_PROFILE" --var MICRO_BS_HINT 2>/dev/null || true)
+[[ "\$MICRO_BS_HINT" =~ ^[0-9]+\$ ]] || MICRO_BS_HINT=1
+echo "INFO: \$(bash "\$GPU_PROFILE" --var GPU_LABEL 2>/dev/null), attention=\$FLASH_ATTN"
+
 PER_GPU_BS=${PER_GPU_BS}
+# Bigger micro-batch on Blackwell; GRAD_ACCUM below is derived from
+# EFFECTIVE_BS, so the effective batch size does not move.
+if [[ "\${AUTO_MICRO_BS:-true}" == "true" ]]; then
+    PER_GPU_BS=\$(( PER_GPU_BS * MICRO_BS_HINT ))
+fi
 GRAD_ACCUM=\$(( ${EFFECTIVE_BS} / (PER_GPU_BS * NUM_GPUS) ))
 if [[ "\$GRAD_ACCUM" -lt 1 ]]; then
     PER_GPU_BS=1
@@ -156,7 +172,7 @@ llamafactory-cli train \\
   --eval_strategy steps \\
   --eval_steps 10000 \\
   --trust_remote_code True \\
-  --flash_attn fa2 \\
+  --flash_attn \$FLASH_ATTN \\
   --overwrite_output_dir true \\
   --overwrite_cache false \\
   --use_fast_tokenizer True \\

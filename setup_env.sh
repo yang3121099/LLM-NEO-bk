@@ -14,6 +14,13 @@
 #
 #   # Only sync source files (after git pull):
 #   bash setup_env.sh --sync-only
+#
+# The CUDA stack is selected from the GPU generation found on the machine (see
+# scripts/gpu_profile.sh). Hopper and older keep the pins the existing results
+# were produced with; Blackwell (B200 sm_100, B300 sm_103) gets a newer torch,
+# because no torch below 2.7/2.9 has kernels for those devices at all.
+#
+#   FORCE_GPU_CC=10.3 bash setup_env.sh    # build a B300 env from a CPU node
 ###############################################################################
 set -euo pipefail
 
@@ -31,6 +38,10 @@ for arg in "$@"; do
     --sync-only)  SYNC_ONLY=true ;;
   esac
 done
+
+# --- Hardware profile (exports GPU_*, TORCH_*, ATTN_IMPL, VLLM_SPEC) ---
+# shellcheck source=scripts/gpu_profile.sh
+source "${SCRIPT_DIR}/scripts/gpu_profile.sh"
 
 ###############################################################################
 # 0. Helper
@@ -70,24 +81,66 @@ cd "$WORKSPACE"
 pip install -e ".[torch,metrics]" -q
 
 ###############################################################################
-# 3. Core dependencies (pinned versions)
+# 3. Core dependencies (per-generation)
 ###############################################################################
-info "Installing core dependencies ..."
-pip install -q \
-  torch==2.6.0 \
-  transformers==4.51.2 \
-  torchvision \
-  deepspeed \
-  peft==0.15.2 \
-  importlib_metadata \
-  omegaconf
+info "Detected hardware:"
+gpu_profile_refresh_attn   # now that the conda env's python is on PATH
+gpu_profile_summary | sed 's/^/         /'
+
+if gpu_is_blackwell; then
+  # torch 2.6.0 has no sm_100/sm_103 cubins, so the Hopper pin below is not an
+  # option here. torchvision must come from the SAME index as torch: pip will
+  # otherwise take it from PyPI, and a CUDA major mismatch between the two
+  # surfaces much later as a bogus "Could not import module 'Qwen2ForCausalLM'".
+  info "Installing torch for ${GPU_LABEL}: ${TORCH_SPEC} from ${TORCH_INDEX}"
+  pip install -q --index-url "$TORCH_INDEX" "$TORCH_SPEC" torchvision \
+    || error "torch install failed. Override the wheel index if this machine
+       needs a different CUDA, e.g.
+         TORCH_INDEX=https://download.pytorch.org/whl/cu129 bash setup_env.sh"
+
+  # deepspeed JIT-compiles its ops against the installed torch; without an arch
+  # list it builds for the arch of whatever GPU it happens to see, or for none.
+  export TORCH_CUDA_ARCH_LIST
+  info "Installing the rest (TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST}) ..."
+  pip install -q \
+    transformers==4.52.1 \
+    deepspeed \
+    peft==0.15.2 \
+    importlib_metadata \
+    omegaconf
+else
+  info "Installing core dependencies (legacy ${GPU_FAMILY} stack) ..."
+  pip install -q \
+    torch==2.6.0 \
+    transformers==4.51.2 \
+    torchvision \
+    deepspeed \
+    peft==0.15.2 \
+    importlib_metadata \
+    omegaconf
+fi
 
 ###############################################################################
 # 4. OpenCompass + eval backends
 ###############################################################################
 info "Installing OpenCompass ..."
 cd "$WORKSPACE/opencompass"
-pip install -q ".[vllm]"
+if gpu_is_blackwell; then
+  # OpenCompass's [vllm] extra asks for a bare `vllm`, which resolves a torch
+  # from PyPI — and the default PyPI torch build is not compiled for sm_103.
+  # Install OpenCompass without the extra, then vllm with the CUDA-matched index
+  # visible so the resolver can keep the torch we just installed.
+  pip install -q "."
+  info "Installing ${VLLM_SPEC} with ${TORCH_INDEX} as an extra index ..."
+  pip install -q --extra-index-url "$TORCH_INDEX" "$VLLM_SPEC" || {
+    warn "vllm install failed on ${GPU_LABEL}."
+    warn "Blackwell needs a vllm wheel built against CUDA >= 12.9. If PyPI has"
+    warn "none, use the NGC container (docker/docker-cuda, BASE_IMAGE pinned to"
+    warn "a Blackwell-ready NGC release) or vllm's own wheel index."
+  }
+else
+  pip install -q ".[vllm]"
+fi
 
 info "Installing lmdeploy + eval tools ..."
 pip install -q \
@@ -154,6 +207,17 @@ print(f'  peft:         {peft.__version__}')
 print(f'  lmdeploy:     {lmdeploy.__version__}')
 print(f'  CUDA:         {torch.cuda.is_available()} ({torch.cuda.device_count()} GPUs)')
 " 2>/dev/null || warn "Some imports failed, check versions"
+
+# The failure mode this catches: a torch that imports fine, reports the GPU, and
+# then dies on the first matmul with "no kernel image is available for execution
+# on the device" because the wheel carries no cubin for this compute capability.
+if ! python3 "$WORKSPACE/shadow_rl/check_env.py" >/tmp/setup_env_check.log 2>&1; then
+  warn "Environment check reported problems:"
+  sed 's/^/         /' /tmp/setup_env_check.log >&2
+  warn "Full output: python3 shadow_rl/check_env.py --full"
+else
+  info "Environment check passed (python3 shadow_rl/check_env.py)"
+fi
 
 python3 -c "
 from llamafactory.train import run_exp

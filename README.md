@@ -8,6 +8,12 @@ Shadow-FT fine-tunes a *Base* language model with LoRA to obtain lightweight del
 
 ## Install
 
+The pins below are the H100 (`sm_90`) stack. On a Blackwell node — B200
+(`sm_100`) or B300 (`sm_103`) — torch 2.6.0 has no kernels for the GPU at all;
+use `bash setup_env.sh`, which selects the stack from the hardware it finds, and
+read **[docs/B300_PRODUCTION.md](docs/B300_PRODUCTION.md)**. `bash
+scripts/gpu_profile.sh --print` reports what any given node needs.
+
 ```bash
 conda create -n factory python=3.10 -y
 conda activate factory
@@ -81,7 +87,12 @@ python upload_hf.py
 ```
 .
 ├── run.sh                      # Pipeline generator (start here)
-├── scripts/                    # Auto-generated training scripts
+├── setup_env.sh                # One-shot env build (hardware-aware)
+├── docs/
+│   └── B300_PRODUCTION.md      # Running on Blackwell / B300 instead of H100
+├── scripts/
+│   ├── gpu_profile.sh          # GPU generation -> torch/attention/batch stack
+│   └── ...                     # Auto-generated training scripts
 ├── results/                    # Training outputs & merged models
 ├── data/                       # Training datasets
 ├── examples/

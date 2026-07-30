@@ -1,7 +1,25 @@
 # Default use the NVIDIA official image with PyTorch 2.6.0
 # https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/index.html
+#
+# 24.12 is a CUDA 12.6 release: right for H100 (sm_90), and it has no kernels at
+# all for Blackwell. For a B300 (sm_103) build, pass an NGC release whose CUDA is
+# 12.9 or newer, and set TORCH_CUDA_ARCH_LIST so anything compiled here (flash
+# attention, deepspeed ops) targets this arch instead of the builder's GPU:
+#
+#   docker build \
+#     --build-arg BASE_IMAGE=nvcr.io/nvidia/pytorch:25.09-py3 \
+#     --build-arg CUDA_ARCH_LIST=10.3a \
+#     -f docker/docker-cuda/Dockerfile .
+#
+# `bash scripts/gpu_profile.sh --print` on the target node prints both values.
 ARG BASE_IMAGE=nvcr.io/nvidia/pytorch:24.12-py3
 FROM ${BASE_IMAGE}
+
+# Compute capabilities to generate code for. Hopper by default; 10.3a for B300,
+# 10.0a for B200. The `a` suffix is required by the FP8/NVFP4 CUTLASS kernels and
+# is arch-exact: code built as sm_100a does NOT run on a B300.
+ARG CUDA_ARCH_LIST=9.0
+ENV TORCH_CUDA_ARCH_LIST=${CUDA_ARCH_LIST}
 
 # Define environments
 ENV MAX_JOBS=4

@@ -14,6 +14,11 @@ RESULTS_DIR="$WORKSPACE_DIR/results"
 SCRIPT_OUTPUT_DIR="$WORKSPACE_DIR/scripts"
 mkdir -p "$RESULTS_DIR" "$SCRIPT_OUTPUT_DIR"
 
+# --- Hardware profile (attention kernel, micro-batch) ------------------------
+# shellcheck source=scripts/gpu_profile.sh
+source "$WORKSPACE_DIR/scripts/gpu_profile.sh"
+FLASH_ATTN="${FLASH_ATTN:-$ATTN_IMPL}"
+
 # --- Training mode -----------------------------------------------------------
 USE_LORA=true
 is_lora() { [[ "${USE_LORA,,}" == "true" ]]; }
@@ -50,6 +55,19 @@ PER_DEVICE_EVAL_BS=1
 EVAL_STRATEGY="steps"
 EVAL_STEPS=10000
 OVERWRITE_CACHE=false
+
+# Blackwell: raise the micro-batch, divide grad_accum by the same factor. Both
+# the effective batch size and SAVE_STEPS' meaning (a checkpoint every ~2k
+# samples) depend only on their product, so neither moves. AUTO_MICRO_BS=false
+# opts out.
+AUTO_MICRO_BS="${AUTO_MICRO_BS:-true}"
+if [[ "${AUTO_MICRO_BS,,}" == "true" && "$MICRO_BS_HINT" -gt 1 ]] \
+   && (( GRAD_ACCUM_STEPS % MICRO_BS_HINT == 0 )); then
+  PER_DEVICE_TRAIN_BS=$(( PER_DEVICE_TRAIN_BS * MICRO_BS_HINT ))
+  GRAD_ACCUM_STEPS=$(( GRAD_ACCUM_STEPS / MICRO_BS_HINT ))
+  echo "INFO: $GPU_LABEL -> per_device_train_batch_size=$PER_DEVICE_TRAIN_BS," \
+       "gradient_accumulation_steps=$GRAD_ACCUM_STEPS (effective batch unchanged)"
+fi
 
 # --- Helpers -----------------------------------------------------------------
 format_k() {
@@ -229,7 +247,7 @@ for PAIR in "${MODEL_PAIRS[@]}"; do
         echo "  --eval_strategy $EVAL_STRATEGY \\"
         echo "  --eval_steps $EVAL_STEPS \\"
         echo "  --trust_remote_code True \\"
-        echo "  --flash_attn fa2 \\"
+        echo "  --flash_attn $FLASH_ATTN \\"
         echo "  --overwrite_cache $OVERWRITE_CACHE \\"
         echo "  --use_fast_tokenizer True"
         echo ""

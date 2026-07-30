@@ -159,6 +159,35 @@ def main():
     check("broken dependency reported without traceback", "Traceback" not in out)
     check("still exits non-zero", proc.returncode != 0)
 
+    print("\n[9] compute capability: which kernels can run on which device")
+    # The H100 -> B300 move: torch 2.6.0's arch list stops at sm_90, so every
+    # kernel launch on an sm_103 device fails. And a Blackwell wheel built
+    # arch-conditionally for a B200 (sm_100a) is no help either -- `a` code is
+    # arch-exact, which is the part that surprises people.
+    hopper_wheel = ["sm_50", "sm_60", "sm_70", "sm_75", "sm_80", "sm_86", "sm_90"]
+    arch_cases = [
+        (["sm_103"], 103, "cubin", "native kernels"),
+        (["sm_103a"], 103, "cubin", "arch-conditional, right arch"),
+        (["sm_100a"], 103, None, "arch-conditional for a B200 -- does NOT run on B300"),
+        (["sm_100"], 103, "compat", "plain sm_100 is minor-version compatible"),
+        (["sm_103"], 100, None, "no backwards compatibility to an earlier minor"),
+        (["compute_100"], 103, "ptx", "PTX only -- JITs, works"),
+        (["compute_100", "sm_103"], 103, "cubin", "a cubin beats PTX"),
+        (["sm_120"], 103, None, "different family"),
+        (hopper_wheel, 103, None, "a Hopper-era torch on a B300"),
+        (hopper_wheel, 90, "cubin", "the same torch on the H100 it was built for"),
+        ([], 103, None, "empty arch list"),
+        (["not_an_arch", "sm_", "compute_x"], 103, None, "junk tags"),
+    ]
+    for arch_list, sm, want, label in arch_cases:
+        got = ce.arch_support(arch_list, sm)
+        check(f"{arch_list} on sm_{sm} -> {want!r}  [{label}]", got == want, f"got {got!r}")
+
+    check("B300 is told to install a torch that has sm_103",
+          ce.stack_for_sm(103) == ("https://download.pytorch.org/whl/cu130", "2.9.0"))
+    check("Hopper keeps the stack its results were produced with",
+          ce.stack_for_sm(90) == ("https://download.pytorch.org/whl/cu126", "2.6.0"))
+
     print("\n" + "=" * 60)
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

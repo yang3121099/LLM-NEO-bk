@@ -1,0 +1,189 @@
+# Environment setup, spelled out
+
+`setup.sh` does all of this for you. This page is the same thing as plain
+commands, for when you would rather run them yourself, adapt them, or see
+exactly what is being installed.
+
+Two paths: **conda** (self-contained, recommended for a fresh box) or **venv**
+(if the system Python is already what you want). Pick one.
+
+---
+
+## 0. What the machine needs
+
+| | why |
+|---|---|
+| NVIDIA driver + GPU | evaluation and training; merge/similarity run on CPU |
+| **CUDA 13.0 build of torch** if the GPU is **B200/B300** | Blackwell is `sm_100`; a cu12 wheel has no kernels for it and fails at every launch, not at import |
+| ~130 GB disk with `--cleanup`, ~600 GB without | fp32 RL checkpoints are ~2× the bf16 originals |
+| Java 21 + ~70 GB | only for the BM25 retrieval used by the `SearchR1-*` pairs |
+
+Check what you have:
+
+```bash
+nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv
+# compute_cap 10.x or 12.x  -> Blackwell, use CUDA 13.0
+# compute_cap 9.0           -> H100/H200,  CUDA 12.8 is fine
+```
+
+---
+
+## 1. Conda path
+
+```bash
+# --- environment -----------------------------------------------------------
+conda create -y -n shadow-rl python=3.11
+conda activate shadow-rl
+
+# --- torch: pick the index matching your GPU -------------------------------
+# B200 / B300 (Blackwell, sm_100):
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# H100 / H200 (Hopper, sm_90) instead:
+# pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+
+# torchvision must come from the SAME index as torch. transformers imports it
+# inside image_utils, and a CUDA mismatch surfaces much later as a confusing
+# "Could not import module 'Qwen2ForCausalLM'".
+
+# --- the rest ---------------------------------------------------------------
+pip install -U pip setuptools numpy
+pip install safetensors huggingface_hub transformers datasets accelerate requests pandas pyarrow
+pip install vllm
+
+# --- the evaluation harness -------------------------------------------------
+git clone https://github.com/PeterGriffinJin/Search-R1.git ~/Search-R1
+export SEARCH_R1_ROOT=~/Search-R1
+
+# --- verify -----------------------------------------------------------------
+python shadow_rl/check_env.py --full
+```
+
+`check_env.py` compares your GPU's compute capability against
+`torch.cuda.get_arch_list()`, which is the decisive test — not the CUDA version
+string.
+
+## 1b. venv path
+
+Identical, only the first two lines differ:
+
+```bash
+python3 -m venv ~/shadow-rl-venv
+source ~/shadow-rl-venv/bin/activate
+```
+
+---
+
+## 2. BM25 retrieval — only for the `SearchR1-*` pairs
+
+The `R1-*` (no-search) pairs skip this entirely.
+
+```bash
+# Java 21: pyserini wraps Lucene, and an older JDK fails at query time
+apt-get install -y openjdk-21-jdk-headless
+# no root? conda works too:
+# conda install -y -c conda-forge openjdk=21 maven
+
+pip install -U faiss-cpu pyserini
+
+# corpus + index, ~70 GB, into the working tree (not $HOME)
+./shadow_rl/launch_bm25_retriever.sh          # downloads then serves on :8000
+```
+
+Leave that running in its own shell, or let `run_all.sh --auto-retriever` start
+and stop it for you.
+
+If `import pyserini` fails, check `JAVA_HOME`:
+
+```bash
+java -version
+export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+```
+
+---
+
+## 3. verl — only for the math track
+
+```bash
+git clone https://github.com/volcengine/verl ~/verl
+export VERL_ROOT=~/verl
+pip install -e ~/verl        # or follow verl's own install guide
+```
+
+---
+
+## 4. Where things land
+
+| what | where | override |
+|---|---|---|
+| downloaded models | standard HuggingFace cache (`~/.cache/huggingface/hub`) | `SHADOW_RL_MODEL_DIR` |
+| merged models | `shadow_rl/merged/` | `MERGED_DIR` |
+| BM25 corpus + index | `corpus/` in the working tree | `CORPUS_DIR` |
+| verl parquets | `datasets/` in the working tree | — |
+| results, logs | `shadow_rl/`, `shadow_rl/logs/` | `RESULTS`, `LOG_DIR` |
+
+To keep the HuggingFace *dataset* cache in the working tree as well:
+
+```bash
+export HF_DATASETS_CACHE=$PWD/hf_datasets
+```
+
+---
+
+## 5. Put it in your shell profile
+
+```bash
+cat >> ~/.bashrc <<'EOF'
+conda activate shadow-rl              # or: source ~/shadow-rl-venv/bin/activate
+export SEARCH_R1_ROOT=$HOME/Search-R1
+export VERL_ROOT=$HOME/verl
+EOF
+```
+
+---
+
+## 6. First run
+
+```bash
+python shadow_rl/check_env.py --full          # should be all green
+
+# smallest thing that proves the pipeline works: one pair, one dataset
+./shadow_rl/run_all.sh --pairs demo --datasets nq --sample 200 \
+    --auto-retriever --yes
+
+python shadow_rl/report.py
+```
+
+The CPU test suites need no GPU and no model, and are worth running once after
+setup:
+
+```bash
+for t in merge similarity resume check_env report pairs; do
+    python shadow_rl/tests/test_$t.py | tail -1
+done
+python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT | tail -1
+python shadow_rl/verl_math/math_reward.py | tail -1
+```
+
+---
+
+## Troubleshooting
+
+**`Could not import module 'Qwen2ForCausalLM'`** — a CUDA mismatch between torch
+and `torchvision`/`torchaudio`/`torchcodec`, not a transformers problem. Read the
+error to see *which* package it names, then reinstall that one from the index
+matching your torch:
+
+```bash
+python -c 'import torch; print(torch.version.cuda)'      # e.g. 13.0
+pip install --force-reinstall torchaudio --index-url https://download.pytorch.org/whl/cu130
+```
+
+Do **not** uninstall `torchvision` to dodge this: vllm imports it during kernel
+warmup and will not start without it. `torchaudio` and `torchcodec` are needed by
+nothing here, so removing those is fine.
+
+**`no kernels for sm_100`** — a cu12 torch on a Blackwell GPU. Reinstall from the
+cu130 index.
+
+**Gated repos** — Llama originals and GPQA-Diamond need the licence accepted on
+their model page, then `huggingface-cli login`.

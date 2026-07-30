@@ -19,7 +19,10 @@
 #                  groups intersect:  'v0.3,grpo'  = the v0.3 GRPO pairs
 #                  a leading - excludes: 'all,-v0.2' = everything but v0.2
 #                  or explicit ids: <pair_id>[,<pair_id>...]
-#   --stages X     comma list of: similarity,merge,eval,aggregate   (default all)
+#   --stages X     comma list of: similarity,merge,eval,aggregate
+#                  default 'merge,eval,aggregate' -- similarity (per-parameter
+#                  sigma) is diagnostic and costs a full pass over four
+#                  checkpoints per pair, so ask for it explicitly.
 #   --roles X      comma list of roles to evaluate  (default all four)
 #   --limit N      first N questions per dataset; biased, smoke runs only
 #   --sample N     deterministic random N per dataset, identical across roles.
@@ -48,7 +51,10 @@ cd "$REPO_ROOT"
 
 # ---- defaults -------------------------------------------------------------- #
 PAIRS_SEL="nosearch"
-STAGES="similarity,merge,eval,aggregate"
+# similarity is NOT in the default: it streams four whole checkpoints per pair
+# to compute per-parameter sigma, which is diagnostic rather than part of the
+# result. Ask for it explicitly with --stages similarity,merge,eval,aggregate.
+STAGES="merge,eval,aggregate"
 ROLES="base_baseline,instruct_baseline,rl_on_instruct,rl_on_base,shadow"
 FAST=0
 LIMIT=""
@@ -118,7 +124,7 @@ done
 if [[ $FAST -eq 1 ]]; then
     [[ "$PAIRS_SEL" == "nosearch" ]] && PAIRS_SEL="ppo-nosearch-3b-v0.2"
     [[ -z "$SAMPLE" && -z "$LIMIT" ]] && SAMPLE=200
-    [[ "$STAGES" == "similarity,merge,eval,aggregate" ]] && STAGES="merge,eval,aggregate"
+    :   # --fast leaves the stage list alone; similarity is already opt-in
     # nq + hotpotqa are in-domain; musique + bamboogle are out-of-domain and
     # small (2.4k and 125 rows), so they add generalisation signal almost free.
     # Skipped: triviaqa/popqa/2wiki, the three largest, which say little that
@@ -551,7 +557,7 @@ PY
             log "  merge: W_shadow = W_I + (RL(W_B) - W_B)"
             if python3 shadow_rl/merge.py \
                     --base "$BASE" --instruct "$INSTRUCT" \
-                    --rl-base "$RL_BASE" --rl-instruct "$RL_INSTRUCT" \
+                    --rl-base "$RL_BASE" \
                     --out "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
                 ok "  merged -> $SHADOW_PATH"
             else
@@ -561,9 +567,12 @@ PY
             fi
         else
             log "  merge: W_shadow = W_I + (RL(W_B) - W_B)"
+            # --rl-instruct is deliberately omitted: it only adds the
+            # instruct-side delta magnitude to the printout and costs a full
+            # extra pass over that checkpoint.
             if python3 shadow_rl/merge.py \
                     --base "$BASE" --instruct "$INSTRUCT" \
-                    --rl-base "$RL_BASE" --rl-instruct "$RL_INSTRUCT" \
+                    --rl-base "$RL_BASE" \
                     --out "$SHADOW_PATH" 2>&1 | tee -a "$PAIR_LOG"; then
                 ok "  merged -> $SHADOW_PATH"
             else

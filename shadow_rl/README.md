@@ -15,6 +15,10 @@ Five models per pair — `W_B` and `W_I` (the raw HF checkpoints), `RL(W_I)`,
 `RL(W_B)`, and `W_shadow` — over seven QA sets, Exact Match. Zero training;
 weight arithmetic plus evaluation.
 
+Setup written out as plain commands: **[SETUP.md](SETUP.md)** — conda or venv,
+CUDA choice for Blackwell vs Hopper, BM25 dependencies, verl, and where
+everything lands. `setup.sh` automates the same steps.
+
 ## Quickstart, from nothing
 
 ```bash
@@ -59,6 +63,8 @@ Before committing to a full run, look at the plan:
 | `report.py` | terminal comparison table — printed automatically after every run |
 | `discover.py` | probes HuggingFace for unreleased-but-plausible pairs |
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
+| `run_eval_parallel.py` | spreads one pair's (role, dataset) cells across the GPUs |
+| `SETUP.md` | the environment setup as explicit copy-pasteable commands |
 | `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
 The tests need no GPU and no model:
@@ -113,7 +119,7 @@ below; the current default merges over the intersection and does not stop.
 | option | meaning |
 |---|---|
 | `--pairs X` | groups (see below) or explicit pair ids |
-| `--stages X` | subset of `similarity,merge,eval,aggregate` |
+| `--stages X` | subset of `similarity,merge,eval,aggregate`; default omits `similarity` |
 | `--roles X` | subset of the four model roles |
 | `--limit N` | first N questions per dataset — biased, smoke runs only |
 | `--sample N` | deterministic random N per dataset, identical across roles |
@@ -413,6 +419,20 @@ treat SimpleQA numbers as a different metric from the other columns, not a
 comparable one.
 
 ## Parameter-level similarity
+
+**Not run by default.** It streams four whole checkpoints per pair to compute
+per-parameter σ, which is diagnostic rather than part of the result, so it is
+opt-in:
+
+```bash
+./shadow_rl/run_all.sh --pairs demo --stages similarity,merge,eval,aggregate --yes
+./shadow_rl/run_all.sh --pairs all --stages similarity --yes     # just the stats, no GPU
+```
+
+The merge still prints σ and the base-side delta magnitude — those are
+accumulated during the merge pass itself and cost nothing extra. Only the
+instruct-side delta needs a separate pass, and `run_all.sh` no longer requests
+it; pass `--rl-instruct` to `merge.py` directly if you want that figure.
 
 `similarity.py` runs before any merging and writes two CSVs —
 `similarity_params.csv` (one row per parameter tensor) and

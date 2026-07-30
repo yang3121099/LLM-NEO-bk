@@ -66,7 +66,6 @@ else
         --base "$BASE" \
         --instruct "$INSTRUCT" \
         --rl-base "$RL_BASE" \
-        --rl-instruct "$RL_INSTRUCT" \
         --out "$SHADOW_DIR"
 fi
 

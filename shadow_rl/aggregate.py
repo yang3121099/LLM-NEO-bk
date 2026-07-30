@@ -52,6 +52,8 @@ def load(path: str):
     results: Dict[str, Dict[str, Dict[str, float]]] = defaultdict(lambda: defaultdict(dict))
     # counts[dataset] = set of question counts seen, to detect sampled runs
     counts: Dict[str, set] = defaultdict(set)
+    # nmap[pair][role][dataset] = questions scored, needed for standard errors
+    nmap: Dict[str, Dict[str, Dict[str, int]]] = defaultdict(lambda: defaultdict(dict))
     with open(path, newline="") as fh:
         for row in csv.DictReader(fh):
             with_search = str(row["with_search"]).lower() == "true"
@@ -59,8 +61,39 @@ def load(path: str):
             pair_id = f"{row['algo']}-{tag}-{row['size']}-{row['version']}"
             results[pair_id][row["model_role"]][row["dataset"]] = float(row["em"])
             if row.get("n_questions"):
-                counts[row["dataset"]].add(int(row["n_questions"]))
-    return results, counts
+                n = int(row["n_questions"])
+                counts[row["dataset"]].add(n)
+                nmap[pair_id][row["model_role"]][row["dataset"]] = n
+    return results, counts, nmap
+
+
+def se_avg(per_dataset: Dict[str, float], per_n: Dict[str, int]) -> Optional[float]:
+    """Standard error of the dataset-averaged EM.
+
+    EM on one dataset is a mean of Bernoulli trials, so its variance is
+    p(1-p)/n; the equally-weighted average over k datasets has variance
+    sum(var_i)/k^2. Sampling error only -- it says nothing about how well the
+    subsample represents the full test set beyond its size.
+    """
+    present = [d for d in DATASETS if d in per_dataset and per_n.get(d)]
+    if not present:
+        return None
+    var = sum(per_dataset[d] * (1 - per_dataset[d]) / per_n[d] for d in present)
+    return (var ** 0.5) / len(present)
+
+
+def se_diff(a_em, a_n, b_em, b_n) -> Optional[float]:
+    """Conservative standard error on the difference of two averages.
+
+    Both models are scored on the *same* sampled questions, so the paired error
+    is smaller than this; results.csv keeps only per-dataset means, not
+    per-question outcomes, so the independent-samples bound is what we can
+    compute. Treat it as an upper bound on the noise.
+    """
+    sa, sb = se_avg(a_em, a_n), se_avg(b_em, b_n)
+    if sa is None or sb is None:
+        return None
+    return (sa ** 2 + sb ** 2) ** 0.5
 
 
 def avg(per_dataset: Dict[str, float]) -> Optional[float]:
@@ -357,7 +390,7 @@ def main() -> None:
     ap.add_argument("--results", default="shadow_rl/results.csv")
     ap.add_argument("--out", default="shadow_rl/FINDINGS.md")
     args = ap.parse_args()
-    results, counts = load(args.results)
+    results, counts, _ = load(args.results)
     render(results, counts, args.out)
 
 

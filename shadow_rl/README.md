@@ -479,6 +479,22 @@ python shadow_rl/report.py --no-color > results.txt         # for pasting
   harness check:  RL(W_B) 0.182 vs 0.177 published (+0.005) ok | ...
 ```
 
+Each average carries a `±se` — the sampling standard error, from the Bernoulli
+variance of EM at the question count actually used. Every margin is then judged
+against it:
+
+| verdict | meaning |
+|---|---|
+| `solid (|d| > 2×se)` | margin clears roughly 95% confidence |
+| `weak` | margin is between 1 and 2 se — suggestive, needs more questions |
+| `WITHIN NOISE` | margin is smaller than its own standard error — not a result |
+
+This matters at small `--sample`: at n=200 over 4 datasets the error on a margin
+is around ±0.02, so a `+0.005` difference is indistinguishable from zero. The
+bound is conservative — both models are scored on the *same* sampled questions,
+so the true paired error is smaller — but if a margin does not clear it, raise
+`--sample` before believing it.
+
 `*` marks in-domain sets, `!` marks a role missing data the others have, and the
 best value in each column is bolded. With two or more pairs an overview table is
 appended tallying how often `W_shadow` beat `RL(W_I)`.

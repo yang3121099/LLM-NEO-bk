@@ -108,8 +108,11 @@ def main():
                 and re.search(r"\d\.\d{3}", ln)]
         check("one row per role", len(rows) == 5, f"{len(rows)} rows")
         widths = {len(ln.rstrip()) for ln in rows}
+        # 4 datasets + Avg + the ±se figure appended to each row.
         numbers = [len(re.findall(r"\d\.\d{3}", ln)) for ln in rows]
-        check("every row has 4 datasets + Avg", set(numbers) == {5}, f"{numbers}")
+        check("every row has 4 datasets + Avg + se", set(numbers) == {6}, f"{numbers}")
+        check("standard error shown per row",
+              all("±" in ln for ln in rows), f"{[ln[-12:] for ln in rows]}")
 
         print("\n[4] a role missing a dataset is flagged")
         write_csv(csv_path, [("v0.2", "3b", "ppo", False, {
@@ -149,7 +152,39 @@ def main():
         check("selected pair shown", "grpo-search-3b-v0.3" in out)
         check("other pair hidden", "ppo-nosearch-3b-v0.2" not in out)
 
-        print("\n[8] --progress shows live completion")
+        print("\n[8] margins are judged against the noise floor")
+        # n=200 with a tiny margin must be called noise, not a result.
+        write_csv(csv_path, [("v0.2", "3b", "grpo", True, {
+            "rl_on_instruct": flat(0.320), "rl_on_base": flat(0.300),
+            "shadow": flat(0.325)})])
+        out = run("report.py", "--results", csv_path, "--no-color").stdout
+        check("tiny margin flagged as noise", "WITHIN NOISE" in out)
+        check("noise verdict names the se", re.search(r"se=0\.\d{4}", out) is not None)
+
+        # A margin several se wide must be called solid.
+        write_csv(csv_path, [("v0.2", "3b", "grpo", True, {
+            "rl_on_instruct": flat(0.20), "rl_on_base": flat(0.20),
+            "shadow": flat(0.40)})])
+        out = run("report.py", "--results", csv_path, "--no-color").stdout
+        check("wide margin flagged as solid", "solid" in out and "WITHIN NOISE" not in out)
+
+        # More questions shrink the error, so the same margin becomes solid.
+        import importlib
+        import aggregate as ag
+        importlib.reload(ag)
+        em, small_n = flat(0.30), {d: 200 for d in DS}
+        big_n = {d: 20000 for d in DS}
+        se_small = ag.se_avg(em, small_n)
+        se_big = ag.se_avg(em, big_n)
+        check("se shrinks with more questions", se_big < se_small,
+              f"{se_big:.5f} < {se_small:.5f}")
+        check("se scales as 1/sqrt(n)", abs(se_small / se_big - 10.0) < 0.1,
+              f"ratio {se_small / se_big:.2f} vs 10")
+        check("se_diff exceeds either se alone",
+              ag.se_diff(em, small_n, em, small_n) > se_small)
+        check("se is None without counts", ag.se_avg(em, {}) is None)
+
+        print("\n[9] --progress shows live completion")
         # A run in flight: two roles complete, one partway, two not started.
         write_csv(csv_path, [("v0.2", "3b", "ppo", False, {
             "base_baseline": flat(0.05),
@@ -170,7 +205,7 @@ def main():
         check("progress bar drawn", "█" in out and "░" in out)
         check("says it is resumable", "Ctrl-C is safe" in out)
 
-        print("\n[9] --progress on an untouched run does not crash")
+        print("\n[10] --progress on an untouched run does not crash")
         empty0 = os.path.join(tmp, "e0.csv")
         with open(empty0, "w", newline="") as fh:
             csv.DictWriter(fh, fieldnames=FIELDS).writeheader()
@@ -178,7 +213,7 @@ def main():
         check("exits cleanly", p.returncode == 0)
         check("reports nothing scored", "no results yet" in p.stdout)
 
-        print("\n[10] empty results does not crash")
+        print("\n[11] empty results does not crash")
         empty = os.path.join(tmp, "e.csv")
         with open(empty, "w", newline="") as fh:
             csv.DictWriter(fh, fieldnames=FIELDS).writeheader()

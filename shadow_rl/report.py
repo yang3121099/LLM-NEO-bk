@@ -17,7 +17,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from aggregate import avg, is_complete, load  # noqa: E402
+from aggregate import avg, is_complete, load, se_avg, se_diff  # noqa: E402
 from pairs import (  # noqa: E402
     DATASETS, IN_DOMAIN, MODEL_ROLES, PAIRS, reference_avg, reference_for,
 )
@@ -77,7 +77,7 @@ def fmt_em(x, st: Style, best=False):
     return st.bold(s) if best else s
 
 
-def render_pair(pair, roles_data, counts, st: Style, out):
+def render_pair(pair, roles_data, nmap, counts, st: Style, out):
     present = [d for d in DATASETS if any(d in roles_data.get(r, {}) for r in MODEL_ROLES)]
     if not present:
         return
@@ -103,7 +103,7 @@ def render_pair(pair, roles_data, counts, st: Style, out):
         if d in IN_DOMAIN:
             name += "*"
         header += st.pad(name, col_w, right=False)
-    header += st.pad("Avg", col_w + 2, right=False)
+    header += st.pad("Avg", col_w + 2, right=False) + "  ±se"
     out.append(st.dim(header))
     out.append(st.dim("  " + "─" * 94))
 
@@ -139,6 +139,9 @@ def render_pair(pair, roles_data, counts, st: Style, out):
         if a is not None and len(per) < len(present):
             cell += st.yellow("!")
         line += st.pad(cell, col_w + 2, right=False)
+        sd = se_avg(per, nmap.get(role, {}))
+        if sd is not None:
+            line += st.dim(f"  ±{sd:.3f}")
         out.append(line)
 
     # ---- the two margins the experiment is about --------------------------- #
@@ -151,10 +154,22 @@ def render_pair(pair, roles_data, counts, st: Style, out):
             if other is None:
                 continue
             d = shadow_avg - other
+            sd = se_diff(roles_data.get("shadow", {}), nmap.get("shadow", {}),
+                         roles_data.get(competitor, {}), nmap.get(competitor, {}))
             mark = st.green("WIN ") if d > 0 else (st.red("LOSS") if d < 0 else st.yellow("TIE "))
-            out.append(f"  {mark}  shadow − {label:<8} = "
-                       + (st.green if d > 0 else st.red)(f"{d:+.4f}")
-                       + st.dim(f"    ({shadow_avg:.4f} vs {other:.4f})"))
+            line = (f"  {mark}  shadow − {label:<8} = "
+                    + (st.green if d > 0 else st.red)(f"{d:+.4f}")
+                    + st.dim(f"    ({shadow_avg:.4f} vs {other:.4f})"))
+            if sd is not None:
+                # 2 SE ~ 95%. The bound is conservative: both models saw the same
+                # questions, so the paired error is smaller than this.
+                if abs(d) >= 2 * sd:
+                    line += st.green(f"    solid (|d| > 2×se={2 * sd:.4f})")
+                elif abs(d) >= sd:
+                    line += st.yellow(f"    weak (se={sd:.4f}, needs more questions)")
+                else:
+                    line += st.red(f"    WITHIN NOISE (se={sd:.4f}) — not a result yet")
+            out.append(line)
 
     # ---- reproduction against the published numbers ------------------------ #
     checks = []
@@ -246,7 +261,7 @@ def main() -> None:
     args = ap.parse_args()
 
     st = Style(not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
-    results, counts = load(args.results)
+    results, counts, nmap = load(args.results)
 
     if args.progress:
         show_progress(results, args, st)
@@ -264,7 +279,8 @@ def main() -> None:
             continue
         if pair.pair_id not in results:
             continue
-        render_pair(pair, results[pair.pair_id], counts, st, out)
+        render_pair(pair, results[pair.pair_id], nmap.get(pair.pair_id, {}),
+                    counts, st, out)
         shown += 1
 
     if shown > 1:
@@ -292,14 +308,21 @@ def main() -> None:
                     line += st.pad(st.dim("  -  "), 13, right=False)
                     continue
                 d = a["shadow"] - a[competitor]
+                sd = se_diff(rd.get("shadow", {}), nmap.get(pair.pair_id, {}).get("shadow", {}),
+                             rd.get(competitor, {}),
+                             nmap.get(pair.pair_id, {}).get(competitor, {}))
                 if competitor == "rl_on_instruct":
                     wins += d > 0
                     losses += d < 0
-                line += st.pad((st.green if d > 0 else st.red)(f"{d:+.4f}"), 13, right=False)
+                txt = f"{d:+.4f}"
+                if sd is not None and abs(d) < sd:
+                    txt += "?"          # inside the noise floor
+                line += st.pad((st.green if d > 0 else st.red)(txt), 13, right=False)
             out.append(line)
         out.append("")
         verdict = f"  shadow beats RL(W_I) on {wins}/{wins + losses} pair(s)"
         out.append(st.green(verdict) if wins > losses else st.yellow(verdict))
+        out.append(st.dim("  ? marks a margin smaller than its own standard error"))
 
     if not shown:
         out.append("")

@@ -62,7 +62,6 @@ if [[ $DEMO -eq 1 ]]; then
                  trainer.save_freq=4
                  trainer.test_freq=4
                  data.max_response_length=1024
-                 +data.val_max_response_length=2048
                  actor_rollout_ref.rollout.n=4)
     [[ "$K" == "4" ]] && K=1
 fi
@@ -100,6 +99,20 @@ if has train && [[ "$N_GPUS" -lt 1 ]]; then
 fi
 if has eval && [[ "$N_GPUS" -lt 1 ]]; then
     die "no GPU visible; the eval stage needs at least one"
+fi
+# Check verl up front rather than after the data stage: preparing the parquets
+# takes a while, and discovering there that the trainer will not import is a
+# waste of it. Only train and export need verl; merge and eval do not.
+if has train || has export; then
+    if ! "$HERE/setup_verl.sh" --check >/dev/null 2>&1; then
+        # Keep the diagnosis, drop setup_verl.sh's own "fix:" line — we print a
+        # better one right below it.
+        VERL_MSG="$("$HERE/setup_verl.sh" --check 2>&1 | grep -m1 'not importable')"
+        die "verl is needed by the '$STAGES' stages but is not usable.
+       ${VERL_MSG:-import failed}
+       Install it into the working tree with:
+         ./shadow_rl/verl_math/setup_verl.sh"
+    fi
 fi
 
 cat <<EOF

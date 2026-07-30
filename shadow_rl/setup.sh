@@ -236,4 +236,10 @@ $( [[ -n "$VENV" ]] && echo "  source $VENV/bin/activate" )
 
   # everything (needs BM25 + a lot of disk)
   ./shadow_rl/run_all.sh --pairs all --sample 500 --auto-retriever --yes
+
+The math track (GRPO we train ourselves) needs verl on top of this. It is a
+separate step because it installs into the working tree and is easy to skip:
+
+  ./shadow_rl/verl_math/setup_verl.sh
+  ./shadow_rl/verl_math/run_all_math.sh --demo --yes
 EOF

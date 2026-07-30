@@ -12,6 +12,17 @@ W_shadow = W_I + (RL(W_B) - W_B)
 
 Then all five models are scored on AIME24 / AIME25 / AMC23.
 
+## Install verl first
+
+```bash
+./shadow_rl/verl_math/setup_verl.sh
+```
+
+Clones to `third_party/verl` in the working tree — not `~`, not `/root` — and
+pip-installs it editable with `--no-deps` plus the packages it genuinely
+imports. There is no `VERL_ROOT` to export afterwards; the scripts use the
+installed package. Check an existing install with `setup_verl.sh --check`.
+
 ## Demo first
 
 Everything runs, on a fraction of the data — 8 optimiser steps, 512 prompts, 8
@@ -31,9 +42,6 @@ GPU count is detected automatically; training uses all of them, evaluation uses
 ## Run it
 
 ```bash
-git clone https://github.com/volcengine/verl ~/verl
-export VERL_ROOT=~/verl
-
 ./shadow_rl/verl_math/run_all_math.sh --yes
 ```
 
@@ -53,6 +61,7 @@ Pick a subset with `--stages`, e.g. `--stages merge,eval` once training is done.
 
 | file | what it does |
 |---|---|
+| `setup_verl.sh` | installs verl into `third_party/`; `--check` verifies |
 | `prepare_data.py` | builds the parquets; tries several HF mirrors per benchmark |
 | `train_grpo.sh` | one side of the pair, `base` or `instruct` |
 | `math_reward.py` | rule-based reward — also the eval scorer, so both agree |
@@ -60,13 +69,36 @@ Pick a subset with `--stages`, e.g. `--stages merge,eval` once training is done.
 | `eval_math.py` | avg@k on the three benchmarks |
 | `report_math.py` | terminal table, same shape as the search track |
 | `run_all_math.sh` | the five stages above |
+| `tests/` | CPU-only checks; no GPU, no model, no download |
+
+`DRY_RUN=1 ./shadow_rl/verl_math/train_grpo.sh base` prints the fully composed
+training config and exits without touching a GPU — the quickest way to confirm
+an override landed where you think it did.
 
 ## Hyperparameters
 
 As specified: GRPO, `train_batch_size=64`, `ppo_mini_batch_size=64` (one update
 per step), lr `1e-6`, `rollout.n=8`, temperature 1.0, no KL in reward and no KL
 loss, `loss_agg_mode=token-mean`, 1 epoch, save/test every 20 steps.
-`ppo_micro_batch_size_per_gpu=1` only affects memory, not the update.
+`ppo_micro_batch_size_per_gpu=1` and
+`rollout.log_prob_micro_batch_size_per_gpu=1` only affect memory, not the
+update — they cap the forward-pass width for the policy update and for the
+rollout log-prob recomputation respectively.
+
+Two departures from the recipe as written, both forced by verl:
+
+- **No separate validation length.** verl has no `val_max_response_length`; the
+  in-training validation passes reuse `data.max_response_length`. The 31744-token
+  budget for AIME therefore lives in `eval_math.py --max-tokens`, which is where
+  the reported numbers come from. The `test_freq` passes are a progress signal.
+- **`trainer.logger=[console]`.** verl's default includes `wandb`, which halts at
+  an auth prompt on a machine that has never logged in. `LOGGER='[console,wandb]'`
+  to opt back in.
+
+On few GPUs (`N_GPUS<=2`) the run adds FSDP parameter and optimiser offload and
+drops `rollout.gpu_memory_utilization` to 0.4 — a 4B actor plus fp32 Adam state
+plus a vLLM engine does not fit otherwise. It costs throughput, not correctness,
+and applies to both sides equally, so the comparison is unaffected.
 
 Prompt length 1024, response length 7168 for training; validation generates up to
 31744 so AIME solutions have room to finish. `micro_batch_size` aside, **both

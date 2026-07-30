@@ -27,30 +27,49 @@ def newest_step(ckpt_dir: str) -> str:
     return steps[-1]
 
 
-def _run_verl_merger(step_dir: str, out_dir: str) -> bool:
-    """Try verl's own scripts/model_merger.py. Returns True if it produced weights.
+def _merger_commands(step_dir: str, out_dir: str) -> list:
+    """Every CLI shape verl's checkpoint converter has had, newest first.
 
     Preferred over merging shards by hand: verl owns its checkpoint format and
     the layout has changed between releases, so its converter is the only one
-    guaranteed to match the version that wrote the checkpoint. The CLI has also
-    moved around, hence the several invocations.
+    guaranteed to match the version that wrote the checkpoint.
+
+    Since 0.9 it is a package module — `python -m verl.model_merger` — which
+    needs no checkout on disk. Before that it was `scripts/model_merger.py`,
+    now kept as `scripts/legacy_model_merger.py`; those are only reachable if
+    VERL_ROOT points at a checkout, so they are tried last.
     """
+    cmds = [
+        [sys.executable, "-m", "verl.model_merger", "merge", "--backend", "fsdp",
+         "--local_dir", step_dir, "--target_dir", out_dir],
+    ]
+    verl_root = os.environ.get("VERL_ROOT", "")
+    if not verl_root:
+        # Fall back to the installed package's own directory, which is where a
+        # `pip install -e third_party/verl` checkout lives.
+        try:
+            import verl  # noqa: F401
+
+            verl_root = os.path.dirname(os.path.dirname(os.path.abspath(verl.__file__)))
+        except Exception:  # noqa: BLE001
+            verl_root = ""
+    for name in ("model_merger.py", "legacy_model_merger.py"):
+        script = os.path.join(verl_root, "scripts", name) if verl_root else ""
+        if script and os.path.exists(script):
+            cmds += [
+                [sys.executable, script, "merge", "--backend", "fsdp",
+                 "--local_dir", step_dir, "--target_dir", out_dir],
+                [sys.executable, script, "--backend", "fsdp",
+                 "--local_dir", step_dir, "--target_dir", out_dir],
+            ]
+    return cmds
+
+
+def _run_verl_merger(step_dir: str, out_dir: str) -> bool:
+    """Run verl's converter. Returns True if it produced weights."""
     import subprocess
 
-    verl_root = os.environ.get("VERL_ROOT", os.path.expanduser("~/verl"))
-    script = os.path.join(verl_root, "scripts", "model_merger.py")
-    if not os.path.exists(script):
-        print(f"[info] no verl model_merger.py at {script}; will merge shards directly")
-        return False
-
-    attempts = [
-        [sys.executable, script, "merge", "--backend", "fsdp",
-         "--local_dir", step_dir, "--target_dir", out_dir],
-        [sys.executable, script, "--backend", "fsdp",
-         "--local_dir", step_dir, "--target_dir", out_dir],
-        [sys.executable, script, "--local_dir", step_dir, "--target_dir", out_dir],
-    ]
-    for cmd in attempts:
+    for cmd in _merger_commands(step_dir, out_dir):
         print(f"[info] trying: {' '.join(cmd[1:])}")
         proc = subprocess.run(cmd, capture_output=True, text=True)
         if proc.returncode == 0 and glob.glob(os.path.join(out_dir, "*.safetensors")):

@@ -8,8 +8,12 @@
 # premise of the comparison. Everything below is shared; only the model path and
 # the experiment name differ, so do not tune one side without the other.
 #
+# verl is used as an installed package, so there is no checkout path to export;
+# ./shadow_rl/verl_math/setup_verl.sh puts it under third_party/ and pip-installs
+# it editable. Everything runs from the repo root, which is what makes the
+# relative parquet and reward-function paths below work.
+#
 # Environment:
-#   VERL_ROOT     verl checkout                (default $HOME/verl)
 #   DATA_DIR      prepared parquet files       (default $PWD/datasets)
 #   CKPT_DIR      where checkpoints are written(default $PWD/shadow_rl/verl_math/ckpt)
 #   N_GPUS        GPUs per node                (default: all visible)
@@ -30,7 +34,6 @@ esac
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-VERL_ROOT="${VERL_ROOT:-$HOME/verl}"
 DATA_DIR="${DATA_DIR:-$REPO_ROOT/datasets}"
 CKPT_DIR="${CKPT_DIR:-$REPO_ROOT/shadow_rl/verl_math/ckpt}"
 detect_gpus() {
@@ -46,14 +49,44 @@ N_GPUS="${N_GPUS:-$(detect_gpus)}"
 [[ "$N_GPUS" -lt 1 ]] && { echo "[fail] no GPU visible; training needs at least one" >&2; exit 1; }
 REWARD_FN="$REPO_ROOT/shadow_rl/verl_math/math_reward.py"
 EXPERIMENT="qwen3-4b-${SIDE}-dapo-math-grpo"
+# verl defaults to ["console","wandb"], which needs wandb installed and logged
+# in; a run that is otherwise fine then dies at step 0 on an auth prompt. Console
+# only unless asked. LOGGER='[console,wandb]' to opt back in.
+LOGGER="${LOGGER:-[console]}"
 
 TRAIN="$DATA_DIR/DAPO-Math-17k-Processed/DAPO-Math.parquet"
 VAL="$DATA_DIR/math_val/val.parquet"          # AIME24 + AIME25 + AMC23, concatenated
 
-[[ -d "$VERL_ROOT" ]] || { echo "[fail] VERL_ROOT=$VERL_ROOT missing. git clone https://github.com/volcengine/verl $VERL_ROOT" >&2; exit 1; }
+./shadow_rl/verl_math/setup_verl.sh --check >/dev/null 2>&1 \
+    || { echo "[fail] verl is not installed. Run: ./shadow_rl/verl_math/setup_verl.sh" >&2; exit 1; }
 [[ -f "$TRAIN" ]] || { echo "[fail] $TRAIN missing. Run: python shadow_rl/verl_math/prepare_data.py" >&2; exit 1; }
 [[ -f "$VAL" ]]   || { echo "[fail] $VAL missing. Run: python shadow_rl/verl_math/prepare_data.py" >&2; exit 1; }
 [[ -f "$REWARD_FN" ]] || { echo "[fail] $REWARD_FN missing" >&2; exit 1; }
+
+# verl 0.9 moved the reward configuration under a `reward` group. The old
+# top-level `custom_reward_function` and `reward_model` keys still exist, but on
+# the main_ppo path nothing reads them any more -- verl/trainer/ppo/reward.py
+# looks only at config.reward.custom_reward_function. Passing the legacy key is
+# accepted without complaint and then silently ignored, so training scores with
+# the default reward manager instead of math_reward.py. Nothing errors; the
+# reward curve is just wrong, which is far worse. Ask the installed verl which
+# schema it has rather than guessing.
+mapfile -t REWARD_ARGS < <(python3 - "$REWARD_FN" <<'PY'
+import os
+import sys
+
+import verl
+
+cfg = os.path.join(os.path.dirname(verl.__file__),
+                   "trainer", "config", "reward", "reward.yaml")
+prefix = "reward." if os.path.exists(cfg) else ""
+print(f"{prefix}custom_reward_function.path={sys.argv[1]}")
+print(f"{prefix}custom_reward_function.name=compute_score")
+print(f"{prefix}reward_model.enable=False")
+PY
+)
+[[ ${#REWARD_ARGS[@]} -eq 3 ]] \
+    || { echo "[fail] could not determine verl's reward config schema" >&2; exit 1; }
 
 mkdir -p "$CKPT_DIR/$EXPERIMENT"
 echo "=============================================================="
@@ -65,10 +98,17 @@ echo " gpus       : $N_GPUS"
 [[ ${#EXTRA[@]} -gt 0 ]] && echo " overrides  : ${EXTRA[*]}"
 echo "=============================================================="
 
-# Validation generates far longer than training (31744 vs 7168) so the AIME
-# problems have room to finish; the key is versioned in verl, hence the +override.
-cd "$VERL_ROOT"
-PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
+# Run from the repo root, not from the verl checkout: hydra resolves
+# config_path relative to main_ppo.py inside the installed package, so cwd is
+# free, and keeping it here is what makes the relative parquet / reward-function
+# paths above resolve.
+#
+# On the validation length: verl has no separate budget for it — in-training
+# validation reuses data.max_response_length, so the 31744-token allowance for
+# AIME lives in eval_math.py (--max-tokens), which is the number that ends up in
+# the results table. The mid-training test_freq passes are a progress signal, not
+# the measurement.
+ARGS=(
     algorithm.adv_estimator=grpo \
     algorithm.use_kl_in_reward=False \
     data.train_files="$TRAIN" \
@@ -76,7 +116,6 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     data.train_batch_size=64 \
     data.max_prompt_length=1024 \
     data.max_response_length=7168 \
-    +data.val_max_response_length=31744 \
     actor_rollout_ref.model.path="$MODEL" \
     actor_rollout_ref.actor.optim.lr=1e-6 \
     actor_rollout_ref.actor.ppo_mini_batch_size=64 \
@@ -89,18 +128,29 @@ PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
     actor_rollout_ref.rollout.temperature=1.0 \
     actor_rollout_ref.rollout.top_p=1.0 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
-    reward_model.enable=False \
-    custom_reward_function.path="$REWARD_FN" \
-    custom_reward_function.name=compute_score \
+    actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
+    "${REWARD_ARGS[@]}" \
     trainer.n_gpus_per_node="$N_GPUS" \
     trainer.nnodes=1 \
     trainer.total_epochs=1 \
     trainer.save_freq=20 \
     trainer.test_freq=20 \
+    "trainer.logger=$LOGGER" \
     trainer.project_name=shadow-ft-math \
     trainer.experiment_name="$EXPERIMENT" \
     trainer.default_local_dir="$CKPT_DIR/$EXPERIMENT" \
-    "${EXTRA[@]}" \
+    "${EXTRA[@]}"
+)
+
+# DRY_RUN=1 prints the fully composed config and exits without touching a GPU.
+# The fastest way to check that an override actually landed where you think it
+# did -- hydra accepts a well-formed key that no code reads, so "it started" is
+# not evidence that the setting took effect.
+if [[ -n "${DRY_RUN:-}" ]]; then
+    exec python3 -m verl.trainer.main_ppo --cfg job "${ARGS[@]}"
+fi
+
+PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo "${ARGS[@]}" \
     2>&1 | tee "$CKPT_DIR/$EXPERIMENT.log"
 
 echo

@@ -104,10 +104,34 @@ export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 ## 3. verl — only for the math track
 
 ```bash
-git clone https://github.com/volcengine/verl ~/verl
-export VERL_ROOT=~/verl
-pip install -e ~/verl        # or follow verl's own install guide
+./shadow_rl/verl_math/setup_verl.sh
 ```
+
+That clones verl to `third_party/verl` **inside the working tree** (gitignored,
+~30 MB), pip-installs it editable, and adds only the packages it actually
+imports. Nothing to export afterwards — `import verl` works from anywhere, so
+neither `train_grpo.sh` nor `export_hf.py` needs a path.
+
+The install is deliberately `--no-deps` plus a hand-picked list. verl's own
+`requirements.txt` pins `transformers>=5.5.3,<5.11` and pulls torch
+transitively, so letting pip resolve it reinstalls the default-CUDA torch over
+the cu130 wheel vllm is working against — a working environment turns into
+`no kernels for sm_100` for no visible reason.
+
+If you would rather do it by hand, that is the whole of it:
+
+```bash
+git clone --depth 1 https://github.com/volcengine/verl.git third_party/verl
+python -m pip install -e third_party/verl --no-deps
+python -m pip install -U 'ray[default]' tensordict omegaconf hydra-core \
+    codetiming dill torchdata pylatexenc pyarrow pandas tqdm
+python shadow_rl/verl_math/setup_verl.sh --check   # or: ./…/setup_verl.sh --check
+```
+
+`wandb` is intentionally absent: verl's default `trainer.logger` is
+`["console", "wandb"]`, which stops at an auth prompt on a machine that has
+never logged in, so `train_grpo.sh` passes `trainer.logger=[console]`. Set
+`LOGGER='[console,wandb]'` to opt back in.
 
 ---
 
@@ -118,7 +142,9 @@ pip install -e ~/verl        # or follow verl's own install guide
 | downloaded models | standard HuggingFace cache (`~/.cache/huggingface/hub`) | `SHADOW_RL_MODEL_DIR` |
 | merged models | `shadow_rl/merged/` | `MERGED_DIR` |
 | BM25 corpus + index | `corpus/` in the working tree | `CORPUS_DIR` |
+| verl checkout | `third_party/verl` in the working tree | `VERL_ROOT` |
 | verl parquets | `datasets/` in the working tree | — |
+| verl checkpoints | `shadow_rl/verl_math/ckpt/` | `CKPT_DIR` |
 | results, logs | `shadow_rl/`, `shadow_rl/logs/` | `RESULTS`, `LOG_DIR` |
 
 To keep the HuggingFace *dataset* cache in the working tree as well:
@@ -135,7 +161,6 @@ export HF_DATASETS_CACHE=$PWD/hf_datasets
 cat >> ~/.bashrc <<'EOF'
 conda activate shadow-rl              # or: source ~/shadow-rl-venv/bin/activate
 export SEARCH_R1_ROOT=$HOME/Search-R1
-export VERL_ROOT=$HOME/verl
 EOF
 ```
 
@@ -162,7 +187,14 @@ for t in merge similarity resume check_env report pairs; do
 done
 python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT | tail -1
 python shadow_rl/verl_math/math_reward.py | tail -1
+python shadow_rl/verl_math/tests/test_prepare_data.py | tail -1
+python shadow_rl/verl_math/tests/test_train_config.py | tail -1   # needs verl
 ```
+
+`test_train_config.py` is the one worth running after any verl upgrade: it
+composes the real training config and checks each hyperparameter by the path
+verl reads it from. Hydra accepts a well-formed override that nothing consults,
+so "training started" is not evidence that a setting took effect.
 
 ---
 

@@ -131,3 +131,6 @@ shadow_rl/*.jsonl
 !shadow_rl/results.csv
 shadow_rl/logs/
 shadow_rl/similarity_params.csv
+
+# verl and other checkouts installed into the working tree by setup scripts
+third_party/

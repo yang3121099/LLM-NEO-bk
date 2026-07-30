@@ -54,6 +54,7 @@ done
 LIMIT_TRAIN=""
 LIMIT_VAL=""
 TRAIN_EXTRA=()
+LOW_GPU_NOTE=""
 if [[ $DEMO -eq 1 ]]; then
     LIMIT_TRAIN=512
     LIMIT_VAL=8
@@ -64,6 +65,19 @@ if [[ $DEMO -eq 1 ]]; then
                  +data.val_max_response_length=2048
                  actor_rollout_ref.rollout.n=4)
     [[ "$K" == "4" ]] && K=1
+fi
+
+# On few GPUs a 4B actor plus Adam states plus a vLLM engine will not fit
+# without help: bf16 weights are ~8GB but fp32 optimiser state is ~32GB, and the
+# rollout engine wants its own pool. Offload the parameters and optimiser to
+# host memory and leave vLLM a smaller share. Costs throughput, not correctness,
+# and it applies to both sides equally so the comparison is unaffected.
+if [[ "$N_GPUS" -le 2 && "$N_GPUS" -ge 1 && ",$STAGES," == *",train,"* ]]; then
+    TRAIN_EXTRA+=(actor_rollout_ref.actor.fsdp_config.param_offload=True
+                  actor_rollout_ref.actor.fsdp_config.optimizer_offload=True
+                  actor_rollout_ref.ref.fsdp_config.param_offload=True
+                  actor_rollout_ref.rollout.gpu_memory_utilization=0.4)
+    LOW_GPU_NOTE="offloading params+optimiser to host RAM ($N_GPUS GPU)"
 fi
 
 CKPT_DIR="${CKPT_DIR:-$REPO_ROOT/$HERE/ckpt}"
@@ -99,6 +113,7 @@ cat <<EOF
  results  : $RESULTS
  gpus     : $N_GPUS visible — $N_GPUS for training, tp=$TP for eval
  avg@k    : $K
+ memory   : ${LOW_GPU_NOTE:-default (no offload)}
  mode     : $( [[ $DEMO -eq 1 ]] && echo "DEMO (8 steps, 512 prompts, 8 problems/benchmark — numbers are not meaningful)" || echo "full" )
 ==============================================================
 EOF

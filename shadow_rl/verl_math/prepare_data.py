@@ -17,9 +17,13 @@ import sys
 # Candidate repos per benchmark, tried in order: these datasets are mirrored
 # under several names and the canonical one moves.
 SOURCES = {
-    "dapo": [("BytedTsinghua-SIA/DAPO-Math-17k", None),
-             ("haizhongzheng/DAPO-Math-17k-Processed", None),
-             ("open-r1/DAPO-Math-17k-Processed", None)],
+    # "Processed" first: those are the ~17k unique prompts. The
+    # BytedTsinghua-SIA release is the expanded set (~1.79M rows, each prompt
+    # repeated for the DAPO recipe) and would make --limit-train sample a
+    # handful of near-duplicates.
+    "dapo": [("haizhongzheng/DAPO-Math-17k-Processed", None),
+             ("open-r1/DAPO-Math-17k-Processed", None),
+             ("BytedTsinghua-SIA/DAPO-Math-17k", None)],
     "aime24": [("HuggingFaceH4/aime_2024", None),
                ("Maxwell-Jia/AIME_2024", None),
                ("math-ai/aime24", None)],
@@ -35,9 +39,11 @@ SOURCES = {
 QUESTION_FIELDS = ("prompt", "problem", "question", "Problem", "Question")
 ANSWER_FIELDS = ("solution", "answer", "final_answer", "Answer", "reward_model")
 
+# The braces of \boxed{} are literal, so they must be doubled -- str.format
+# otherwise reads them as an auto-numbered field and raises IndexError.
 INSTRUCTION = (
     "Solve the following math problem. Reason step by step, and put your final "
-    "answer within \\boxed{}.\n\n{problem}"
+    "answer within \\boxed{{}}.\n\n{problem}"
 )
 
 
@@ -67,29 +73,70 @@ def load_first(candidates, split_hint=None):
     raise RuntimeError("none of the candidates loaded:\n    " + "\n    ".join(errors))
 
 
-def to_records(rows, data_source):
-    """verl expects prompt as a chat message list plus reward_model.ground_truth."""
+def _text(value) -> str:
+    """Problem text from either a plain string or a verl chat-message list."""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (list, tuple)):
+        # Already verl-shaped: [{"role": "user", "content": "..."}]
+        for msg in value:
+            if isinstance(msg, dict) and msg.get("role") == "user":
+                return str(msg.get("content", "")).strip()
+        if value and isinstance(value[0], dict):
+            return str(value[0].get("content", "")).strip()
+    return str(value).strip()
+
+
+def _gold(value) -> str:
+    if isinstance(value, dict):
+        value = value.get("ground_truth", value.get("target", value.get("answer")))
+    if isinstance(value, (list, tuple)) and value:
+        value = value[0]
+    return str(value).strip()
+
+
+def to_records(rows, data_source, dedupe=True):
+    """verl expects prompt as a chat message list plus reward_model.ground_truth.
+
+    Some mirrors already store exactly that, so the question field may hold a
+    message list rather than a string and the answer field a dict. Both shapes
+    are handled; the instruction is applied only when the prompt is raw text, so
+    an already-formatted prompt is not wrapped twice.
+    """
     out = []
+    seen = set()
     first = rows[0]
     qf = pick(first, QUESTION_FIELDS)
     af = pick(first, ANSWER_FIELDS)
     if qf is None or af is None:
         raise RuntimeError(
             f"{data_source}: cannot find question/answer fields in {list(first)}")
-    print(f"       using question='{qf}' answer='{af}'")
+    preformatted = not isinstance(first[qf], str)
+    print(f"       using question='{qf}' answer='{af}'"
+          f"{'  (already chat-formatted)' if preformatted else ''}")
 
-    for idx, row in enumerate(rows):
-        answer = row[af]
-        if isinstance(answer, dict):                 # already verl-shaped
-            answer = answer.get("ground_truth", answer.get("target"))
+    for row in rows:
+        problem = _text(row[qf])
+        answer = _gold(row[af])
+        if not problem or not answer:
+            continue
+        if dedupe:
+            key = (problem, answer)
+            if key in seen:
+                continue
+            seen.add(key)
+        # Only wrap raw text: a prompt that already carries its own instruction
+        # would otherwise get a second one bolted on.
+        content = problem if preformatted else INSTRUCTION.format(problem=problem)
         out.append({
             "data_source": data_source,
-            "prompt": [{"role": "user",
-                        "content": INSTRUCTION.format(problem=str(row[qf]).strip())}],
+            "prompt": [{"role": "user", "content": content}],
             "ability": "math",
-            "reward_model": {"style": "rule", "ground_truth": str(answer).strip()},
-            "extra_info": {"index": idx, "split": data_source},
+            "reward_model": {"style": "rule", "ground_truth": answer},
+            "extra_info": {"index": len(out), "split": data_source},
         })
+    if dedupe and len(out) < len(rows):
+        print(f"       {len(rows)} row(s) -> {len(out)} unique")
     return out
 
 

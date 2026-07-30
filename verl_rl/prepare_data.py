@@ -37,18 +37,35 @@ INSTRUCTION = (
     "Please reason step by step, and put your final answer within \\boxed{}."
 )
 
-# Columns DeepMath-103K uses. Kept in one place because the other candidate
-# datasets (DAPO, OpenR1-Math) name the same two fields differently.
+# The candidate datasets spell the same two fields differently, and the AIME
+# sets capitalise them, so matching is case-insensitive.
 FIELD_ALIASES = {
     "question": ("question", "problem", "prompt", "query"),
-    "answer": ("final_answer", "answer", "solution", "ground_truth"),
+    "answer": ("final_answer", "answer", "solution", "ground_truth", "expected_answer"),
 }
+
+# Validation sets named by the recipe. These ids are the commonly used mirrors;
+# they could not be verified from the environment this was written in (no access
+# to huggingface.co), so confirm them or point at local files:
+#
+#   python verl_rl/prepare_data.py --val-set AIME24=/data/aime24.parquet ...
+VAL_SET_SOURCES = {
+    "AIME24": "Maxwell-Jia/AIME_2024",
+    "AIME25": "yentinglin/aime_2025",
+    "AMC23": "knoveleng/AMC-23",
+}
+
+# A parquet already in verl's shape needs no conversion -- and must not get any,
+# because re-deriving the prompt would change the tokens the model trains on.
+VERL_COLUMNS = {"prompt", "reward_model"}
 
 
 def pick_field(row: dict, kind: str):
+    lowered = {str(k).lower(): v for k, v in row.items()}
     for name in FIELD_ALIASES[kind]:
-        if name in row and row[name] not in (None, ""):
-            return row[name]
+        value = lowered.get(name)
+        if value not in (None, ""):
+            return value
     return None
 
 
@@ -81,12 +98,52 @@ def demo_rows(n: int, data_source: str):
     return rows
 
 
-def load_hf_rows(dataset: str, split: str, limit: int, data_source: str):
+def load_local(path: str):
+    """Rows from a parquet/json already on disk.
+
+    The recipe names a local file (datasets/DAPO-Math-17k-Processed/
+    DAPO-Math.parquet), and such files are usually already in verl's shape.
+    """
+    import pandas as pd
+
+    df = pd.read_parquet(path) if path.endswith(".parquet") else pd.read_json(path)
+    return df.to_dict("records"), set(df.columns)
+
+
+def load_hf(dataset: str, split: str):
     from datasets import load_dataset
 
     ds = load_dataset(dataset, split=split)
+    return list(ds), set(ds.column_names)
+
+
+def load_rows(source: str, split: str, limit: int, data_source: str, tag: str):
+    """Rows in verl's shape, from a local file or a hub id.
+
+    Passes an already-verl-shaped table through untouched: rebuilding the prompt
+    from a question column would change the exact tokens the model sees, which
+    is the difference between reproducing a recipe and approximating it.
+    """
+    if os.path.exists(source):
+        print(f"  reading local file {source}")
+        raw, columns = load_local(source)
+    else:
+        print(f"  loading {source} split={split}")
+        raw, columns = load_hf(source, split)
+
+    if VERL_COLUMNS <= columns:
+        print(f"  already in verl format ({len(raw)} rows) -- passing through unchanged")
+        rows = raw[:limit] if limit else raw
+        for i, row in enumerate(rows):
+            info = row.get("extra_info")
+            row["extra_info"] = dict(info) if isinstance(info, dict) else {}
+            row["extra_info"].update({"split": tag, "index": i})
+            row.setdefault("data_source", data_source)
+            row.setdefault("ability", "math")
+        return rows
+
     rows, skipped = [], 0
-    for i, item in enumerate(ds):
+    for i, item in enumerate(raw):
         if limit and len(rows) >= limit:
             break
         question = pick_field(item, "question")
@@ -94,9 +151,33 @@ def load_hf_rows(dataset: str, split: str, limit: int, data_source: str):
         if question is None or answer is None:
             skipped += 1
             continue
-        rows.append(make_row(str(question).strip(), answer, split, i, data_source))
+        rows.append(make_row(str(question).strip(), answer, tag, i, data_source))
     if skipped:
         print(f"  skipped {skipped} row(s) with no question or no verifiable answer")
+    if not rows:
+        sys.exit(f"no usable rows in {source}. Columns present: {sorted(columns)}\n"
+                 f"  Expected a question-like column {FIELD_ALIASES['question']}\n"
+                 f"  and an answer-like column {FIELD_ALIASES['answer']}.")
+    return rows
+
+
+def build_val(specs, limit_per_set: int, split: str):
+    """One validation table from several named benchmark sets.
+
+    Kept as a single file with `data_source` marking the origin, because verl
+    reports validation as one number per data_source -- so AIME24, AIME25 and
+    AMC23 stay separately visible in the training log.
+    """
+    rows = []
+    for name, source in specs:
+        print(f"  [{name}]")
+        got = load_rows(source, "test", limit_per_set, name, split)
+        for row in got:
+            row["data_source"] = name
+        print(f"    {len(got)} rows")
+        rows.extend(got)
+    for i, row in enumerate(rows):
+        row["extra_info"]["index"] = i
     return rows
 
 
@@ -115,13 +196,20 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--out", required=True, help="output directory")
-    ap.add_argument("--dataset", default="zwhe99/DeepMath-103K")
+    ap.add_argument("--dataset", default="DAPO-Math-17k-Processed",
+                    help="local parquet/json path, or a hub id")
     ap.add_argument("--split", default="train")
-    ap.add_argument("--data-source", default="deepmath",
+    ap.add_argument("--data-source", default="dapo-math-17k",
                     help="stored on every row; only matters if you swap in "
                          "verl's data_source-based reward registry")
     ap.add_argument("--train-size", type=int, default=0, help="0 = all")
-    ap.add_argument("--val-size", type=int, default=500)
+    ap.add_argument("--val-sets", default="AIME24,AIME25,AMC23",
+                    help="comma-separated names from the built-in table, or "
+                         "empty to hold a slice out of the training data instead")
+    ap.add_argument("--val-set", action="append", default=[], metavar="NAME=SOURCE",
+                    help="override where one validation set comes from; repeatable")
+    ap.add_argument("--val-size", type=int, default=0,
+                    help="rows per validation set (0 = all of each)")
     ap.add_argument("--demo", action="store_true",
                     help="200 synthetic arithmetic rows, no download")
     ap.add_argument("--seed", type=int, default=1)
@@ -129,28 +217,51 @@ def main() -> int:
 
     os.makedirs(args.out, exist_ok=True)
 
+    overrides = {}
+    for item in args.val_set:
+        if "=" not in item:
+            sys.exit(f"--val-set expects NAME=SOURCE, got {item!r}")
+        name, source = item.split("=", 1)
+        overrides[name.strip()] = source.strip()
+
+    val_names = [n.strip() for n in args.val_sets.split(",") if n.strip()]
+
     if args.demo:
         print(f"building the demo set ({args.dataset} not downloaded)")
-        rows = demo_rows(200, args.data_source)
+        train_rows = demo_rows(180, args.data_source)
+        val_rows = demo_rows(20, args.data_source)
+        for row in val_rows:
+            row["extra_info"]["split"] = "val"
+        val_names = ["demo"]
+    elif val_names:
+        # The recipe validates on three competition sets, not on held-out
+        # training rows -- so the training file keeps every row.
+        print(f"train: {args.dataset}")
+        train_rows = load_rows(args.dataset, args.split, args.train_size,
+                               args.data_source, "train")
+        specs = []
+        for name in val_names:
+            source = overrides.get(name) or VAL_SET_SOURCES.get(name)
+            if not source:
+                sys.exit(f"no source known for validation set {name!r}. "
+                         f"Known: {', '.join(VAL_SET_SOURCES)}. "
+                         f"Pass --val-set {name}=<path or hub id>.")
+            specs.append((name, source))
+        print(f"val: {', '.join(n for n, _ in specs)}")
+        val_rows = build_val(specs, args.val_size, "val")
     else:
-        print(f"loading {args.dataset} split={args.split}")
-        # Read train_size + val_size, since the validation set is held out of
-        # the same pool below.
-        limit = (args.train_size + args.val_size) if args.train_size else 0
-        rows = load_hf_rows(args.dataset, args.split, limit, args.data_source)
-
-    if not rows:
-        sys.exit("no usable rows -- check --dataset and the field names")
-
-    # Held out from the same pool with a fixed seed, so both the base and the
-    # instruct run are validated on identical questions. Comparing two RL runs
-    # scored on different validation sets would be meaningless.
-    rng = random.Random(args.seed)
-    rng.shuffle(rows)
-    val_size = min(args.val_size, max(0, len(rows) - 1))
-    val_rows, train_rows = rows[:val_size], rows[val_size:]
-    if args.train_size:
-        train_rows = train_rows[: args.train_size]
+        # Fallback: hold a slice out of the training pool. Seeded, so the base
+        # and instruct runs are validated on identical questions -- comparing
+        # two RL runs scored on different questions would be meaningless.
+        print(f"train+val from {args.dataset}")
+        rows = load_rows(args.dataset, args.split, 0, args.data_source, "train")
+        rng = random.Random(args.seed)
+        rng.shuffle(rows)
+        held_out = args.val_size or 500
+        val_size = min(held_out, max(0, len(rows) - 1))
+        val_rows, train_rows = rows[:val_size], rows[val_size:]
+        if args.train_size:
+            train_rows = train_rows[: args.train_size]
 
     for i, row in enumerate(train_rows):
         row["extra_info"]["split"], row["extra_info"]["index"] = "train", i
@@ -162,6 +273,7 @@ def main() -> int:
 
     meta = {
         "dataset": "demo" if args.demo else args.dataset,
+        "val_sets": val_names,
         "data_source": args.data_source,
         "instruction": INSTRUCTION,
         "train_rows": len(train_rows),

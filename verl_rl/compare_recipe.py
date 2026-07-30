@@ -43,13 +43,36 @@ RESET, RED, GREEN, YELLOW, DIM = (
 class Field:
     """One knob: what we call it, what they might call it, how to compare it."""
 
-    def __init__(self, name, config_var, hydra=(), aliases=(), kind="str", note=""):
+    def __init__(self, name, config_var, hydra=(), aliases=(), kind="str",
+                 note="", host=False):
         self.name = name
+        self.host = host                  # value comes from the machine, not config
         self.config_var = config_var      # the variable in config.sh, "" if fixed
         self.hydra = hydra                # verl override keys, matched by suffix
         self.aliases = aliases            # prose / table spellings, lowercased
-        self.kind = kind                  # str | num | model
+        self.kind = kind                  # str | num | bool | model
         self.note = note
+
+
+def tokens(key: str):
+    """Split a key into comparable words.
+
+    Cards write the same knob as `ppo_mini_batch_size`, `ppo mini-batch size`
+    and `PPO Mini Batch Size`. Enumerating every spelling per field does not
+    scale and quietly reports 'not stated' for a value the card did state --
+    which is the one thing this tool must not do. Normalise instead.
+    """
+    return [t for t in re.split(r"[^a-z0-9]+", str(key).lower()) if t]
+
+
+def is_subsequence(needle, haystack) -> bool:
+    """Are `needle`'s tokens present in `haystack`, in order?
+
+    So "mini batch size" matches "ppo mini batch size", and "batch size"
+    matches it too -- the caller resolves that by preferring the longer match.
+    """
+    it = iter(haystack)
+    return all(token in it for token in needle)
 
 
 # Ordered by how much a mismatch would change the result: the first block
@@ -65,14 +88,31 @@ FIELDS = [
           aliases=("algorithm", "adv_estimator", "rl algorithm", "method"),
           note="this pipeline is GRPO; a DAPO/PPO card needs different code, "
                "not just different values"),
-    Field("dataset", "RL_DATASET",
+    Field("train dataset", "RL_DATASET",
           hydra=("data.train_files",),
-          aliases=("dataset", "training data", "train_files", "data"),
+          aliases=("train", "dataset", "training data", "train_files",
+                   "train file", "train dataset"),
           kind="model"),
+    Field("val datasets", "VAL_DATASETS",
+          hydra=("data.val_files",),
+          aliases=("val", "validation", "val_files", "eval set", "val dataset"),
+          kind="list"),
+    Field("KL loss", "USE_KL_LOSS",
+          hydra=("actor_rollout_ref.actor.use_kl_loss",),
+          aliases=("kl_loss", "kl loss", "use_kl_loss", "kl"),
+          kind="bool",
+          note="disabling it also drops the reference policy, which frees a "
+               "model's worth of memory"),
+    Field("loss aggregation", "LOSS_AGG_MODE",
+          hydra=("actor_rollout_ref.actor.loss_agg_mode",),
+          aliases=("loss aggregation", "loss_agg_mode", "loss agg mode",
+                   "aggregation")),
     Field("rollout n (group size)", "ROLLOUT_N",
           hydra=("actor_rollout_ref.rollout.n",),
-          aliases=("rollout.n", "num_generations", "group size", "group_size",
-                   "n samples", "num_return_sequences"),
+          aliases=("n responses per prompt", "responses per prompt",
+                   "samples per prompt", "rollout.n", "num_generations",
+                   "group size", "group_size", "n samples", "n rollouts",
+                   "num_return_sequences"),
           kind="num",
           note="the GRPO group size -- changes the advantage estimate itself"),
     Field("train batch size (prompts)", "TRAIN_BATCH_SIZE",
@@ -82,8 +122,16 @@ FIELDS = [
           kind="num"),
     Field("mini batch size", "PPO_MINI_BATCH_SIZE",
           hydra=("actor_rollout_ref.actor.ppo_mini_batch_size",),
-          aliases=("ppo_mini_batch_size", "mini batch size", "mini_batch_size"),
+          aliases=("ppo mini batch size", "mini batch size", "mini_batch_size"),
           kind="num"),
+    Field("micro batch per GPU", "MICRO_BATCH_PER_GPU",
+          hydra=("actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu",),
+          aliases=("ppo micro batch gpu", "micro batch per gpu",
+                   "ppo_micro_batch_size_per_gpu", "micro batch size per gpu",
+                   "micro batch"),
+          kind="num",
+          note="gradient-accumulation chunking, not part of the update; raise it "
+               "on a 279 GB card for throughput once the run is matched"),
     Field("learning rate", "LEARNING_RATE",
           hydra=("actor_rollout_ref.actor.optim.lr",),
           aliases=("learning rate", "learning_rate", "lr", "actor lr"),
@@ -113,6 +161,25 @@ FIELDS = [
           aliases=("max_response_length", "max response length",
                    "response length", "max_new_tokens", "generation length"),
           kind="num"),
+    Field("val response length", "VAL_RESPONSE_LEN",
+          aliases=("val response length", "validation response length",
+                   "val max response length"),
+          kind="num",
+          note="validation generates far longer than training here, so it needs "
+               "its own budget"),
+    Field("max model length", "MAX_MODEL_LEN",
+          hydra=("actor_rollout_ref.rollout.max_model_len",),
+          aliases=("max model length", "max_model_len", "context length"),
+          kind="num"),
+    Field("save frequency", "SAVE_FREQ",
+          hydra=("trainer.save_freq",),
+          aliases=("save freq", "save frequency", "save_freq", "checkpoint freq"),
+          kind="num"),
+    Field("test frequency", "TEST_FREQ",
+          hydra=("trainer.test_freq",),
+          aliases=("test freq", "test frequency", "test_freq", "eval freq",
+                   "val freq"),
+          kind="num"),
     Field("epochs", "TOTAL_EPOCHS",
           hydra=("trainer.total_epochs",),
           aliases=("epochs", "total_epochs", "num_train_epochs"),
@@ -130,10 +197,10 @@ FIELDS = [
           note="throughput only; does not change the update"),
     Field("GPUs per node", "N_GPUS",
           hydra=("trainer.n_gpus_per_node",),
-          aliases=("n_gpus_per_node", "gpus", "num_gpus", "world size"),
-          kind="num",
-          note="throughput only, but it changes the per-GPU micro-batch you "
-               "can afford"),
+          aliases=("n gpus", "n_gpus_per_node", "gpus", "num_gpus", "world size"),
+          kind="num", host=True,
+          note="read from the machine the run starts on, so it cannot be "
+               "checked from a box with no GPUs"),
 ]
 
 # Fields whose value we hold fixed in code rather than in config.sh.
@@ -182,51 +249,127 @@ def parse_card(text: str) -> dict:
     return found
 
 
-def lookup(field: Field, card: dict):
-    """The card's value for a field, and the key it was stated under."""
-    # Exact hydra keys first: they are unambiguous.
-    for key in field.hydra:
-        if key in card:
-            return card[key], key
-    # Then a hydra key stated without its full path (rollout.n, optim.lr).
-    for key in card:
-        for hydra in field.hydra:
-            if key.endswith("." + hydra.split(".")[-1]) or key == hydra.split(".")[-1]:
-                return card[key], key
+def match_score(field: Field, key: str):
+    """How well a card key names this field. Higher is better, 0 is no match.
+
+    Scored rather than first-match-wins because aliases overlap: "batch size"
+    is a subsequence of "ppo mini batch size", so whichever field is checked
+    first would otherwise swallow the other's value.
+    """
+    key_tokens = tokens(key)
+
+    for hydra in field.hydra:                       # full hydra path: unambiguous
+        if key == hydra:
+            return 1000
+    for hydra in field.hydra:                       # its tail (rollout.n, optim.lr)
+        tail = tokens(hydra.split(".")[-1])
+        if key_tokens == tail or (len(tail) > 1 and is_subsequence(tail, key_tokens)):
+            return 500 + len(tail)
+
+    best = 0
     for alias in field.aliases:
-        if alias in card:
-            return card[alias], alias
-    return None, None
+        alias_tokens = tokens(alias)
+        if not alias_tokens:
+            continue
+        if key_tokens == alias_tokens:
+            best = max(best, 100 + len(alias_tokens))
+        elif is_subsequence(alias_tokens, key_tokens):
+            # A partial name is weaker evidence than an exact one, and a longer
+            # partial beats a shorter one.
+            best = max(best, 10 + len(alias_tokens))
+    return best
+
+
+def assign(fields, card: dict):
+    """Best card key for each field, resolving overlapping aliases globally."""
+    scored = []
+    for field in fields:
+        for key in card:
+            score = match_score(field, key)
+            if score:
+                scored.append((score, field.name, key))
+    scored.sort(key=lambda row: (-row[0], row[1], row[2]))
+
+    taken_keys, chosen = set(), {}
+    for score, field_name, key in scored:
+        if field_name in chosen or key in taken_keys:
+            continue
+        chosen[field_name] = (card[key], key)
+        taken_keys.add(key)
+    return chosen
 
 
 # --------------------------------------------------------------------------- #
 # comparison
 # --------------------------------------------------------------------------- #
+NUMBER_IN_PROSE = re.compile(r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?")
+
+TRUTHY = {"true", "1", "yes", "on", "enabled", "enable"}
+FALSY = {"false", "0", "no", "off", "disabled", "disable", "none"}
+
+
 def as_number(value):
     try:
         return float(str(value).replace("_", "").rstrip("."))
     except (TypeError, ValueError):
-        return None
+        pass
+    # "every 20 steps" -- cards write frequencies as prose.
+    match = NUMBER_IN_PROSE.search(str(value))
+    return float(match.group()) if match else None
+
+
+def as_bool(value):
+    v = str(value).strip().lower()
+    if v in TRUTHY:
+        return True
+    if v in FALSY:
+        return False
+    # "kl_loss: 0.0" states the same thing as "kl_loss: disabled".
+    n = as_number(v)
+    if n is not None:
+        return n != 0
+    return None
 
 
 def same(field: Field, theirs, ours) -> bool:
     if theirs is None or ours is None:
         return False
     t, o = str(theirs).strip(), str(ours).strip()
+    if field.kind == "bool":
+        tb, ob = as_bool(t), as_bool(o)
+        return tb is not None and tb == ob
     if field.kind == "num":
         tn, on = as_number(t), as_number(o)
         if tn is not None and on is not None:
             # 1e-6 vs 0.000001 vs 1E-6 are the same setting.
             return abs(tn - on) <= 1e-12 * max(1.0, abs(tn), abs(on))
+    if field.kind == "list":
+        # "AIME24, AIME25, AMC23" and "AIME24,AIME25,AMC23" are one setting, and
+        # the order they are listed in is not meaningful.
+        split = lambda v: {p.strip().lower() for p in re.split(r"[,\s]+", v) if p.strip()}
+        return split(t) == split(o)
     if field.kind == "model":
-        # "Qwen/Qwen3-4B-Base" vs "Qwen3-4B-Base" vs a local path ending in it.
-        t_tail, o_tail = t.rstrip("/").split("/")[-1], o.rstrip("/").split("/")[-1]
-        return t_tail.lower() == o_tail.lower()
+        # "Qwen/Qwen3-4B-Base" vs "Qwen3-4B-Base" vs a local path ending in it --
+        # and a card that gives a file inside a directory named for the dataset,
+        # datasets/DAPO-Math-17k-Processed/DAPO-Math.parquet, is naming the same
+        # thing as "DAPO-Math-17k-Processed".
+        def segments(value):
+            parts = [p for p in re.split(r"[/\\]", value.strip().rstrip("/")) if p]
+            return [re.sub(r"\.(parquet|json|jsonl|arrow)$", "", p).lower()
+                    for p in parts]
+        t_parts, o_parts = segments(t), segments(o)
+        if not t_parts or not o_parts:
+            return False
+        # One side's leaf name must appear *whole* as a segment of the other.
+        # Intersecting all segments would be wrong: Qwen/Qwen3-4B-Base and
+        # Qwen/Qwen3-4B share "qwen", and calling a base/instruct mix-up a match
+        # is the single worst thing this tool could do.
+        return t_parts[-1] in o_parts or o_parts[-1] in t_parts
     return t.lower() == o.lower()
 
 
 def read_our_config(config_path: str) -> dict:
-    keys = [f.config_var for f in FIELDS if f.config_var]
+    keys = [f.config_var for f in FIELDS if f.config_var] + ["GPU_COUNT"]
     query = f"source {config_path} >/dev/null 2>&1; " + "; ".join(
         f'echo "${k}"' for k in keys)
     out = subprocess.run(["bash", "-c", query], capture_output=True, text=True)
@@ -256,13 +399,19 @@ def main() -> int:
     card = parse_card(text)
     ours = read_our_config(args.config)
 
+    chosen = assign(FIELDS, card)
     rows, mismatches, missing = [], [], []
     for field in FIELDS:
-        theirs, stated_as = lookup(field, card)
+        theirs, stated_as = chosen.get(field.name, (None, None))
         our_value = ours.get(field.config_var or field.name, "")
         if theirs is None:
             verdict = "not stated"
             missing.append(field)
+        elif field.host and ours.get("GPU_COUNT", "0") in ("", "0"):
+            # No GPU here, so config.sh reported its fallback. Calling that a
+            # mismatch would send someone to fix a value that is correct on the
+            # machine that matters.
+            verdict = "host"
         elif same(field, theirs, our_value):
             verdict = "match"
         else:
@@ -283,12 +432,18 @@ def main() -> int:
     print(f"\n  {'field'.ljust(width)}{'theirs'.ljust(26)}{'ours'.ljust(26)}verdict")
     print("  " + "-" * (width + 60))
     for field, theirs, our_value, verdict, stated_as in rows:
-        colour = {"match": GREEN, "DIFFERS": RED, "not stated": YELLOW}[verdict]
+        colour = {"match": GREEN, "DIFFERS": RED, "not stated": YELLOW,
+                  "host": YELLOW}[verdict]
         t = (theirs if theirs is not None else "-")[:24]
         o = (our_value or "-")[:24]
         print(f"  {field.name.ljust(width)}{t.ljust(26)}{o.ljust(26)}{colour}{verdict}{RESET}")
         if stated_as and verdict != "match":
             print(f"  {' ' * width}{DIM}card states it as {stated_as!r}{RESET}")
+
+    host_rows = [r for r in rows if r[3] == "host"]
+    if host_rows:
+        print(f"\n{YELLOW}host{RESET} = taken from the machine at run time; this box "
+              f"has no GPU, so it could not be checked here.")
 
     print()
     if mismatches:

@@ -49,7 +49,14 @@ DATASETS = {
 }
 
 SUITES = {
-    # What a GRPO'd math model is normally reported on.
+    # The recipe's own validation sets, so the final numbers are comparable with
+    # what the training log reported. AMC23 is missing on purpose: the recipe
+    # validates on it, and this OpenCompass tree has no config for it, so it is
+    # covered during training (verl scores it with our reward function) but not
+    # here. Adding an AMC23 dataset config is its own piece of work -- claiming
+    # the suite covers it would be worse than the gap.
+    "recipe": ["aime2024", "aime2025"],
+    # The above plus what a GRPO'd math model is usually also reported on.
     "math": ["aime2024", "aime2025", "math500", "gsm8k", "olympiadbench", "gpqa"],
     # The set the repo's existing Shadow-FT SFT runs used, so the RL numbers land
     # in the same table as those.

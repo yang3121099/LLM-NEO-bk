@@ -30,35 +30,60 @@ MERGED_DIR="${MERGED_DIR:-$WORK_DIR/merged}"    # W_shadow
 LOG_DIR="${LOG_DIR:-$WORK_DIR/logs}"
 
 # --- RL data ------------------------------------------------------------------
-# DeepMath-103K: every row carries a verifiable final answer, which is what a
-# rule-based reward needs. scripts/prepare_deepmath_103k.py already handles this
-# dataset for SFT; prepare_data.py writes the verl parquet form.
-RL_DATASET="${RL_DATASET:-zwhe99/DeepMath-103K}"
+# DAPO-Math-17k, per the published recipe. Accepts either a local parquet (the
+# recipe names datasets/DAPO-Math-17k-Processed/DAPO-Math.parquet) or a HF id;
+# prepare_data.py passes a verl-shaped parquet through untouched and maps field
+# names otherwise.
+RL_DATASET="${RL_DATASET:-DAPO-Math-17k-Processed}"
 TRAIN_SIZE="${TRAIN_SIZE:-0}"      # 0 = all
-VAL_SIZE="${VAL_SIZE:-500}"
+
+# Validation is the three competition sets the recipe names, not a slice of the
+# training data. They are small and hard, which is why the validation response
+# budget below is four times the training one.
+VAL_DATASETS="${VAL_DATASETS:-AIME24,AIME25,AMC23}"
+VAL_SIZE="${VAL_SIZE:-0}"          # 0 = the whole of each validation set
 
 # --- GRPO ---------------------------------------------------------------------
-# Sized for 8x B300 (279 GB/GPU) and a 4B actor. The two batch sizes that matter
-# for reproducibility are TRAIN_BATCH_SIZE (prompts per step) and ROLLOUT_N
-# (samples per prompt, i.e. the GRPO group size); the micro-batch is a memory
-# knob only and does not change the update.
+# These follow the published recipe. The ones that define the update are
+# ROLLOUT_N (the GRPO group size), PPO_MINI_BATCH_SIZE, LEARNING_RATE, and the
+# fact that the KL term is off; MICRO_BATCH_PER_GPU is accumulation chunking.
+#
+# TRAIN_BATCH_SIZE is the one number the recipe does NOT state. 512 is our
+# choice, not theirs -- see the note in README.md before treating a run as an
+# exact reproduction.
 TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-512}"
-PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-128}"
-MICRO_BATCH_PER_GPU="${MICRO_BATCH_PER_GPU:-8}"
+PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-64}"
+MICRO_BATCH_PER_GPU="${MICRO_BATCH_PER_GPU:-1}"
 ROLLOUT_N="${ROLLOUT_N:-8}"
 LEARNING_RATE="${LEARNING_RATE:-1e-6}"
-KL_LOSS_COEF="${KL_LOSS_COEF:-0.001}"
-KL_LOSS_TYPE="${KL_LOSS_TYPE:-low_var_kl}"
+
+# KL disabled. verl only builds the reference-policy worker when a KL term needs
+# it, so this also frees a whole model's worth of memory per GPU.
+USE_KL_LOSS="${USE_KL_LOSS:-false}"
+KL_LOSS_COEF="${KL_LOSS_COEF:-0.0}"
+KL_LOSS_TYPE="${KL_LOSS_TYPE:-low_var_kl}"   # unused while USE_KL_LOSS=false
 ENTROPY_COEF="${ENTROPY_COEF:-0.0}"
+
+# token-mean: every token in the mini-batch weighs the same, so a long rollout
+# contributes proportionally more than a short one. With responses up to 7168
+# tokens this is not a detail -- seq-mean-token-sum would weight the two very
+# differently.
+LOSS_AGG_MODE="${LOSS_AGG_MODE:-token-mean}"
+
 TOTAL_EPOCHS="${TOTAL_EPOCHS:-1}"
 TOTAL_STEPS="${TOTAL_STEPS:-0}"    # 0 = derive from epochs
 SAVE_FREQ="${SAVE_FREQ:-20}"
 TEST_FREQ="${TEST_FREQ:-20}"
 SEED="${SEED:-1}"
 
+# 1024 + 7168 = 8192 for training; 1024 + 31744 = 32768 for validation. The
+# rollout engine is sized for the larger of the two.
 MAX_PROMPT_LEN="${MAX_PROMPT_LEN:-1024}"
-MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-4096}"
+MAX_RESPONSE_LEN="${MAX_RESPONSE_LEN:-7168}"
+VAL_RESPONSE_LEN="${VAL_RESPONSE_LEN:-31744}"
+MAX_MODEL_LEN="${MAX_MODEL_LEN:-32768}"
 ROLLOUT_TEMPERATURE="${ROLLOUT_TEMPERATURE:-1.0}"
+REPETITION_PENALTY="${REPETITION_PENALTY:-1.0}"
 
 # --- Rollout engine -----------------------------------------------------------
 ROLLOUT_ENGINE="${ROLLOUT_ENGINE:-vllm}"
@@ -74,15 +99,19 @@ REWARD_FN_PATH="${REWARD_FN_PATH:-$VERL_RL_DIR/reward_math.py}"
 REWARD_FN_NAME="${REWARD_FN_NAME:-compute_score}"
 
 # --- Evaluation ---------------------------------------------------------------
-# Swap the whole suite with EVAL_SUITE, or name datasets explicitly:
-#   EVAL_SUITE=math   AIME24, AIME25, MATH-500, GSM8K, OlympiadBench, GPQA-D
-#   EVAL_SUITE=shadow the repo's existing Shadow-FT set (comparable to the SFT runs)
-#   EVAL_DATASETS="aime2024,math500"  explicit
-EVAL_SUITE="${EVAL_SUITE:-math}"
+# The final scoring of all five roles, separate from the in-training validation
+# above. `recipe` is the recipe's own validation sets, so the numbers line up
+# with what the run reports during training.
+#   EVAL_SUITE=recipe  AIME24, AIME25 (+ AMC23 when a config exists for it)
+#   EVAL_SUITE=math    the above plus MATH-500, GSM8K, OlympiadBench, GPQA-D
+#   EVAL_SUITE=shadow  the repo's existing Shadow-FT set (comparable to the SFT runs)
+EVAL_SUITE="${EVAL_SUITE:-recipe}"
 EVAL_DATASETS="${EVAL_DATASETS:-}"
 EVAL_BACKEND="${EVAL_BACKEND:-vllm}"            # vllm | turbomind
-EVAL_MAX_OUT_LEN="${EVAL_MAX_OUT_LEN:-8192}"
-EVAL_MAX_SEQ_LEN="${EVAL_MAX_SEQ_LEN:-16384}"
+# Matches the recipe's validation budget, so eval-time truncation cannot make a
+# model look worse than it was during training.
+EVAL_MAX_OUT_LEN="${EVAL_MAX_OUT_LEN:-31744}"
+EVAL_MAX_SEQ_LEN="${EVAL_MAX_SEQ_LEN:-32768}"
 
 # --- Hardware (from the GPU actually present) ---------------------------------
 # shellcheck source=../scripts/gpu_profile.sh

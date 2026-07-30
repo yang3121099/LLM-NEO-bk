@@ -79,6 +79,36 @@ if [[ "${TOTAL_STEPS:-0}" -gt 0 ]]; then
   STEP_ARGS+=("trainer.total_training_steps=$TOTAL_STEPS")
 fi
 
+###############################################################################
+# KL term
+###############################################################################
+# The recipe disables it. verl only builds the reference-policy worker when
+# something needs it, so switching this off also frees a model's worth of memory
+# per GPU -- do not "helpfully" leave a tiny coefficient on.
+KL_ARGS=("actor_rollout_ref.actor.use_kl_loss=$USE_KL_LOSS")
+if [[ "${USE_KL_LOSS,,}" == "true" ]]; then
+  KL_ARGS+=("actor_rollout_ref.actor.kl_loss_coef=$KL_LOSS_COEF"
+            "actor_rollout_ref.actor.kl_loss_type=$KL_LOSS_TYPE"
+            "actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu=$MICRO_BATCH_PER_GPU"
+            "actor_rollout_ref.ref.fsdp_config.param_offload=True")
+else
+  KL_ARGS+=("actor_rollout_ref.actor.kl_loss_coef=0.0"
+            "algorithm.use_kl_in_reward=False")
+fi
+
+###############################################################################
+# Validation generation budget
+###############################################################################
+# Validation generates far longer than training (31744 vs 7168 here), so it gets
+# its own length. The key moved between verl releases; `+` adds it when the
+# schema does not already declare it. If your verl rejects it, drop the line --
+# validation then generates at the training length, which truncates AIME
+# rollouts and understates the score.
+VAL_ARGS=()
+if [[ -n "${VAL_RESPONSE_LEN:-}" && "$VAL_RESPONSE_LEN" != "$MAX_RESPONSE_LEN" ]]; then
+  VAL_ARGS+=("+actor_rollout_ref.rollout.val_kwargs.response_length=$VAL_RESPONSE_LEN")
+fi
+
 info "role         : $ROLE"
 info "model        : $MODEL_PATH"
 info "hardware     : $GPU_LABEL x$N_GPUS"
@@ -86,6 +116,8 @@ info "attention    : ${ATTN_IMPL:-fa2}"
 info "data         : $TRAIN_FILE"
 info "checkpoints  : $ROLE_CKPT_DIR"
 info "batch        : $TRAIN_BATCH_SIZE prompts x $ROLLOUT_N samples, mini=$PPO_MINI_BATCH_SIZE"
+info "lengths      : prompt=$MAX_PROMPT_LEN response=$MAX_RESPONSE_LEN val=$VAL_RESPONSE_LEN"
+info "KL loss      : $USE_KL_LOSS   loss agg: $LOSS_AGG_MODE"
 
 set -x
 python3 -m verl.trainer.main_ppo \
@@ -102,9 +134,7 @@ python3 -m verl.trainer.main_ppo \
   actor_rollout_ref.actor.optim.lr="$LEARNING_RATE" \
   actor_rollout_ref.actor.ppo_mini_batch_size="$PPO_MINI_BATCH_SIZE" \
   actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu="$MICRO_BATCH_PER_GPU" \
-  actor_rollout_ref.actor.use_kl_loss=True \
-  actor_rollout_ref.actor.kl_loss_coef="$KL_LOSS_COEF" \
-  actor_rollout_ref.actor.kl_loss_type="$KL_LOSS_TYPE" \
+  actor_rollout_ref.actor.loss_agg_mode="$LOSS_AGG_MODE" \
   actor_rollout_ref.actor.entropy_coeff="$ENTROPY_COEF" \
   actor_rollout_ref.actor.fsdp_config.param_offload=False \
   actor_rollout_ref.actor.fsdp_config.optimizer_offload=False \
@@ -113,9 +143,9 @@ python3 -m verl.trainer.main_ppo \
   actor_rollout_ref.rollout.temperature="$ROLLOUT_TEMPERATURE" \
   actor_rollout_ref.rollout.tensor_model_parallel_size="$ROLLOUT_TP" \
   actor_rollout_ref.rollout.gpu_memory_utilization="$ROLLOUT_GPU_UTIL" \
+  actor_rollout_ref.rollout.max_model_len="$MAX_MODEL_LEN" \
   actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu="$MICRO_BATCH_PER_GPU" \
-  actor_rollout_ref.ref.log_prob_micro_batch_size_per_gpu="$MICRO_BATCH_PER_GPU" \
-  actor_rollout_ref.ref.fsdp_config.param_offload=True \
+  reward_model.enable=False \
   custom_reward_function.path="$REWARD_FN_PATH" \
   custom_reward_function.name="$REWARD_FN_NAME" \
   trainer.n_gpus_per_node="$N_GPUS" \
@@ -127,6 +157,8 @@ python3 -m verl.trainer.main_ppo \
   trainer.save_freq="$SAVE_FREQ" \
   trainer.test_freq="$TEST_FREQ" \
   trainer.total_epochs="$TOTAL_EPOCHS" \
+  "${KL_ARGS[@]}" \
+  "${VAL_ARGS[@]+"${VAL_ARGS[@]}"}" \
   "${STEP_ARGS[@]+"${STEP_ARGS[@]}"}" \
   "${ATTN_ARGS[@]}" \
   "$@" 2>&1 | tee "$LOG_DIR/train_${ROLE}.log"

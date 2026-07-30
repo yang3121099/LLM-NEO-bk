@@ -27,22 +27,56 @@ anything. The graft arithmetic is shared — `shadow_rl/merge.py`, unchanged.
 
 ---
 
-## Read this before you start
+## Recipe status
 
-**This is not yet a confirmed reproduction of any published recipe.** The model
-card at `huggingface.co/lllyx/Qwen3-4B-Base-GRPO` cannot be read from the
-environment this was built in: the organisation's egress policy rejects
-`huggingface.co` (and `hf-mirror.com`) at the CONNECT, so every value below was
-*chosen*, not transcribed.
+`config.sh` now follows the published recipe for
+`lllyx/Qwen3-4B-Base-GRPO`, transcribed into
+[`recipes/lllyx-qwen3-4b-base-grpo.md`](recipes/lllyx-qwen3-4b-base-grpo.md).
+Every field the card states matches:
 
-| | what we use | why | change it with |
-|---|---|---|---|
-| RL data | DeepMath-103K | every row has a verifiable answer; the repo already prepares it | `RL_DATASET` |
-| reward | rule-based on `\boxed{}` | matches the prompt and the eval harnesses | `REWARD_FN_PATH` |
-| GRPO | 512 prompts × 8 samples, lr 1e-6, KL 0.001 | conventional values for a 4B actor on 8×B300 | `config.sh` |
-| eval | AIME24/25, MATH-500, GSM8K, OlympiadBench, GPQA-D | what a GRPO'd math model is normally reported on | `EVAL_SUITE` |
+```bash
+python verl_rl/compare_recipe.py --card verl_rl/recipes/lllyx-qwen3-4b-base-grpo.md
+# every field the card states matches this config.
+```
 
-### Confirming against the real card
+**One number the card does not state: `data.train_batch_size`** — the prompts
+drawn per step. Ours is 512, which is our choice, not theirs. With
+`ppo_mini_batch_size=64` that is 8 gradient steps per rollout batch; a different
+train batch size changes how often the policy updates and is the one remaining
+reason a run here could diverge from theirs. If you can find it, set
+`TRAIN_BATCH_SIZE`.
+
+The card is a **base-side** recipe. Running the identical recipe from the
+instruct checkpoint is this pipeline's addition, not a deviation — without that
+arm there is nothing to compare the graft against.
+
+Two more gaps worth stating plainly:
+
+* **AMC23 has no OpenCompass config in this tree.** It is one of the recipe's
+  three validation sets, so it is covered *during* training (verl scores it with
+  our reward function and reports it separately in the log), but the final
+  five-role eval covers AIME24 and AIME25 only. `EVAL_SUITE=recipe` reflects
+  that rather than pretending otherwise.
+* **The validation-set hub ids could not be verified** — no access to
+  huggingface.co from here. `prepare_data.py` carries the commonly used ids and
+  takes overrides: `--val-set AIME24=/data/aime24.parquet`.
+
+### The recipe, as configured
+
+| | value | note |
+|---|---|---|
+| algorithm | GRPO, full-parameter actor, bf16 | |
+| KL loss | **off** | verl then builds no reference policy — a model's worth of memory per GPU |
+| loss aggregation | `token-mean` | with responses up to 7168 tokens this is not a detail |
+| reward | custom rule-based, outcome only | no format reward, matching the card |
+| train | DAPO-Math-17k-Processed | local parquet or hub id |
+| val | AIME24, AIME25, AMC23 | during training, scored by the same reward fn |
+| lengths | prompt 1024, response 7168, val response 31744, model 32768 | 1024+7168=8192; 1024+31744=32768 |
+| rollout | vLLM, n=8, temperature 1.0, TP 1 | n is the GRPO group size |
+| optim | lr 1e-6, mini-batch 64, micro-batch/GPU 1, 1 epoch | |
+| infra | 8 GPUs, save/test every 20 steps | GPU count read from the machine |
+
+### Re-checking after any change
 
 Paste the card in and let the comparator do the diff, rather than reading two
 lists of numbers side by side:

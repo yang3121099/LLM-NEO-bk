@@ -35,6 +35,47 @@ this compute capability — imports cleanly, prints the right GPU name, and only
 dies at the first matmul, which in this pipeline is after the data pass and the
 merge.
 
+## 1b. B200 and B300 are not the same target
+
+They are both Blackwell, and that is exactly what makes the difference easy to
+miss. B200 is `sm_100`; B300 (Blackwell Ultra) is `sm_103`.
+
+| | B200 | B300 |
+|---|---|---|
+| compute capability | 10.0 (`sm_100`) | 10.3 (`sm_103`) |
+| CUDA toolkit for codegen | ≥ 12.8 | **≥ 12.9** |
+| wheel index | cu128 | cu130 (cu129 also works) |
+| torch floor | ≥ 2.7 | **≥ 2.9** |
+| `TORCH_CUDA_ARCH_LIST` | `10.0a` | `10.3a` |
+| vllm floor | ≥ 0.9 | ≥ 0.11 |
+| memory / GPU | ~180 GB | ~279 GB |
+
+The trap is **arch-conditional code**. CUDA kernels that need arch-specific
+features — the FP8/NVFP4 CUTLASS paths in flash-attn, vLLM and friends — are
+compiled as `sm_100a` or `sm_103a`, and that suffix means *this arch only*:
+
+```
+wheel built for B200 (sm_100a) running on B300 : nothing
+wheel built for B200 (sm_100)  running on B300 : runs (minor-version compatible)
+wheel built for B300 (sm_103a) running on B200 : nothing
+```
+
+So a container that works on your B200 fleet can fail on a B300 with `no kernel
+image is available for execution on the device`, even though both are Blackwell
+and `nvidia-smi` looks fine. Plain (non-`a`) `sm_100` code does run on a B300.
+
+Nothing here needs a per-machine branch: `scripts/gpu_profile.sh` detects the
+capability and emits the row above, and `check_env.py` distinguishes native
+kernels from merely-compatible ones. Confirm on the node with:
+
+```bash
+bash scripts/gpu_profile.sh --print
+```
+
+For the RL pipeline the practical differences are the wheel set, and that a
+B300's 279 GB lets you raise `MICRO_BATCH_PER_GPU` — which is accumulation
+chunking, not part of the update — where a B200 may not.
+
 ## 2. What differs between the two machines
 
 | | H100 (was) | B300 (now) |

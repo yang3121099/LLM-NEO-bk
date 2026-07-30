@@ -51,6 +51,8 @@ if [[ $DEMO -eq 1 ]]; then
   SAVE_FREQ=5
   TEST_FREQ=5
   MAX_RESPONSE_LEN=512
+  VAL_RESPONSE_LEN=512
+  MAX_MODEL_LEN=2048
   EVAL_SUITE=fast
 fi
 
@@ -66,9 +68,12 @@ cat <<EOF
   W_I         : $INSTRUCT_MODEL
   hardware    : $GPU_LABEL x$N_GPUS${GPU_MEM_GB:+, ${GPU_MEM_GB}GB/GPU}
   attention   : ${ATTN_IMPL:-fa2}
-  data        : $( [[ $DEMO -eq 1 ]] && echo "demo (200 synthetic rows)" || echo "$RL_DATASET" )
-  GRPO        : ${TRAIN_BATCH_SIZE} prompts x ${ROLLOUT_N} samples, lr=$LEARNING_RATE, kl=$KL_LOSS_COEF
+  train data  : $( [[ $DEMO -eq 1 ]] && echo "demo (200 synthetic rows)" || echo "$RL_DATASET" )
+  val data    : $( [[ $DEMO -eq 1 ]] && echo "demo" || echo "$VAL_DATASETS" )
+  GRPO        : ${TRAIN_BATCH_SIZE} prompts x ${ROLLOUT_N} samples, mini=${PPO_MINI_BATCH_SIZE}, lr=$LEARNING_RATE
+              : KL $( [[ "${USE_KL_LOSS,,}" == "true" ]] && echo "on (coef=$KL_LOSS_COEF)" || echo "off" ), loss agg=$LOSS_AGG_MODE
               : $( [[ "${TOTAL_STEPS:-0}" -gt 0 ]] && echo "${TOTAL_STEPS} steps" || echo "${TOTAL_EPOCHS} epoch(s)" )
+  lengths     : prompt=$MAX_PROMPT_LEN response=$MAX_RESPONSE_LEN val=$VAL_RESPONSE_LEN model=$MAX_MODEL_LEN
   eval        : suite=$EVAL_SUITE backend=$EVAL_BACKEND
   stages      : $STAGES
   work dir    : $WORK_DIR
@@ -98,7 +103,8 @@ if has_stage data; then
   if [[ -f "$DATA_DIR/train.parquet" && $FORCE -eq 0 ]]; then
     info "reusing $DATA_DIR/train.parquet"
   else
-    ARGS=(--out "$DATA_DIR" --dataset "$RL_DATASET" --val-size "$VAL_SIZE")
+    ARGS=(--out "$DATA_DIR" --dataset "$RL_DATASET"
+          --val-sets "$VAL_DATASETS" --val-size "$VAL_SIZE")
     [[ "${TRAIN_SIZE:-0}" -gt 0 ]] && ARGS+=(--train-size "$TRAIN_SIZE")
     [[ $DEMO -eq 1 ]] && ARGS+=(--demo)
     python3 "$VERL_RL_DIR/prepare_data.py" "${ARGS[@]}"
@@ -116,9 +122,13 @@ if has_stage train; then
       info "checkpoints already exist for $ROLE (use --force to retrain)"
       continue
     fi
+    # Explicit passthrough: --demo overrides these after config.sh was sourced,
+    # and train_grpo.sh sources config.sh again in its own shell.
     TOTAL_STEPS="$TOTAL_STEPS" TRAIN_BATCH_SIZE="$TRAIN_BATCH_SIZE" \
     PPO_MINI_BATCH_SIZE="$PPO_MINI_BATCH_SIZE" ROLLOUT_N="$ROLLOUT_N" \
-    SAVE_FREQ="$SAVE_FREQ" TEST_FREQ="$TEST_FREQ" MAX_RESPONSE_LEN="$MAX_RESPONSE_LEN" \
+    SAVE_FREQ="$SAVE_FREQ" TEST_FREQ="$TEST_FREQ" \
+    MAX_RESPONSE_LEN="$MAX_RESPONSE_LEN" VAL_RESPONSE_LEN="$VAL_RESPONSE_LEN" \
+    MAX_MODEL_LEN="$MAX_MODEL_LEN" \
       "$VERL_RL_DIR/train_grpo.sh" "$ROLE" \
       || die "GRPO failed on $ROLE -- see $LOG_DIR/train_${ROLE}.log"
   done

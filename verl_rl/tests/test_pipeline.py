@@ -132,33 +132,51 @@ def test_val_split_is_shared():
     print("\n[3] both GRPO runs are validated on the same questions")
     # Base-init and instruct-init are only comparable if nothing but the starting
     # weights differs. A reshuffled validation split would break that quietly.
-    outs = []
-    for _ in range(2):
-        out = tempfile.mkdtemp()
-        subprocess.run(
-            [sys.executable, os.path.join(VERL_RL, "prepare_data.py"),
-             "--out", out, "--demo", "--val-size", "20", "--seed", "1"],
-            capture_output=True, text=True)
-        outs.append(out)
     try:
         import pandas as pd
     except ImportError:
         print("  skip  pandas not installed")
         return
-    a = pd.read_parquet(os.path.join(outs[0], "val.parquet"))
-    b = pd.read_parquet(os.path.join(outs[1], "val.parquet"))
-    qa = [r["question"] for r in a["extra_info"]]
-    qb = [r["question"] for r in b["extra_info"]]
-    check("the same seed gives the same validation set", qa == qb)
 
-    out_c = tempfile.mkdtemp()
-    subprocess.run(
-        [sys.executable, os.path.join(VERL_RL, "prepare_data.py"),
-         "--out", out_c, "--demo", "--val-size", "20", "--seed", "2"],
-        capture_output=True, text=True)
-    c = pd.read_parquet(os.path.join(out_c, "val.parquet"))
-    qc = [r["question"] for r in c["extra_info"]]
+    # The recipe validates on named benchmark sets, so the seeded hold-out is
+    # the fallback path -- exercise it where it actually applies.
+    pool = os.path.join(tempfile.mkdtemp(), "pool.parquet")
+    pd.DataFrame([
+        {"question": f"What is {i} + 1?", "final_answer": str(i + 1)}
+        for i in range(100)
+    ]).to_parquet(pool, index=False)
+
+    def val_questions(seed):
+        out = tempfile.mkdtemp()
+        proc = subprocess.run(
+            [sys.executable, os.path.join(VERL_RL, "prepare_data.py"),
+             "--out", out, "--dataset", pool, "--val-sets", "",
+             "--val-size", "20", "--seed", str(seed)],
+            capture_output=True, text=True)
+        assert proc.returncode == 0, proc.stderr
+        df = pd.read_parquet(os.path.join(out, "val.parquet"))
+        return [r["question"] for r in df["extra_info"]]
+
+    qa, qa2, qc = val_questions(1), val_questions(1), val_questions(2)
+    check("the same seed gives the same validation set", qa == qa2)
     check("a different seed gives a different one", qa != qc)
+    check("the hold-out is the size asked for", len(qa) == 20, str(len(qa)))
+
+    # And the recipe path: named sets, so nothing is held out of training.
+    out = tempfile.mkdtemp()
+    proc = subprocess.run(
+        [sys.executable, os.path.join(VERL_RL, "prepare_data.py"),
+         "--out", out, "--dataset", pool, "--val-sets", "AIME24",
+         "--val-set", f"AIME24={pool}", "--val-size", "5"],
+        capture_output=True, text=True)
+    check("named validation sets work", proc.returncode == 0, proc.stderr.strip()[:200])
+    if proc.returncode == 0:
+        train = pd.read_parquet(os.path.join(out, "train.parquet"))
+        val = pd.read_parquet(os.path.join(out, "val.parquet"))
+        check("training keeps every row when val is a separate set",
+              len(train) == 100, str(len(train)))
+        check("validation rows are tagged with their set",
+              set(val["data_source"]) == {"AIME24"}, str(set(val["data_source"])))
 
 
 # --------------------------------------------------------------------------- #
@@ -335,10 +353,54 @@ def test_compare_recipe():
     check("1e-6 != 5e-6", not cr.same(lr, "1e-6", "5e-6"))
     model = [f for f in cr.FIELDS if f.name == "base model"][0]
     check("Qwen/X == X", cr.same(model, "Qwen/Qwen3-4B-Base", "Qwen3-4B-Base"))
+    # The worst possible false positive: these two share the "Qwen" path
+    # segment, so any set-intersection comparison calls a base/instruct mix-up
+    # a match. It did, once.
     check("Base != Instruct",
           not cr.same(model, "Qwen/Qwen3-4B-Base", "Qwen/Qwen3-4B"))
+    check("Instruct != Base",
+          not cr.same(model, "Qwen/Qwen3-4B", "Qwen/Qwen3-4B-Base"))
+    check("4B != 8B",
+          not cr.same(model, "Qwen/Qwen3-4B-Base", "Qwen/Qwen3-8B-Base"))
+    # But a file inside a directory named for the dataset is that dataset.
+    data = [f for f in cr.FIELDS if f.name == "train dataset"][0]
+    check("dir/DATASET/file.parquet == DATASET",
+          cr.same(data, "datasets/DAPO-Math-17k-Processed/DAPO-Math.parquet",
+                  "DAPO-Math-17k-Processed"))
+    check("a different dataset still differs",
+          not cr.same(data, "datasets/DAPO-Math-17k/x.parquet", "DeepMath-103K"))
+
+    lst = [f for f in cr.FIELDS if f.name == "val datasets"][0]
+    check("list order and spacing do not matter",
+          cr.same(lst, "AIME24, AIME25, AMC23", "AMC23,AIME24,AIME25"))
+    check("a missing set is a difference",
+          not cr.same(lst, "AIME24, AIME25", "AIME24,AIME25,AMC23"))
+
+    kl = [f for f in cr.FIELDS if f.name == "KL loss"][0]
+    check("'disabled' == false", cr.same(kl, "disabled", "false"))
+    check("'disabled' == 0.0 coefficient", cr.same(kl, "disabled", "0"))
+    check("'disabled' != true", not cr.same(kl, "disabled", "true"))
+
+    freq = [f for f in cr.FIELDS if f.name == "save frequency"][0]
+    check("'every 20 steps' == 20", cr.same(freq, "every 20 steps", "20"))
+    check("'every 20 steps' != 50", not cr.same(freq, "every 20 steps", "50"))
+
     n = [f for f in cr.FIELDS if f.name.startswith("rollout n")][0]
     check("8 != 16", not cr.same(n, "16", "8"))
+
+    # Overlapping aliases: "batch size" is a subsequence of "ppo mini batch
+    # size", so a first-match-wins matcher gives one field the other's value.
+    card = cr.parse_card("ppo mini-batch size: 64\nn responses per prompt: 8\n"
+                         "ppo micro-batch/gpu: 1\nn gpus: 8\n")
+    chosen = cr.assign(cr.FIELDS, card)
+    check("'ppo mini-batch size' -> mini batch size",
+          chosen.get("mini batch size", (None,))[0] == "64")
+    check("'n responses per prompt' -> group size",
+          chosen.get("rollout n (group size)", (None,))[0] == "8")
+    check("'ppo micro-batch/gpu' -> micro batch per GPU",
+          chosen.get("micro batch per GPU", (None,))[0] == "1")
+    check("train batch size not invented from another key",
+          "train batch size (prompts)" not in chosen)
 
     print("\n[9] a differing recipe is reported, not silently accepted")
     proc = run_compare(HYDRA_CARD)
@@ -357,7 +419,30 @@ def test_compare_recipe():
           all(line.startswith(("export ", "#")) or not line.strip()
               for line in proc.stdout.splitlines()))
 
-    print("\n[10] a matching recipe is confirmed")
+    print("\n[10] config.sh still matches the recipe it claims to reproduce")
+    # The whole point of checking in recipes/: config.sh cannot drift away from
+    # it silently. If someone retunes a hyperparameter, this fails and they have
+    # to either revert it or stop calling the run a reproduction.
+    reference = os.path.join(VERL_RL, "recipes", "lllyx-qwen3-4b-base-grpo.md")
+    if not os.path.isfile(reference):
+        check("the reference recipe is checked in", False, reference)
+    else:
+        proc = subprocess.run(
+            [sys.executable, os.path.join(VERL_RL, "compare_recipe.py"),
+             "--card", reference, "--no-color"],
+            capture_output=True, text=True)
+        check("every field the recipe states matches config.sh",
+              proc.returncode == 0,
+              "\n".join(line for line in proc.stdout.splitlines()
+                        if "DIFFERS" in line))
+        # The card does not state the train batch size, and that gap is the one
+        # thing standing between this and an exact reproduction -- it must stay
+        # visible rather than being quietly filled in.
+        check("the unstated train batch size is still reported as unstated",
+              "train batch size" in proc.stdout.split("does not state")[-1]
+              if "does not state" in proc.stdout else False)
+
+    print("\n[11] a matching recipe is confirmed")
     # config.sh's own defaults, restated as a card: must come back clean.
     proc = run_compare(PROSE_CARD)
     check("an aligned card exits zero", proc.returncode == 0,

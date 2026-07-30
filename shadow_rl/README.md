@@ -262,6 +262,27 @@ promising `shadow − rl_on_instruct`, re-run just those on the full sets:
 Since `results.csv` is keyed by pair/role/dataset, delete the sampled rows for
 that pair first, or point `--out` at a separate file.
 
+## Where things are stored
+
+| what | where | override |
+|---|---|---|
+| downloaded models | the standard HuggingFace cache (`HF_HOME`, default `~/.cache/huggingface/hub`) | `SHADOW_RL_MODEL_DIR` |
+| merged models | `shadow_rl/merged/` | `MERGED_DIR` |
+| BM25 corpus + index (~70 GB) | `corpus/` in the working tree | `CORPUS_DIR` |
+| verl parquets | `datasets/` in the working tree | `--out` on `prepare_data.py` |
+| results, logs | `shadow_rl/` and `shadow_rl/logs/` | `RESULTS`, `LOG_DIR` |
+
+Models use the shared HuggingFace cache so they are downloaded once and reused
+by anything else on the box. The corpus and index are the large, single-purpose
+downloads, so they live under the working tree rather than filling `/root`.
+
+The HuggingFace *dataset* cache follows `HF_HOME` like the models. To put it in
+the working tree as well:
+
+```bash
+export HF_DATASETS_CACHE=$PWD/hf_datasets
+```
+
 ## Selecting pairs
 
 `--pairs` takes either explicit ids or group names. Several groups **intersect**,
@@ -322,6 +343,33 @@ Everything downstream is backbone-agnostic — config, tokenizer and chat templa
 all come from `W_I` — so a Llama pair needs no code changes. Disk and runtime
 estimates are derived from the parameter count in the size key, so a 14B or 8B
 pair is costed correctly rather than assumed to be 3B.
+
+## The two extra datasets
+
+GPQA-Diamond and SimpleQA are not part of the Search-R1 protocol, so neither has
+published reference numbers and both are excluded from the harness-validation
+table.
+
+**GPQA-Diamond** is multiple choice. Options are rendered into the question and
+labelled with **digits, not letters** — `qa_em.normalize_answer` strips English
+articles, so a gold label of `"A"` normalises to the empty string, and an empty
+gold compares equal to any prediction that also normalises to empty (`"the"`,
+`"an"`). That would have scored junk answers correct on every question whose
+answer happened to be option A. Digits pass through the normaliser untouched.
+Either the option number or the answer text scores as correct. The repo is gated;
+accept the licence or `huggingface-cli login` first.
+
+As a general guard, any gold answer that normalises to nothing is dropped before
+scoring, and the count is reported.
+
+**SimpleQA** is graded with **substring exact match**, not strict EM. Its own
+protocol uses an LLM judge, which would mean depending on a grader model; strict
+EM is the opposite extreme and fails on `"in 1963"` against a gold of `"1963"`.
+Sub-EM is the fixed, reproducible middle — same normaliser, but the gold only has
+to appear in the prediction — and it comes from the official `qa_em` module
+rather than being reimplemented here. It is more permissive than strict EM, so
+treat SimpleQA numbers as a different metric from the other columns, not a
+comparable one.
 
 ## Parameter-level similarity
 

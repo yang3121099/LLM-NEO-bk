@@ -65,8 +65,22 @@ MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
 RESULTS="${RESULTS:-$REPO_ROOT/shadow_rl/results.csv}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"
 RETRIEVER_URL="${RETRIEVER_URL:-http://127.0.0.1:8000/retrieve}"
-MODEL_DIR="${SHADOW_RL_MODEL_DIR:-$HOME/models}"
-export SHADOW_RL_MODEL_DIR="$MODEL_DIR"
+# Models go to the standard HuggingFace cache by default, so they are shared
+# with anything else on the machine rather than duplicated. Only export the
+# override when the caller actually set one.
+if [[ -n "${SHADOW_RL_MODEL_DIR:-}" ]]; then
+    MODEL_DIR="$SHADOW_RL_MODEL_DIR"
+    export SHADOW_RL_MODEL_DIR
+else
+    MODEL_DIR=$(python3 -c "
+try:
+    from huggingface_hub.constants import HF_HUB_CACHE
+    print(HF_HUB_CACHE)
+except Exception:
+    import os
+    print(os.path.join(os.environ.get('HF_HOME', os.path.expanduser('~/.cache/huggingface')), 'hub'))
+" 2>/dev/null || echo "$HOME/.cache/huggingface/hub")
+fi
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -426,7 +440,7 @@ cat <<EOF | tee -a "$RUN_LOG"
  pairs    : ${#PAIR_LIST[@]}  ($(IFS=,; echo "${PAIR_LIST[*]}"))
  stages   : $STAGES
  roles    : $ROLES
- models   : $MODEL_DIR
+ models   : $MODEL_DIR$( [[ -z "${SHADOW_RL_MODEL_DIR:-}" ]] && echo "  (HuggingFace cache)" )
  merged   : $MERGED_DIR
  results  : $RESULTS
  log      : $RUN_LOG

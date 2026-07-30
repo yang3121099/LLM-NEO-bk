@@ -47,6 +47,10 @@ class DatasetSpec:
     question_field: str
     answer_field: str
     kind: str = "qa"               # "qa" (free-form short answer) | "mcq"
+    # "em"    strict exact match after normalisation (the Search-R1 default)
+    # "subem" gold contained in the prediction, same normaliser -- a fixed,
+    #         deterministic relaxation, also from the official qa_em module
+    metric: str = "em"
     # For mcq: fields holding the distractors, shuffled into lettered options.
     distractor_fields: tuple = ()
     note: str = ""
@@ -79,10 +83,16 @@ DATASET_SPECS["gpqa_diamond"] = DatasetSpec(
 # SimpleQA: short-factoid questions with a single reference answer. NOTE the
 # official protocol grades with an LLM judge, not exact match -- EM here is a
 # strict lower bound and will read lower than published SimpleQA numbers.
+# Graded with substring-EM rather than strict EM. SimpleQA's own protocol uses
+# an LLM judge, which needs a grader model we do not want to depend on; strict EM
+# is the opposite extreme and fails on "in 1963" vs "1963". subem is the fixed,
+# reproducible middle: the same normaliser, but the gold answer only has to
+# appear in the prediction. It comes from the official qa_em module, so it is
+# still the harness's own code rather than something reimplemented here.
 DATASET_SPECS["simpleqa"] = DatasetSpec(
     "simpleqa", "basicv8vc/SimpleQA", None, ("test", "train"),
-    "problem", "answer",
-    note="official protocol uses an LLM grader; EM here is a strict lower bound",
+    "problem", "answer", metric="subem",
+    note="graded with substring-EM (deterministic); official SimpleQA uses an LLM judge",
 )
 
 DATASETS: List[str] = list(DATASET_SPECS)

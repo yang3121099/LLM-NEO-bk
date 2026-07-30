@@ -27,6 +27,41 @@ def newest_step(ckpt_dir: str) -> str:
     return steps[-1]
 
 
+def _run_verl_merger(step_dir: str, out_dir: str) -> bool:
+    """Try verl's own scripts/model_merger.py. Returns True if it produced weights.
+
+    Preferred over merging shards by hand: verl owns its checkpoint format and
+    the layout has changed between releases, so its converter is the only one
+    guaranteed to match the version that wrote the checkpoint. The CLI has also
+    moved around, hence the several invocations.
+    """
+    import subprocess
+
+    verl_root = os.environ.get("VERL_ROOT", os.path.expanduser("~/verl"))
+    script = os.path.join(verl_root, "scripts", "model_merger.py")
+    if not os.path.exists(script):
+        print(f"[info] no verl model_merger.py at {script}; will merge shards directly")
+        return False
+
+    attempts = [
+        [sys.executable, script, "merge", "--backend", "fsdp",
+         "--local_dir", step_dir, "--target_dir", out_dir],
+        [sys.executable, script, "--backend", "fsdp",
+         "--local_dir", step_dir, "--target_dir", out_dir],
+        [sys.executable, script, "--local_dir", step_dir, "--target_dir", out_dir],
+    ]
+    for cmd in attempts:
+        print(f"[info] trying: {' '.join(cmd[1:])}")
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        if proc.returncode == 0 and glob.glob(os.path.join(out_dir, "*.safetensors")):
+            print("[ok] verl's model_merger produced the HuggingFace weights")
+            return True
+        tail = (proc.stderr or proc.stdout).strip().splitlines()[-2:]
+        print(f"     failed: {' / '.join(tail) if tail else 'no output'}")
+    print("[info] verl's merger did not work here; merging shards directly")
+    return False
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ckpt", required=True, help="verl default_local_dir")
@@ -44,19 +79,26 @@ def main() -> None:
     if os.path.isdir(actor):
         step_dir = actor
 
-    # verl ships a converter for its sharded FSDP format; prefer it when present.
+    # Three routes, in decreasing order of trust:
+    #   1. verl already wrote HF weights next to the checkpoint
+    #   2. verl's own model_merger.py -- the officially supported converter, and
+    #      the only one that tracks its checkpoint layout across versions
+    #   3. merge the FSDP shards ourselves (last resort; layout varies by version)
     merged = os.path.join(step_dir, "huggingface")
     if os.path.isdir(merged) and glob.glob(os.path.join(merged, "*.safetensors")):
         print(f"[info] verl already exported HF weights at {merged}")
         src = merged
+    elif _run_verl_merger(step_dir, args.out):
+        src = None
     else:
         shards = sorted(glob.glob(os.path.join(step_dir, "model_world_size_*_rank_*.pt")))
         if not shards:
             sys.exit(
                 f"[fail] no FSDP shards or exported weights under {step_dir}.\n"
-                "       If your verl version ships scripts/model_merger.py, run that "
-                "instead:\n"
-                f"       python $VERL_ROOT/scripts/model_merger.py --local_dir {step_dir}")
+                f"       Contents: {sorted(os.listdir(step_dir))[:10]}\n"
+                "       verl checkpoint layouts differ by version. Point --ckpt at the\n"
+                "       directory holding model_world_size_*_rank_*.pt, or run your\n"
+                "       verl's own converter and pass its output as --ckpt.")
         print(f"[info] merging {len(shards)} FSDP shard(s)")
         state = {}
         for shard in shards:

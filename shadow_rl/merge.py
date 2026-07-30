@@ -63,21 +63,27 @@ def resolve(path_or_repo: str) -> str:
 
     from huggingface_hub import snapshot_download
 
-    cache_root = os.environ.get("SHADOW_RL_MODEL_DIR", os.path.expanduser("~/models"))
-    local_dir = os.path.join(cache_root, path_or_repo.replace("/", "__"))
-    print(f"[hf] snapshot_download {path_or_repo} -> {local_dir}", flush=True)
-    return snapshot_download(
-        repo_id=path_or_repo,
-        local_dir=local_dir,
-        allow_patterns=[
-            "*.safetensors",
-            "*.safetensors.index.json",
-            "*.json",
-            "*.txt",
-            "*.model",
-            "*.jinja",
-        ],
-    )
+    patterns = [
+        "*.safetensors",
+        "*.safetensors.index.json",
+        "*.json",
+        "*.txt",
+        "*.model",
+        "*.jinja",
+    ]
+
+    # Default to the standard HuggingFace cache (HF_HOME / ~/.cache/huggingface),
+    # so models are shared with every other tool on the box and downloaded once.
+    # SHADOW_RL_MODEL_DIR overrides that for anyone who wants them elsewhere.
+    cache_root = os.environ.get("SHADOW_RL_MODEL_DIR")
+    if cache_root:
+        local_dir = os.path.join(cache_root, path_or_repo.replace("/", "__"))
+        print(f"[hf] snapshot_download {path_or_repo} -> {local_dir}", flush=True)
+        return snapshot_download(repo_id=path_or_repo, local_dir=local_dir,
+                                 allow_patterns=patterns)
+
+    print(f"[hf] snapshot_download {path_or_repo} -> HuggingFace cache", flush=True)
+    return snapshot_download(repo_id=path_or_repo, allow_patterns=patterns)
 
 
 class Checkpoint:

@@ -177,13 +177,19 @@ def _build(row, spec, seed: int) -> Dict:
         # for every model and every run; otherwise roles are not comparable.
         rng = random.Random(f"{SAMPLE_SEED}:{spec.name}:{seed}")
         rng.shuffle(options)
-        letters = "ABCDEFGH"[:len(options)]
-        rendered = "\n".join(f"{l}) {o}" for l, o in zip(letters, options))
-        letter = letters[options.index(correct)]
+        # Digits, not letters. qa_em.normalize_answer strips English articles, so
+        # the option label "A" normalises to the empty string -- and an empty
+        # gold matches any prediction that also normalises to empty ("the", "an",
+        # or a stray article). That would score junk answers correct on every
+        # question whose answer happens to be option A. Digits survive the
+        # normaliser untouched.
+        labels = [str(i + 1) for i in range(len(options))]
+        rendered = "\n".join(f"{n}) {o}" for n, o in zip(labels, options))
+        label = labels[options.index(correct)]
         return {
             "question": f"{question}\n{rendered}",
-            # Accept the bare letter, the letter with a paren, or the text.
-            "golden_answers": [letter, f"{letter})", correct],
+            # Accept the bare option number or the answer text.
+            "golden_answers": [label, correct],
         }
 
     if question and question[-1] != "?":
@@ -192,6 +198,27 @@ def _build(row, spec, seed: int) -> Dict:
     if isinstance(gold, str):
         gold = [gold]
     return {"question": question, "golden_answers": list(gold)}
+
+
+def drop_degenerate(questions: List[Dict], normalize) -> int:
+    """Remove gold answers that normalise to nothing, and report how many.
+
+    An empty normalised gold compares equal to any prediction that also
+    normalises to empty, so it silently awards credit for junk. Rather than
+    patch the official normaliser, drop those golds; a question left with none
+    is excluded entirely and counted.
+    """
+    dropped = 0
+    kept = []
+    for q in questions:
+        good = [g for g in q["golden_answers"] if normalize(str(g)).strip()]
+        if not good:
+            dropped += 1
+            continue
+        q["golden_answers"] = good
+        kept.append(q)
+    questions[:] = kept
+    return dropped
 
 
 # --------------------------------------------------------------------------- #
@@ -429,6 +456,13 @@ def main() -> None:
 
     for dataset in todo:
         questions = load_questions(dataset, args.limit, args.sample)
+        # Must happen before prompts are built: dropping afterwards would leave
+        # prompts and questions misaligned and score answers against the wrong
+        # gold.
+        removed = drop_degenerate(questions, qa_em.normalize_answer)
+        if removed:
+            print(f"[warn] {dataset}: dropped {removed} question(s) whose gold answer "
+                  f"normalises to nothing (such a gold matches any empty prediction)")
         prompts = []
         for q in questions:
             text = prompt_template.format(question=q["question"])
@@ -449,17 +483,21 @@ def main() -> None:
             args.max_turns, args.max_response_length, args.max_obs_length,
         )
 
-        # Scored on prompt + rollout, matching verl's reward manager.
+        # Scored on prompt + rollout, matching verl's reward manager. Which
+        # scorer is per-dataset: strict EM everywhere except SimpleQA, whose
+        # short free-form answers need the substring relaxation to be meaningful.
+        # Both come from the official qa_em module; nothing is reimplemented.
+        metric = DATASET_SPECS[dataset].metric
+        score_fn = {"em": qa_em.compute_score_em,
+                    "subem": qa_em.compute_score_subem}[metric]
         scores = [
-            qa_em.compute_score_em(
-                solution_str=seq,
-                ground_truth={"target": q["golden_answers"]},
-            )
+            score_fn(solution_str=seq, ground_truth={"target": q["golden_answers"]})
             for seq, q in zip(sequences, questions)
         ]
         em = sum(scores) / len(scores)
         no_answer = sum(1 for s in sequences if qa_em.extract_solution(s) is None)
-        print(f"[result] {dataset}: EM = {em:.4f}   "
+        label = "EM" if metric == "em" else "sub-EM"
+        print(f"[result] {dataset}: {label} = {em:.4f}   "
               f"({no_answer}/{len(sequences)} produced no parseable <answer>)")
 
         if dump:

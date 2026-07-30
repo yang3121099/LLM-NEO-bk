@@ -10,7 +10,10 @@
 # them -- which is what the experiment measures -- stays fair.
 set -euo pipefail
 
-CORPUS_DIR="${CORPUS_DIR:-$HOME/search_r1_corpus}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# The corpus and index are ~70GB; keep them under the working tree rather than
+# in $HOME, where they tend to fill a small root volume.
+CORPUS_DIR="${CORPUS_DIR:-$REPO_ROOT/corpus}"
 SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
 PORT="${PORT:-8000}"
 TOPK="${TOPK:-3}"

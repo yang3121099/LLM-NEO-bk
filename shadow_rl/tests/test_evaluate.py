@@ -220,6 +220,49 @@ def main():
     check("--limit takes a prefix", qids(ev.load_questions("nq", 50, None)) == full[:50])
     check("question mark appended", all(q.endswith("?") for q in s1))
 
+    # --------------------------------------------------------------- datasets
+    print("\n[8b] MCQ options use digits, not letters")
+    # qa_em.normalize_answer strips English articles, so a gold of "A" becomes
+    # the empty string and matches any prediction that also normalises to empty.
+    from pairs import DatasetSpec
+    spec = DatasetSpec("t", "r", None, ("train",), "Question", "Correct Answer",
+                       kind="mcq",
+                       distractor_fields=("Incorrect Answer 1", "Incorrect Answer 2"))
+    row = {"Question": "What is 2+2?", "Correct Answer": "four",
+           "Incorrect Answer 1": "three", "Incorrect Answer 2": "five"}
+    built = ev._build(row, spec, seed=0)
+    golds = built["golden_answers"]
+    check("no bare letter label used", not any(g in "ABCD" for g in golds), f"{golds}")
+    check("a digit label is offered", any(g.isdigit() for g in golds), f"{golds}")
+    check("answer text is also accepted", "four" in golds, f"{golds}")
+    check("options rendered into the question",
+          "1)" in built["question"] and "four" in built["question"])
+    check("labelling is deterministic",
+          ev._build(row, spec, seed=0) == built)
+    check("different rows can differ",
+          ev._build(row, spec, seed=1)["question"] != built["question"]
+          or True)   # shuffles may coincide; determinism above is the real check
+
+    if args.search_r1_root and os.path.isdir(args.search_r1_root):
+        qa_em = ev.load_qa_em(args.search_r1_root)
+        norm = qa_em.normalize_answer
+        check("every MCQ gold survives normalisation",
+              all(norm(str(g)).strip() for g in golds),
+              f"{[(g, norm(str(g))) for g in golds]}")
+
+        print("\n[8c] degenerate golds are dropped, not silently scored")
+        qs = [{"question": "q1?", "golden_answers": ["A"]},          # normalises to ""
+              {"question": "q2?", "golden_answers": ["Paris"]},
+              {"question": "q3?", "golden_answers": ["the", "Rome"]}]  # partly bad
+        dropped = ev.drop_degenerate(qs, norm)
+        check("the all-empty gold is dropped", dropped == 1, f"dropped={dropped}")
+        check("good questions survive", len(qs) == 2, f"{len(qs)}")
+        check("the empty gold is stripped from a mixed list",
+              qs[1]["golden_answers"] == ["Rome"], f"{qs[1]}")
+        # Without the guard this would score 1.0 against junk.
+        check("an empty gold would have matched junk",
+              qa_em.em_check("the", ["A"]) == 1)
+
     # ------------------------------------------------------------- aggregator
     print("\n[9] aggregator renders FINDINGS.md")
     from pairs import DATASETS

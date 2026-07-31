@@ -31,7 +31,11 @@
 #                  the order of two weeks of single-GPU time.
 #   --datasets X   evaluate only these datasets (comma list)
 #   --skip-datasets X comma list of datasets to omit entirely
-#   --auto-retriever  start and stop the BM25 server automatically
+#   --auto-retriever  start and stop the retrieval server automatically
+#   --retriever X  auto (default) | e5 | e5-hnsw | bm25. 'auto' picks the dense
+#                  e5 index -- exact on GPU if faiss-gpu is installed, the
+#                  approximate HNSW one on CPU otherwise. Only bm25 needs a JVM,
+#                  and it is never chosen for you.
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
 #   --tp N         GPUs per worker (default 1; a 3B/7B model needs only 1)
 #   --jobs N       concurrent eval workers, one GPU group each.
@@ -71,6 +75,10 @@ DATASETS_SEL=""
 CLEANUP=0
 AUTO_RETRIEVER=0
 RETRIEVER_PID=""
+# Which index to serve. Dense by default: bm25 is the only option that drags in
+# pyserini -> Lucene -> a JVM, and e5 is what Search-R1 itself used, so the
+# absolute numbers are comparable to the published ones.
+RETRIEVER="${RETRIEVER:-auto}"
 TP="${TP:-1}"
 JOBS="auto"
 # Multi-GPU robustness. Most breakage on a multi-GPU box hits every worker
@@ -119,6 +127,7 @@ while [[ $# -gt 0 ]]; do
         --skip-datasets) SKIP_DATASETS="$2"; shift 2 ;;
         --datasets) DATASETS_SEL="$2"; shift 2 ;;
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
+        --retriever) RETRIEVER="$2"; shift 2 ;;
         --tp)      TP="$2";        shift 2 ;;
         --jobs)    JOBS="$2";      shift 2 ;;
         --fail-fast)  FAIL_FAST="$2";   shift 2 ;;
@@ -371,18 +380,34 @@ stop_retriever() {
 }
 trap stop_retriever EXIT INT TERM
 
+# Results from two different retrievers are not comparable, and nothing in
+# results.csv records which one produced a row. Keep a marker beside it and say
+# so loudly rather than letting a mixed table look like a real finding.
+RETRIEVER_MARK="${RESULTS%.csv}.retriever"
 if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
+    if [[ -f "$RETRIEVER_MARK" ]]; then
+        PREV="$(cat "$RETRIEVER_MARK")"
+        if [[ "$PREV" != "$RETRIEVER" && "$RETRIEVER" != auto ]]; then
+            warn "$RESULTS already holds rows retrieved with '$PREV', and this run"
+            warn "uses '$RETRIEVER'. Search-pair EM is not comparable across"
+            warn "retrievers. Start a fresh --out/RESULTS file, or re-run the"
+            warn "existing rows with --force."
+        fi
+    fi
     if retriever_alive; then
         ok "retrieval server responding at $RETRIEVER_URL"
+        # Started outside this script, so its retriever cannot be interrogated --
+        # the server exposes no such endpoint. Record only what was asserted.
+        [[ "$RETRIEVER" != auto ]] && echo "$RETRIEVER" > "$RETRIEVER_MARK"
     elif [[ $AUTO_RETRIEVER -eq 1 ]]; then
         # Check faiss/pyserini/JVM before the download, not after it. Otherwise a
         # missing JDK is discovered ~70GB and an hour later, and only as a
         # dlopen error buried in the server's own log.
-        ./shadow_rl/launch_bm25_retriever.sh --check \
+        ./shadow_rl/launch_retriever.sh --retriever "$RETRIEVER" --check \
             || die "the retriever cannot start; see the errors above"
         RETR_LOG="$LOG_DIR/retriever.log"
-        log "starting the BM25 retriever (log: $RETR_LOG)"
-        ./shadow_rl/launch_bm25_retriever.sh >>"$RETR_LOG" 2>&1 &
+        log "starting the $RETRIEVER retriever (log: $RETR_LOG)"
+        ./shadow_rl/launch_retriever.sh --retriever "$RETRIEVER" >>"$RETR_LOG" 2>&1 &
         RETRIEVER_PID=$!
         log "waiting for it to come up (first run downloads ~70GB of corpus+index)"
         for i in $(seq 1 720); do
@@ -396,13 +421,14 @@ $(tail -20 "$RETR_LOG" 2>/dev/null)"
         done
         retriever_alive || die "retriever did not become ready. See $RETR_LOG"
         ok "retrieval server up at $RETRIEVER_URL (pid $RETRIEVER_PID)"
+        echo "$RETRIEVER" > "$RETRIEVER_MARK"
     else
         die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
        Either start one in another shell:
-         ./shadow_rl/launch_bm25_retriever.sh
+         ./shadow_rl/launch_retriever.sh --retriever $RETRIEVER
        or re-run with --auto-retriever to have this script manage it.
        To check its dependencies without downloading anything:
-         ./shadow_rl/launch_bm25_retriever.sh --check"
+         ./shadow_rl/launch_retriever.sh --retriever $RETRIEVER --check"
     fi
 fi
 

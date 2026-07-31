@@ -235,7 +235,7 @@ class Retriever:
         except Exception as exc:
             sys.exit(
                 f"[fail] retrieval server at {self.url} is not answering: {exc}\n"
-                "Launch it with shadow_rl/launch_bm25_retriever.sh first."
+                "Launch it with shadow_rl/launch_retriever.sh first."
             )
 
     def search(self, queries: List[str]) -> List[str]:

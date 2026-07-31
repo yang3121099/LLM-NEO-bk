@@ -35,24 +35,26 @@ KNOWN = [
      "The retrieval server's interpreter has no faiss. `pip install faiss-cpu`\n"
      "       having already succeeded is the usual case -- it went to a different\n"
      "       python. Check which one the server uses:\n"
-     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
+     "         ./shadow_rl/launch_retriever.sh --check"),
     ("No module named 'pyserini'",
-     "Same as faiss: installed, but not in the interpreter that runs the server.\n"
-     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
+     "Only the bm25 retriever needs pyserini, and it is the one that needs a JVM.\n"
+     "       The dense retrievers avoid both:\n"
+     "         ./shadow_rl/launch_retriever.sh --retriever e5-hnsw\n"
+     "       Or, to keep bm25:  ./shadow_rl/setup_bm25.sh"),
     ("JVM failed to start",
-     "JAVA_HOME points somewhere without a usable libjvm.so. conda's openjdk\n"
-     "       lives at $CONDA_PREFIX/lib/jvm, so jnius tries that path even when\n"
-     "       the JDK was installed elsewhere (e.g. by apt).\n"
-     "         apt-get install -y openjdk-21-jdk-headless\n"
-     "         ./shadow_rl/launch_bm25_retriever.sh --check   # picks a working one"),
+     "Only bm25 needs a JVM. The quickest fix is not to need one:\n"
+     "         ./shadow_rl/launch_retriever.sh --retriever e5-hnsw\n"
+     "       To keep bm25: JAVA_HOME points somewhere without a usable libjvm.so.\n"
+     "       conda's openjdk lives at $CONDA_PREFIX/lib/jvm, so jnius tries that\n"
+     "       path even when the JDK was installed elsewhere (e.g. by apt).\n"
+     "         ./shadow_rl/setup_bm25.sh"),
     ("libjvm.so",
-     "The JDK at JAVA_HOME is incomplete or missing. launch_bm25_retriever.sh now\n"
-     "       searches $JAVA_HOME, $CONDA_PREFIX, `which java` and /usr/lib/jvm/*\n"
-     "       and takes the first that really contains libjvm.so:\n"
-     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
+     "The JDK at JAVA_HOME is incomplete or missing -- and only bm25 needs one:\n"
+     "         ./shadow_rl/launch_retriever.sh --retriever e5-hnsw   # no Java\n"
+     "         ./shadow_rl/setup_bm25.sh                             # or fix Java"),
     ("Connection refused",
      "Nothing is listening on the retriever port. The SearchR1-* pairs need it:\n"
-     "       ./shadow_rl/launch_bm25_retriever.sh, or run_all.sh --auto-retriever\n"
+     "       ./shadow_rl/launch_retriever.sh, or run_all.sh --auto-retriever\n"
      "       If it exits at once, --check names the missing dependency."),
     ("Max retries exceeded",
      "The retriever stopped answering mid-run -- often it died under the load of\n"

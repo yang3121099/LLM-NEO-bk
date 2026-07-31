@@ -169,6 +169,6 @@ cat <<EOF
 $(ok "BM25 dependencies are ready")
   java     : $JAVA_HOME
   python   : $($PYBIN -c 'import sys; print(sys.executable)')
-  next     : ./shadow_rl/launch_bm25_retriever.sh      # downloads ~70GB, then serves :8000
+  next     : ./shadow_rl/launch_retriever.sh --retriever bm25
              ./shadow_rl/run_all.sh --pairs search --auto-retriever --yes
 EOF

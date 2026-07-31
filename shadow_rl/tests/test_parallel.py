@@ -196,8 +196,9 @@ def main():
                           "--logs", logs2], capture_output=True, text=True).stdout
     check("faiss points at the interpreter mismatch", "different\n       python" in out
           or "different" in out)
-    check("faiss suggests --check", "launch_bm25_retriever.sh --check" in out)
+    check("faiss suggests --check", "launch_retriever.sh --check" in out)
     check("JVM names the conda/apt trap", "CONDA_PREFIX/lib/jvm" in out)
+    check("JVM offers the no-Java escape", "--retriever e5-hnsw" in out)
 
     print("\n" + "=" * 60)
     if FAILURES:

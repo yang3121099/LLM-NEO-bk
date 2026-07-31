@@ -65,7 +65,7 @@ Before committing to a full run, look at the plan:
 | `aggregate.py` | `results.csv` → `FINDINGS.md` |
 | `smoke_test.py` | does the merged model load and generate coherent text? |
 | `run_pair.sh` | a single pair end to end (`run_all.sh` is usually what you want) |
-| `launch_bm25_retriever.sh` | corpus + BM25 index + retrieval server (search pairs only) |
+| `launch_retriever.sh` | corpus + index + retrieval server: e5, e5-hnsw or bm25 |
 | `report.py` | terminal comparison table — printed automatically after every run |
 | `discover.py` | probes HuggingFace for unreleased-but-plausible pairs |
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
@@ -136,7 +136,8 @@ below; the current default merges over the intersection and does not stop.
 | `--limit N` | first N questions per dataset — biased, smoke runs only |
 | `--sample N` | deterministic random N per dataset, identical across roles |
 | `--skip-datasets X` | omit datasets entirely; published averages are restricted to match |
-| `--auto-retriever` | start and stop the BM25 server automatically |
+| `--auto-retriever` | start and stop the retrieval server automatically |
+| `--retriever X` | `auto` (default), `e5`, `e5-hnsw` or `bm25`; only bm25 needs Java |
 | `--cleanup` | delete a pair's RL checkpoints and merged model once it is evaluated |
 | `--fast` | smallest useful run: one 3B pair, nq+hotpotqa, 200 questions, 5 models |
 | `--tp N` | tensor parallel size (default 1; an H200 fits 7B at 1) |
@@ -271,10 +272,37 @@ for the ones with a known remedy (missing vllm or faiss, OOM, dead retriever, a
 JVM that will not start, a cu12 torch on a Blackwell card, a worker killed by
 the host OOM killer).
 
-### The BM25 retriever
+### The retriever: dense by default, no Java
 
-Two failures account for most of them, and both are now caught before the ~70 GB
-download rather than an hour into it:
+`bm25` is the only retriever that needs a JVM — `retrieval_server.py` imports
+pyserini inside `BM25Retriever.__init__`, so the dense paths never touch Java at
+all. If the JVM has been fighting you, switching is the fix, and it is also the
+*more* faithful choice: E5 is what Search-R1 used, so absolute EM becomes
+comparable to the published numbers instead of sitting below them.
+
+```bash
+./shadow_rl/launch_retriever.sh                       # auto (default)
+./shadow_rl/launch_retriever.sh --retriever e5-hnsw   # CPU, faiss-cpu, no Java
+./shadow_rl/launch_retriever.sh --retriever e5        # exact, wants faiss-gpu
+./shadow_rl/launch_retriever.sh --retriever bm25      # sparse, needs a JVM
+./shadow_rl/launch_retriever.sh --check               # dependencies only
+```
+
+| | index | needs | notes |
+|---|---|---|---|
+| `e5` | `e5_Flat.index` | faiss-**gpu** | exact; what the paper used |
+| `e5-hnsw` | `e5_HNSW64.index` | faiss-cpu | approximate, CPU-fast, no Java |
+| `bm25` | `bm25/` | pyserini + JDK 21 | no GPU, but the JVM is the fragile part |
+
+`auto` resolves to `e5` when faiss-gpu is installed and a GPU is visible, and to
+`e5-hnsw` otherwise. It never picks `bm25` — Java is opt-in, not a fallback you
+land in by accident. `run_all.sh --retriever X` passes the choice through.
+
+Do not mix retrievers within one `results.csv`: search-pair EM is not comparable
+across them. `run_all.sh` records the retriever in `results.retriever` and warns
+if a later run disagrees.
+
+If you do want BM25, the JDK/faiss/pyserini setup is one command:
 
 ```bash
 ./shadow_rl/setup_bm25.sh            # install + verify + persist JAVA_HOME
@@ -584,7 +612,7 @@ Or run all four roles at once: `./shadow_rl/run_pair.sh ppo-nosearch-3b-v0.2`.
 **5. Stand up retrieval and move to the GRPO pairs, 3B first.**
 
 ```bash
-./shadow_rl/launch_bm25_retriever.sh          # serves :8000, leave running
+./shadow_rl/launch_retriever.sh               # serves :8000, leave running
 ./shadow_rl/run_pair.sh grpo-search-3b-v0.3
 ```
 

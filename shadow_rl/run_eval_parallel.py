@@ -270,7 +270,7 @@ def main() -> None:
             problems.append(
                 f"retriever at {args.retriever_url} is not answering ({exc}). "
                 f"{args.pair} is a search pair, so every job needs it: "
-                "./shadow_rl/launch_bm25_retriever.sh, or pass --auto-retriever "
+                "./shadow_rl/launch_retriever.sh, or pass --auto-retriever "
                 "to run_all.sh")
     if problems:
         print("[parallel] preflight failed:")

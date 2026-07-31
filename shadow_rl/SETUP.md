@@ -82,9 +82,36 @@ source .venv/bin/activate
 
 ---
 
-## 2. BM25 retrieval — only for the `SearchR1-*` pairs
+## 2. Retrieval — only for the `SearchR1-*` pairs
 
 The `R1-*` (no-search) pairs skip this entirely.
+
+**Start here — it needs no Java:**
+
+```bash
+python3 -m pip install -U faiss-cpu
+./shadow_rl/launch_retriever.sh --check     # confirm, downloads nothing
+./shadow_rl/launch_retriever.sh             # corpus + e5 index, then serves :8000
+```
+
+The dense (E5) retrievers use faiss plus a HuggingFace encoder and never load a
+JVM: `retrieval_server.py` imports pyserini inside `BM25Retriever.__init__`, so
+that import is only reached by `--retriever bm25`. E5 is also what the Search-R1
+paper used, so it is the more faithful option, not a workaround.
+
+| `--retriever` | index | needs | notes |
+|---|---|---|---|
+| `auto` (default) | — | — | `e5` if faiss-gpu is present, else `e5-hnsw` |
+| `e5` | `e5_Flat.index` | faiss-**gpu** | exact search; add `--faiss-gpu` |
+| `e5-hnsw` | `e5_HNSW64.index` | faiss-cpu | approximate, runs well on CPU |
+| `bm25` | `bm25/` | pyserini + JDK 21 | no GPU needed, but the JVM is fragile |
+
+Flat E5 without faiss-gpu means scanning 21M passages per query on the CPU —
+correct but far too slow for an evaluation, which is why `auto` picks the HNSW
+index instead. The launcher refuses `--faiss-gpu` when the installed faiss has
+no `index_cpu_to_all_gpus` rather than letting the server crash on it.
+
+### BM25, if you specifically want it
 
 ```bash
 ./shadow_rl/setup_bm25.sh          # JDK + faiss + pyserini + JAVA_HOME, verified
@@ -98,7 +125,7 @@ next shell keeps it. `--check` verifies without changing anything;
 Then:
 
 ```bash
-./shadow_rl/launch_bm25_retriever.sh    # ~70 GB corpus + index, then serves :8000
+./shadow_rl/launch_retriever.sh --retriever bm25    # corpus + index, then :8000
 ```
 
 Leave that running in its own shell, or let `run_all.sh --auto-retriever` start
@@ -169,7 +196,7 @@ Delete that file to undo it.
 
 ```bash
 ./shadow_rl/setup_bm25.sh --check              # deps + JVM, changes nothing
-./shadow_rl/launch_bm25_retriever.sh --check   # same checks, from the launcher
+./shadow_rl/launch_retriever.sh --retriever bm25 --check
 ```
 
 Both print the interpreter and the `JAVA_HOME` in use, so a mismatch is visible

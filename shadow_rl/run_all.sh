@@ -32,6 +32,9 @@
 #   --datasets X   evaluate only these datasets (comma list)
 #   --skip-datasets X comma list of datasets to omit entirely
 #   --auto-retriever  start and stop the retrieval server automatically
+#   --port N       retrieval server port. Default: whatever the server chose and
+#                  recorded in logs/retriever.url, else the first free port from
+#                  8000 up. 8000 is popular -- vLLM's OpenAI server uses it.
 #   --retriever X  auto (default) | e5 | e5-hnsw | bm25. 'auto' picks the dense
 #                  e5 index -- exact on GPU if faiss-gpu is installed, the
 #                  approximate HNSW one on CPU otherwise. Only bm25 needs a JVM,
@@ -99,7 +102,14 @@ SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
 RESULTS="${RESULTS:-$REPO_ROOT/shadow_rl/results.csv}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"
+# The retriever picks its own port (8000 is commonly taken -- vLLM's server uses
+# it) and records the URL. Read that rather than assuming, so a server started
+# separately is found without anything being kept in sync by hand.
+if [[ -z "${RETRIEVER_URL:-}" && -f "$LOG_DIR/retriever.url" ]]; then
+    RETRIEVER_URL="$(cat "$LOG_DIR/retriever.url")"
+fi
 RETRIEVER_URL="${RETRIEVER_URL:-http://127.0.0.1:8000/retrieve}"
+RETRIEVER_PORT=""
 # Models go to the standard HuggingFace cache by default, so they are shared
 # with anything else on the machine rather than duplicated. Only export the
 # override when the caller actually set one.
@@ -128,6 +138,7 @@ while [[ $# -gt 0 ]]; do
         --datasets) DATASETS_SEL="$2"; shift 2 ;;
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --retriever) RETRIEVER="$2"; shift 2 ;;
+        --port)      RETRIEVER_PORT="$2"; shift 2 ;;
         --tp)      TP="$2";        shift 2 ;;
         --jobs)    JOBS="$2";      shift 2 ;;
         --fail-fast)  FAIL_FAST="$2";   shift 2 ;;
@@ -145,6 +156,12 @@ while [[ $# -gt 0 ]]; do
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
+
+# An explicit --port overrides whatever URL was recorded earlier; otherwise a
+# stale logs/retriever.url would silently win over the port just asked for.
+if [[ -n "$RETRIEVER_PORT" ]]; then
+    RETRIEVER_URL="http://127.0.0.1:$RETRIEVER_PORT/retrieve"
+fi
 
 # --fast: one 3B pair, two in-domain datasets, 200 sampled questions, and the
 # five models the question is actually about. Enough to prove the pipeline runs
@@ -405,11 +422,13 @@ if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
         # Check faiss/pyserini/JVM before the download, not after it. Otherwise a
         # missing JDK is discovered ~70GB and an hour later, and only as a
         # dlopen error buried in the server's own log.
-        ./shadow_rl/launch_retriever.sh --retriever "$RETRIEVER" --check \
+        RETR_ARGS=(--retriever "$RETRIEVER")
+        [[ -n "$RETRIEVER_PORT" ]] && RETR_ARGS+=(--port "$RETRIEVER_PORT")
+        ./shadow_rl/launch_retriever.sh "${RETR_ARGS[@]}" --check \
             || die "the retriever cannot start; see the errors above"
         RETR_LOG="$LOG_DIR/retriever.log"
         log "starting the $RETRIEVER retriever (log: $RETR_LOG)"
-        ./shadow_rl/launch_retriever.sh --retriever "$RETRIEVER" >>"$RETR_LOG" 2>&1 &
+        ./shadow_rl/launch_retriever.sh "${RETR_ARGS[@]}" >>"$RETR_LOG" 2>&1 &
         RETRIEVER_PID=$!
         log "waiting for it to come up (first run downloads ~70GB of corpus+index)"
         for i in $(seq 1 720); do
@@ -422,6 +441,7 @@ $(tail -20 "$RETR_LOG" 2>/dev/null)"
             [[ $((i % 30)) -eq 0 ]] && log "  still waiting ($((i / 6))m)..."
         done
         retriever_alive || die "retriever did not become ready. See $RETR_LOG"
+        [[ -f "$LOG_DIR/retriever.url" ]] && RETRIEVER_URL="$(cat "$LOG_DIR/retriever.url")"
         ok "retrieval server up at $RETRIEVER_URL (pid $RETRIEVER_PID)"
         echo "$RETRIEVER" > "$RETRIEVER_MARK"
         # Binding a port is not the same as answering usefully. Ask it a real

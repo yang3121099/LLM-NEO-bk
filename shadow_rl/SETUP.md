@@ -96,6 +96,10 @@ python3 -m pip install -U faiss-cpu
 # it stays up after you log out; manage it with:
 ./shadow_rl/launch_retriever.sh --status
 ./shadow_rl/launch_retriever.sh --stop
+
+# the port is the first free one from 8000 up (vLLM also likes 8000), and is
+# recorded in logs/retriever.url so nothing has to be told about it:
+./shadow_rl/launch_retriever.sh --daemon --port 8123    # or pick your own
 ```
 
 The dense (E5) retrievers use faiss plus a HuggingFace encoder and never load a

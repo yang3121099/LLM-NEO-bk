@@ -28,32 +28,51 @@ LAUNCHER = os.path.join(ROOT, "launch_retriever.sh")
 
 FAILURES = []
 
-HEALTHY_SERVER = '''
-import json, sys, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-port = int(sys.argv[sys.argv.index("--topk") + 2]) if False else PORT
-print("loading index...", flush=True)
-time.sleep(1)
-class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-    def do_POST(self):
-        if self.path != "/retrieve":
-            self.send_error(404); return
-        req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        body = json.dumps([[{"document": {"contents": "about " + q}, "score": 0.9}]
-                           for q in req["queries"]]).encode()
-        self.send_response(200)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(body)
-print("Uvicorn running", flush=True)
-HTTPServer(("127.0.0.1", PORT), H).serve_forever()
+# The stand-in mirrors the real retrieval_server.py in the ways the launcher
+# reasons about: argparse with no --port, a FastAPI app, and a hardcoded
+# uvicorn.run(app, port=8000) at the end. Serving on any other port goes through
+# the launcher's shim, which works by intercepting that call -- so a stand-in
+# that merely serves HTTP some other way would not exercise the same code.
+SERVER = '''
+import argparse
+from typing import List, Optional
+import uvicorn
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+class QueryRequest(BaseModel):
+    queries: List[str]
+    topk: Optional[int] = None
+    return_scores: bool = False
+
+app = FastAPI()
+
+@app.post("/retrieve")
+def retrieve_endpoint(request: QueryRequest):
+    return [[{"document": {"contents": "about " + q}, "score": 0.9}]
+            for q in request.queries]
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--index_path")
+    parser.add_argument("--corpus_path")
+    parser.add_argument("--topk", type=int, default=3)
+    parser.add_argument("--retriever_name", default="e5")
+    parser.add_argument("--retriever_model", default="intfloat/e5-base-v2")
+    parser.add_argument("--faiss_gpu", action="store_true")
+    args = parser.parse_args()
+    print("loading index...", flush=True)
+    uvicorn.run(app, host="0.0.0.0", port=8000)   # hardcoded, exactly like upstream
 '''
 
+# Dies while loading the index. It still contains a uvicorn.run so the launcher
+# takes the same path it would for the real thing -- the point is the crash, not
+# a differently-shaped file.
 CRASHING_SERVER = '''
+import uvicorn
 print("loading index...", flush=True)
 raise RuntimeError("index file is corrupt")
+uvicorn.run(None, port=8000)
 '''
 
 
@@ -69,7 +88,35 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def bind_low_port():
+    """Occupy a port below the ephemeral range, and keep it.
+
+    Not socket(0): the kernel allocates those from ~32768 up, which is also
+    where it draws *source* ports for outgoing connections. Basing the search
+    there means the launcher can pick a port that looks free and then lose it to
+    one of its own health-check connections a moment later -- a race that only
+    exists in the test, since PORT_BASE is 8000 in real use.
+    """
+    for candidate in range(8300, 9000):
+        sock = socket.socket()
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", candidate))
+            sock.listen(1)
+            return sock, candidate
+        except OSError:
+            sock.close()
+    raise RuntimeError("no free port in 8300-8999")
+
+
 def main():
+    try:
+        import fastapi  # noqa: F401
+        import uvicorn  # noqa: F401
+    except ImportError as exc:
+        print(f"SKIP: the stand-in server needs fastapi + uvicorn ({exc}).")
+        return 0
+
     tmp = tempfile.mkdtemp(prefix="shadow-retriever-")
     port = free_port()
     sr1 = os.path.join(tmp, "Search-R1", "search_r1", "search")
@@ -84,7 +131,7 @@ def main():
 
     def install(source):
         with open(server_py, "w") as fh:
-            fh.write(f"PORT = {port}\n" + source)
+            fh.write(source)
 
     env = dict(os.environ,
                SEARCH_R1_ROOT=os.path.join(tmp, "Search-R1"),
@@ -106,7 +153,7 @@ def main():
         check("says there was nothing to stop", "nothing to stop" in proc.stderr)
 
         print("\n[2] --daemon waits for the server to actually answer")
-        install(HEALTHY_SERVER)
+        install(SERVER)
         proc = run("--retriever", "e5-hnsw", "--daemon")
         check("exits 0", proc.returncode == 0,
               (proc.stdout + proc.stderr).strip()[-160:])
@@ -135,7 +182,44 @@ def main():
         proc = run("--status")
         check("status now exits 1", proc.returncode == 1, str(proc.returncode))
 
-        print("\n[6] a server that dies while loading fails loudly")
+        print("\n[6] --port picks a free one when the default is taken")
+        # 8000 is a busy address in practice -- vLLM's OpenAI server uses it -- so
+        # binding it blindly is how a run ends up talking to someone else's service.
+        install(SERVER)
+        blocker, busy = bind_low_port()
+        env_auto = dict(env, PORT="auto", PORT_BASE=str(busy))
+        proc = subprocess.run(["bash", LAUNCHER, "--retriever", "e5-hnsw", "--daemon"],
+                              capture_output=True, text=True, env=env_auto, cwd=REPO,
+                              timeout=180)
+        check("starts anyway", proc.returncode == 0,
+              (proc.stdout + proc.stderr).strip()[-140:])
+        check("says it moved off the busy port", "is taken" in proc.stdout)
+        urlfile = os.path.join(tmp, "logs", "retriever.url")
+        check("recorded the url it chose", os.path.exists(urlfile))
+        chosen = open(urlfile).read().strip() if os.path.exists(urlfile) else ""
+        check("and it is not the busy one", f":{busy}/" not in chosen, chosen)
+
+        print("\n[7] --status and --stop find that port without being told")
+        proc = subprocess.run(["bash", LAUNCHER, "--status"], capture_output=True,
+                              text=True, env=env_auto, cwd=REPO, timeout=60)
+        check("status finds it", proc.returncode == 0,
+              (proc.stdout + proc.stderr).strip()[-120:])
+        check("reports the chosen url", chosen.split("/retrieve")[0] in proc.stdout,
+              proc.stdout.strip()[-80:])
+        subprocess.run(["bash", LAUNCHER, "--stop"], capture_output=True, env=env_auto,
+                       cwd=REPO, timeout=60)
+
+        print("\n[8] an explicit --port that is occupied is refused, not guessed at")
+        proc = subprocess.run(["bash", LAUNCHER, "--retriever", "e5-hnsw", "--daemon",
+                               "--port", str(busy)],
+                              capture_output=True, text=True, env=env, cwd=REPO,
+                              timeout=180)
+        check("exits non-zero", proc.returncode != 0, str(proc.returncode))
+        check("names the conflict", "in use" in proc.stderr,
+              proc.stderr.strip().splitlines()[0][:70] if proc.stderr else "")
+        blocker.close()
+
+        print("\n[9] a server that dies while loading fails loudly")
         # Otherwise --daemon returns success and the failure surfaces much later
         # as a refused connection from the evaluation.
         install(CRASHING_SERVER)

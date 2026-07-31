@@ -303,6 +303,23 @@ comparable to the published numbers instead of sitting below them.
 `e5-hnsw` otherwise. It never picks `bm25` — Java is opt-in, not a fallback you
 land in by accident. `run_all.sh --retriever X` passes the choice through.
 
+**The port is chosen, not assumed.** It defaults to `auto`: the first free port
+from 8000 upwards, written to `logs/retriever.url`, which `run_all.sh`,
+`check_retriever.py` and `--status`/`--stop` all read. 8000 is a crowded address
+— vLLM's own OpenAI server uses it — so binding it blindly either fails or, worse,
+succeeds against a port some other process is about to claim.
+
+```bash
+./shadow_rl/launch_retriever.sh --daemon --port 8123   # a specific one
+./shadow_rl/run_all.sh --port 8123 ...                 # tell the evaluation
+```
+
+An explicit `--port` that is already occupied is refused with whatever is
+listening on it, rather than failing inside uvicorn. Search-R1's
+`retrieval_server.py` hardcodes `uvicorn.run(app, port=8000)` and has no
+`--port`, so a different port is served through a small shim that intercepts
+that call and serves the same app elsewhere — no patching of the checkout.
+
 **Use `--daemon`.** Without it the server runs in the foreground and dies with
 its shell — Ctrl-C, a closed terminal or a dropped SSH session all take it with
 them, and the next command then reports `Connection refused` with no sign that

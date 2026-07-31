@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 import urllib.error
@@ -28,6 +29,28 @@ DEFAULT_QUERIES = [
     "who wrote the play hamlet",
     "what is the capital of france",
 ]
+
+
+def default_url() -> str:
+    """The URL the launcher actually chose, not a guess.
+
+    The port is picked at start-up (8000 is often taken -- vLLM's own server
+    uses it), so hardcoding it here would send the check somewhere else.
+    RETRIEVER_URL still wins, for a server on another host entirely.
+    """
+    env = os.environ.get("RETRIEVER_URL")
+    if env:
+        return env
+    recorded = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "logs", "retriever.url")
+    try:
+        with open(recorded) as fh:
+            url = fh.read().strip()
+        if url:
+            return url
+    except OSError:
+        pass
+    return "http://127.0.0.1:8000/retrieve"
 
 
 def post(url: str, payload: dict, timeout: float):
@@ -59,7 +82,9 @@ def passages(result) -> list:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--url", default="http://127.0.0.1:8000/retrieve")
+    ap.add_argument("--url", default=default_url(),
+                    help="default: whatever launch_retriever.sh recorded in "
+                         "logs/retriever.url, else :8000")
     ap.add_argument("--query", action="append", default=None)
     ap.add_argument("--topk", type=int, default=3)
     ap.add_argument("--timeout", type=float, default=300,

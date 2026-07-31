@@ -10,6 +10,14 @@
 #   ./shadow_rl/launch_retriever.sh --daemon            # background, survives logout
 #   ./shadow_rl/launch_retriever.sh --status            # is it up? is it answering?
 #   ./shadow_rl/launch_retriever.sh --stop
+#   ./shadow_rl/launch_retriever.sh --daemon --port 8123    # a specific port
+#
+# The port defaults to `auto`: the first free one from 8000 upwards. 8000 is a
+# popular default -- vLLM's own OpenAI server uses it, as do plenty of dev tools
+# -- so binding it blindly either fails or, worse, succeeds against a port some
+# other process is about to claim. The chosen URL is written to
+# logs/retriever.url, and run_all.sh reads it, so nothing has to be kept in sync
+# by hand.
 #
 # Without --daemon the server runs in the foreground and dies with the shell --
 # Ctrl-C, closing the terminal or an SSH drop all take it with them, and the
@@ -45,7 +53,8 @@ SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 # The corpus and index are tens of GB; keep them under the working tree rather
 # than in $HOME, where they tend to fill a small root volume.
 CORPUS_DIR="${CORPUS_DIR:-$REPO_ROOT/corpus}"
-PORT="${PORT:-8000}"
+PORT="${PORT:-auto}"
+PORT_BASE="${PORT_BASE:-8000}"
 TOPK="${TOPK:-3}"
 RETRIEVER="${RETRIEVER:-auto}"
 E5_MODEL="${E5_MODEL:-intfloat/e5-base-v2}"
@@ -54,6 +63,7 @@ FAISS_GPU="auto"
 MODE="run"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"
 PIDFILE="$LOG_DIR/retriever.pid"
+URLFILE="$LOG_DIR/retriever.url"
 LOGFILE="$LOG_DIR/retriever.log"
 
 while [[ $# -gt 0 ]]; do
@@ -84,6 +94,39 @@ warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[fail]\033[0m %s\n' "$*" >&2; exit 1; }
 
 mkdir -p "$LOG_DIR"
+
+port_free() {
+    python3 -c '
+import socket, sys
+s = socket.socket()
+free = s.connect_ex(("127.0.0.1", int(sys.argv[1]))) != 0
+s.close()
+sys.exit(0 if free else 1)' "$1" 2>/dev/null
+}
+
+whats_on_port() {   # best effort; ss is not always present or permitted
+    command -v ss >/dev/null 2>&1 || return 0
+    ss -ltnp 2>/dev/null | awk -v p=":$1\$" '$4 ~ p {print "         " $0}'
+}
+
+# --- resolve the port ------------------------------------------------------- #
+# status/stop must find the server that is already running, so they read back
+# the port it chose rather than guessing.
+if [[ "$PORT" == auto && -f "$URLFILE" ]] && [[ "$MODE" == status || "$MODE" == stop ]]; then
+    PORT="$(sed 's#.*:\([0-9]*\)/.*#\1#' "$URLFILE")"
+fi
+if [[ "$PORT" == auto ]]; then
+    if [[ "$MODE" == status || "$MODE" == stop ]]; then
+        PORT="$PORT_BASE"
+    else
+        for CANDIDATE in $(seq "$PORT_BASE" $((PORT_BASE + 99))); do
+            if port_free "$CANDIDATE"; then PORT="$CANDIDATE"; break; fi
+        done
+        [[ "$PORT" == auto ]] && die "no free port in $PORT_BASE-$((PORT_BASE + 99))"
+        [[ "$PORT" != "$PORT_BASE" ]] \
+            && log "port $PORT_BASE is taken; using $PORT instead"
+    fi
+fi
 URL="http://127.0.0.1:$PORT/retrieve"
 
 running_pid() {
@@ -138,6 +181,20 @@ if [[ "$MODE" == "daemon" ]] && PID="$(running_pid)"; then
     fi
     die "a retriever process is running (pid $PID) but not answering.
        ./shadow_rl/launch_retriever.sh --stop, then start it again."
+fi
+
+# An explicit --port that something else already owns: fail here with the
+# culprit rather than inside uvicorn, or -- worse -- appear to work while the
+# evaluation talks to a completely different service.
+if [[ $CHECK_ONLY -eq 0 ]] && ! port_free "$PORT"; then
+    if answering; then
+        ok "a retriever is already answering at $URL"
+        echo "$URL" > "$URLFILE"
+        exit 0
+    fi
+    die "port $PORT is in use by something that is not a retriever:
+$(whats_on_port "$PORT")
+       Pick another:  --port 8123      (or --port auto to choose one)"
 fi
 
 [[ -d "$SEARCH_R1_ROOT" ]] \
@@ -350,6 +407,13 @@ esac
 ARGS=(--index_path "$INDEX"
       --corpus_path "$CORPUS_DIR/wiki-18.jsonl"
       --topk "$TOPK")
+# retrieval_server.py hardcodes uvicorn's port at 8000, so a different one is
+# only honoured if its argparse grew a --port. Check rather than assume.
+if grep -q '"--port"' "$SEARCH_R1_ROOT/search_r1/search/retrieval_server.py" 2>/dev/null; then
+    ARGS+=(--port "$PORT")
+elif [[ "$PORT" != 8000 ]]; then
+    SERVE_PORT_OVERRIDE=1
+fi
 if [[ "$RETRIEVER" == bm25 ]]; then
     ARGS+=(--retriever_name bm25)
 else
@@ -358,6 +422,69 @@ else
 fi
 
 SERVER=(python3 "$SEARCH_R1_ROOT/search_r1/search/retrieval_server.py" "${ARGS[@]}")
+
+# This Search-R1 has no --port, so uvicorn would bind 8000 whatever we asked
+# for. Wrap it: the shim imports the server module, then serves its `app` on the
+# port we actually chose. Same code, same index, different socket.
+if [[ -n "${SERVE_PORT_OVERRIDE:-}" ]]; then
+    # The shim works by intercepting uvicorn.run. A server that starts serving
+    # some other way would simply block inside the import and never come up, so
+    # check before committing to it rather than hanging for the timeout.
+    grep -q 'uvicorn\.run' "$SEARCH_R1_ROOT/search_r1/search/retrieval_server.py" \
+        || die "this retrieval_server.py neither accepts --port nor calls
+       uvicorn.run, so it cannot be moved off port 8000 from the outside.
+       Run it on 8000 (--port 8000), or add a --port to your checkout."
+    SHIM="$LOG_DIR/serve_on_port.py"
+    cat > "$SHIM" <<'PYSHIM'
+"""Run Search-R1's retrieval server on a port of our choosing.
+
+    python serve_on_port.py <port> <retrieval_server.py> [server args...]
+
+retrieval_server.py ends with a hardcoded
+
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+and its argparse has no --port. Rather than patch a third-party checkout,
+replace uvicorn.run for the duration of the import: the module still parses its
+arguments, loads the index and builds its FastAPI app, it just does not start
+serving. Then serve that same app on the port we were given.
+"""
+import runpy
+import sys
+
+import uvicorn
+
+port = int(sys.argv.pop(1))
+server = sys.argv.pop(1)
+# argparse reads sys.argv[1:], so what is left must be exactly the server's own
+# arguments -- with argv[0] naming the server, for sane --help and error output.
+sys.argv[0] = server
+
+real_run = uvicorn.run
+captured = {}
+
+
+def capture(app, *args, **kwargs):
+    captured["app"] = app
+
+
+uvicorn.run = capture
+try:
+    namespace = runpy.run_path(server, run_name="__main__")
+finally:
+    uvicorn.run = real_run
+
+app = captured.get("app") or namespace.get("app")
+if app is None:
+    sys.exit("[fail] retrieval_server.py did not expose a FastAPI app; its layout "
+             "may have changed. Run it on port 8000 without this shim.")
+print(f"[shim] serving retrieval_server.py's app on port {port}", flush=True)
+real_run(app, host="0.0.0.0", port=port)
+PYSHIM
+    SERVER=(python3 "$SHIM" "$PORT"
+            "$SEARCH_R1_ROOT/search_r1/search/retrieval_server.py" "${ARGS[@]}")
+    log "serving on port $PORT via a shim (this Search-R1 hardcodes 8000)"
+fi
 
 if [[ "$MODE" != "daemon" ]]; then
     log "serving $RETRIEVER on port $PORT (topk=$TOPK)"
@@ -380,6 +507,7 @@ cd "$REPO_ROOT"
 log "waiting for it to answer (loading the index takes a few minutes)"
 for i in $(seq 1 180); do
     if answering; then
+        echo "$URL" > "$URLFILE"
         ok "retriever up: pid $SERVER_PID, $URL"
         log "  stop it with: ./shadow_rl/launch_retriever.sh --stop"
         log "  verify:       python3 shadow_rl/check_retriever.py"

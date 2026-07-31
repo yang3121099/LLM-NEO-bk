@@ -431,8 +431,10 @@ $(tail -20 "$RETR_LOG" 2>/dev/null)"
             || die "the retriever is listening but not returning passages (see above)"
     else
         die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
-       Either start one in another shell:
-         ./shadow_rl/launch_retriever.sh --retriever $RETRIEVER
+       Start one that outlives its shell:
+         ./shadow_rl/launch_retriever.sh --retriever $RETRIEVER --daemon
+       (without --daemon it runs in the foreground and dies with the terminal,
+        which is the usual reason this message appears the second time)
        or re-run with --auto-retriever to have this script manage it.
        To check its dependencies without downloading anything:
          ./shadow_rl/launch_retriever.sh --retriever $RETRIEVER --check"

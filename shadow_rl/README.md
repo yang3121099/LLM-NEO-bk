@@ -87,6 +87,7 @@ python shadow_rl/tests/test_evaluate.py
 python shadow_rl/tests/test_resume.py
 python shadow_rl/tests/test_paths.py
 python shadow_rl/tests/test_parallel.py
+python shadow_rl/tests/test_retriever.py
 ```
 
 ## Troubleshooting
@@ -282,7 +283,10 @@ all. If the JVM has been fighting you, switching is the fix, and it is also the
 comparable to the published numbers instead of sitting below them.
 
 ```bash
-./shadow_rl/launch_retriever.sh                       # auto (default)
+./shadow_rl/launch_retriever.sh --daemon              # background, survives logout
+./shadow_rl/launch_retriever.sh --status              # up? answering?
+./shadow_rl/launch_retriever.sh --stop
+./shadow_rl/launch_retriever.sh                       # auto (default), foreground
 ./shadow_rl/launch_retriever.sh --retriever e5-hnsw   # CPU, faiss-cpu, no Java
 ./shadow_rl/launch_retriever.sh --retriever e5        # exact, wants faiss-gpu
 ./shadow_rl/launch_retriever.sh --retriever bm25      # sparse, needs a JVM
@@ -298,6 +302,14 @@ comparable to the published numbers instead of sitting below them.
 `auto` resolves to `e5` when faiss-gpu is installed and a GPU is visible, and to
 `e5-hnsw` otherwise. It never picks `bm25` — Java is opt-in, not a fallback you
 land in by accident. `run_all.sh --retriever X` passes the choice through.
+
+**Use `--daemon`.** Without it the server runs in the foreground and dies with
+its shell — Ctrl-C, a closed terminal or a dropped SSH session all take it with
+them, and the next command then reports `Connection refused` with no sign that
+the process simply went away. `--daemon` detaches with `setsid`, writes
+`logs/retriever.{pid,log}`, and does not return until the server actually
+answers, so a zero exit status means a working retriever. Starting it twice is a
+no-op rather than a second server.
 
 Once it is serving, check that it *answers* rather than merely listens:
 

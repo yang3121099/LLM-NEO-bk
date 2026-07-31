@@ -91,7 +91,11 @@ The `R1-*` (no-search) pairs skip this entirely.
 ```bash
 python3 -m pip install -U faiss-cpu
 ./shadow_rl/launch_retriever.sh --check     # confirm, downloads nothing
-./shadow_rl/launch_retriever.sh             # corpus + e5 index, then serves :8000
+./shadow_rl/launch_retriever.sh --daemon    # corpus + e5 index, then serves :8000
+
+# it stays up after you log out; manage it with:
+./shadow_rl/launch_retriever.sh --status
+./shadow_rl/launch_retriever.sh --stop
 ```
 
 The dense (E5) retrievers use faiss plus a HuggingFace encoder and never load a
@@ -312,7 +316,7 @@ The CPU test suites need no GPU and no model, and are worth running once after
 setup:
 
 ```bash
-for t in merge similarity resume check_env report pairs paths parallel; do
+for t in merge similarity resume check_env report pairs paths parallel retriever; do
     python shadow_rl/tests/test_$t.py | tail -1
 done
 python shadow_rl/tests/test_evaluate.py | tail -1

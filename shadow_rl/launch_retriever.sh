@@ -7,6 +7,16 @@
 #   ./shadow_rl/launch_retriever.sh --retriever bm25    # sparse, needs a JVM
 #   ./shadow_rl/launch_retriever.sh --check             # dependencies only
 #
+#   ./shadow_rl/launch_retriever.sh --daemon            # background, survives logout
+#   ./shadow_rl/launch_retriever.sh --status            # is it up? is it answering?
+#   ./shadow_rl/launch_retriever.sh --stop
+#
+# Without --daemon the server runs in the foreground and dies with the shell --
+# Ctrl-C, closing the terminal or an SSH drop all take it with them, and the
+# next command then says "Connection refused". --daemon detaches it with setsid,
+# writes logs/retriever.{pid,log}, and waits until it actually answers before
+# returning, so a successful exit means a working retriever.
+#
 # Which one to use
 # ---------------------------------------------------------------------------
 #   e5        exact dense match. What the Search-R1 paper used, so the absolute
@@ -41,11 +51,18 @@ RETRIEVER="${RETRIEVER:-auto}"
 E5_MODEL="${E5_MODEL:-intfloat/e5-base-v2}"
 CHECK_ONLY=0
 FAISS_GPU="auto"
+MODE="run"
+LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"
+PIDFILE="$LOG_DIR/retriever.pid"
+LOGFILE="$LOG_DIR/retriever.log"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --retriever) RETRIEVER="$2"; shift 2 ;;
         --check)     CHECK_ONLY=1;   shift ;;
+        --daemon|-d) MODE="daemon";  shift ;;
+        --status)    MODE="status";  shift ;;
+        --stop)      MODE="stop";    shift ;;
         --faiss-gpu) FAISS_GPU=1;    shift ;;
         --no-faiss-gpu) FAISS_GPU=0; shift ;;
         --port)      PORT="$2";      shift 2 ;;
@@ -65,6 +82,63 @@ log()  { printf '\033[1;34m[retriever]\033[0m %s\n' "$*"; }
 ok()   { printf '\033[1;32m[ok]\033[0m   %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31m[fail]\033[0m %s\n' "$*" >&2; exit 1; }
+
+mkdir -p "$LOG_DIR"
+URL="http://127.0.0.1:$PORT/retrieve"
+
+running_pid() {
+    # A pidfile alone is not evidence: the process may have died, or the pid may
+    # have been reused by something unrelated. Check that it is alive and that
+    # it is the retrieval server.
+    [[ -f "$PIDFILE" ]] || return 1
+    local pid
+    pid="$(cat "$PIDFILE" 2>/dev/null)"
+    [[ -n "$pid" ]] || return 1
+    kill -0 "$pid" 2>/dev/null || return 1
+    grep -q retrieval_server "/proc/$pid/cmdline" 2>/dev/null || return 1
+    echo "$pid"
+}
+
+answering() {
+    curl -fsS --max-time 10 -X POST "$URL" -H 'Content-Type: application/json' \
+        -d '{"queries":["ping"],"topk":1,"return_scores":false}' >/dev/null 2>&1
+}
+
+case "$MODE" in
+    status)
+        PID="$(running_pid)" && ok "running, pid $PID" || warn "no retriever process"
+        if answering; then
+            ok "answering at $URL"
+            exit 0
+        fi
+        warn "not answering at $URL"
+        [[ -f "$LOGFILE" ]] && { echo "--- last 15 lines of $LOGFILE ---" >&2
+                                 tail -15 "$LOGFILE" >&2; }
+        exit 1
+        ;;
+    stop)
+        if PID="$(running_pid)"; then
+            log "stopping pid $PID"
+            kill "$PID" 2>/dev/null
+            for _ in $(seq 1 30); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
+            kill -0 "$PID" 2>/dev/null && { warn "still alive, sending KILL"; kill -9 "$PID"; }
+            rm -f "$PIDFILE"
+            ok "stopped"
+        else
+            warn "nothing to stop"
+        fi
+        exit 0
+        ;;
+esac
+
+if [[ "$MODE" == "daemon" ]] && PID="$(running_pid)"; then
+    if answering; then
+        ok "already running and answering (pid $PID)"
+        exit 0
+    fi
+    die "a retriever process is running (pid $PID) but not answering.
+       ./shadow_rl/launch_retriever.sh --stop, then start it again."
+fi
 
 [[ -d "$SEARCH_R1_ROOT" ]] \
     || die "Search-R1 not found at $SEARCH_R1_ROOT
@@ -283,6 +357,41 @@ else
     [[ "$FAISS_GPU" == "1" ]] && ARGS+=(--faiss_gpu)
 fi
 
-log "serving $RETRIEVER on port $PORT (topk=$TOPK)"
+SERVER=(python3 "$SEARCH_R1_ROOT/search_r1/search/retrieval_server.py" "${ARGS[@]}")
+
+if [[ "$MODE" != "daemon" ]]; then
+    log "serving $RETRIEVER on port $PORT (topk=$TOPK)"
+    warn "foreground: this dies when the shell does. --daemon to detach."
+    cd "$SEARCH_R1_ROOT"
+    exec "${SERVER[@]}"
+fi
+
+# setsid detaches from the controlling terminal, so an SSH drop or a closed
+# terminal does not take the server with it.
+log "starting $RETRIEVER in the background (log: $LOGFILE)"
 cd "$SEARCH_R1_ROOT"
-exec python3 search_r1/search/retrieval_server.py "${ARGS[@]}"
+setsid nohup "${SERVER[@]}" >"$LOGFILE" 2>&1 &
+SERVER_PID=$!
+echo "$SERVER_PID" > "$PIDFILE"
+cd "$REPO_ROOT"
+
+# Loading a 60GB index takes minutes; wait for it rather than returning into a
+# race, and fail loudly with the log if the process dies on the way up.
+log "waiting for it to answer (loading the index takes a few minutes)"
+for i in $(seq 1 180); do
+    if answering; then
+        ok "retriever up: pid $SERVER_PID, $URL"
+        log "  stop it with: ./shadow_rl/launch_retriever.sh --stop"
+        log "  verify:       python3 shadow_rl/check_retriever.py"
+        exit 0
+    fi
+    if ! kill -0 "$SERVER_PID" 2>/dev/null; then
+        rm -f "$PIDFILE"
+        echo "--- last 25 lines of $LOGFILE ---" >&2
+        tail -25 "$LOGFILE" >&2
+        die "the retriever exited while starting up"
+    fi
+    sleep 10
+    [[ $((i % 6)) -eq 0 ]] && log "  still loading ($((i / 6))m)..."
+done
+die "not answering after 30m. See $LOGFILE"

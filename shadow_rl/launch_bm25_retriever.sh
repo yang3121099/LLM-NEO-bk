@@ -25,6 +25,73 @@ if [[ ! -d "$SEARCH_R1_ROOT" ]]; then
     exit 1
 fi
 
+# ---- JVM ------------------------------------------------------------------- #
+# shadow_rl_java_home (paths.sh) returns a JAVA_HOME that actually contains
+# libjvm.so, which is what jnius dlopens; see the comment there for why the
+# obvious candidate is often the wrong one.
+if JH="$(shadow_rl_java_home)"; then
+    export JAVA_HOME="$JH"
+    echo "[ok]   JAVA_HOME=$JAVA_HOME"
+else
+    echo "[fail] no usable JDK found: nothing with lib/server/libjvm.so under" >&2
+    echo "       \$JAVA_HOME, \$CONDA_PREFIX, \$(which java) or /usr/lib/jvm/*." >&2
+    echo "       apt-get install -y openjdk-21-jdk-headless" >&2
+    echo "       # or, without root:  conda install -y -c conda-forge openjdk=21" >&2
+    exit 1
+fi
+
+# ---- python dependencies, in the interpreter that will run the server ------ #
+# "but I installed faiss-cpu" is almost always true and almost always in a
+# different interpreter, so check with the one that matters and say which it is.
+python3 - <<'PY' || exit 1
+import importlib
+import os
+import sys
+
+missing = []
+for module, install in (("faiss", "pip install faiss-cpu"),
+                        ("pyserini", "pip install pyserini")):
+    try:
+        importlib.import_module(module)
+    except Exception as exc:  # noqa: BLE001
+        missing.append((module, install, exc))
+
+if missing:
+    print(f"[fail] interpreter: {sys.executable}", file=sys.stderr)
+    for module, install, exc in missing:
+        print(f"       {module}: {exc}", file=sys.stderr)
+        print(f"       fix: {install}", file=sys.stderr)
+    print("       If you have already installed these, they went to a different\n"
+          "       interpreter than the one above -- activate that environment,\n"
+          "       or install with the same python:\n"
+          f"         {sys.executable} -m pip install faiss-cpu pyserini", file=sys.stderr)
+    sys.exit(1)
+
+# Importing pyserini is not enough: the JVM only starts on first use, which is
+# where "JVM failed to start: -1" and the dlopen error appear. Boot it now, via
+# jnius directly -- pyserini's own search modules drag in unrelated optional
+# dependencies whose failures would be misreported here as a Java problem.
+try:
+    from jnius import autoclass
+
+    autoclass("java.lang.String")
+except Exception as exc:  # noqa: BLE001
+    text = f"{exc}".lower()
+    print(f"[fail] the JVM would not start: {exc}", file=sys.stderr)
+    print(f"       JAVA_HOME={os.environ.get('JAVA_HOME', '(unset)')}", file=sys.stderr)
+    if "jvm" in text or "dlopen" in text or "libjvm" in text:
+        print("       That JAVA_HOME has no working libjvm.so. Install a JDK and\n"
+              "       let this script pick it up, or point JAVA_HOME at one:\n"
+              "         apt-get install -y openjdk-21-jdk-headless\n"
+              "         conda install -y -c conda-forge openjdk=21", file=sys.stderr)
+    sys.exit(1)
+
+print(f"[ok]   faiss + pyserini + JVM ready ({sys.executable})")
+PY
+
+# --check stops here: everything past this point downloads or serves.
+[[ "${1:-}" == "--check" ]] && exit 0
+
 mkdir -p "$CORPUS_DIR"
 
 # ---- corpus --------------------------------------------------------------- #
@@ -68,12 +135,6 @@ PY
 else
     echo "[skip] index already at $CORPUS_DIR/bm25"
 fi
-
-# BM25 retrieval in Search-R1 goes through pyserini, which needs a JVM.
-python3 -c "import pyserini" 2>/dev/null || {
-    echo "[warn] pyserini not importable. Install it and a JDK first:" >&2
-    echo "         conda install -c conda-forge openjdk=21 maven -y && pip install pyserini" >&2
-}
 
 echo "[step] serving BM25 on port $PORT (topk=$TOPK)"
 cd "$SEARCH_R1_ROOT"

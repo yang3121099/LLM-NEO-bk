@@ -70,6 +70,9 @@ Before committing to a full run, look at the plan:
 | `discover.py` | probes HuggingFace for unreleased-but-plausible pairs |
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
 | `run_eval_parallel.py` | spreads one pair's (role, dataset) cells across the GPUs |
+| `diagnose.py` | groups the failures in `logs/` by cause and names the fix |
+| `paths.sh` / `paths.py` | where checkouts live; keeps shell and python agreeing |
+| `setup_search_r1.sh` | clones the eval harness into `third_party/` |
 | `SETUP.md` | the environment setup as explicit copy-pasteable commands |
 | `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
@@ -78,8 +81,10 @@ The tests need no GPU and no model:
 ```bash
 python shadow_rl/tests/test_merge.py
 python shadow_rl/tests/test_similarity.py
-python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT
+python shadow_rl/tests/test_evaluate.py
 python shadow_rl/tests/test_resume.py
+python shadow_rl/tests/test_paths.py
+python shadow_rl/tests/test_parallel.py
 ```
 
 ## Troubleshooting
@@ -261,8 +266,29 @@ python shadow_rl/diagnose.py --full    # every log, not one per cause
 ```
 
 It reads `shadow_rl/logs/*.log`, collapses identical failures, and names the fix
-for the ones with a known remedy (missing vllm, OOM, dead retriever, a cu12
-torch on a Blackwell card, a worker killed by the host OOM killer).
+for the ones with a known remedy (missing vllm or faiss, OOM, dead retriever, a
+JVM that will not start, a cu12 torch on a Blackwell card, a worker killed by
+the host OOM killer).
+
+### The BM25 retriever
+
+Two failures account for most of them, and both are now caught before the ~70 GB
+download rather than an hour into it:
+
+```bash
+./shadow_rl/launch_bm25_retriever.sh --check    # deps only, downloads nothing
+```
+
+- **`No module named 'faiss'` after installing `faiss-cpu`.** It went to a
+  different interpreter. `--check` prints the one the server will actually use,
+  and the `pip` line for it.
+- **`JVM failed to start` / `dlopen(.../lib/jvm/lib/server/libjvm.so)`.**
+  pyserini loads Lucene through jnius, which takes its path from `JAVA_HOME`.
+  conda's openjdk lives at `$CONDA_PREFIX/lib/jvm`, so jnius tries that even in
+  an environment where the JDK came from apt instead. The launcher now searches
+  `$JAVA_HOME`, `$CONDA_PREFIX`, `which java` and `/usr/lib/jvm/*` and picks the
+  first that genuinely contains `libjvm.so` — existing is not the same as
+  usable.
 
 The runtime estimate in the plan accounts for the worker count:
 

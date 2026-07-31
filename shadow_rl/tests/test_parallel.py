@@ -150,6 +150,55 @@ def main():
     check("suggests a fix", "pip install vllm" in out)
     check("names the OOM remedy", "gpu-memory-utilization" in out)
 
+    print("\n[10] a traceback ends at its exception, not at the end of the file")
+    # A server that keeps running after logging a traceback appends hundreds of
+    # INFO lines. Taking the tail of the file then reports "Finished server
+    # process" as the cause, which is how a JVM failure got mislabelled.
+    noisy = ("INFO:     Started server process\n"
+             "Traceback (most recent call last):\n"
+             '  File "retrieval_server.py", line 389, in <module>\n'
+             "    retriever = get_retriever(config)\n"
+             "SystemError: JVM failed to start: -1\n"
+             + "".join(f'INFO:     127.0.0.1:{6500 + i} - "POST /retrieve" 200 OK\n'
+                       for i in range(650))
+             + "INFO:     Finished server process\n")
+    lines = R.extract_error(write(tmp, "noisy_tb.log", noisy))
+    check("stops at the exception line",
+          lines[-1] == "SystemError: JVM failed to start: -1", lines[-1])
+    check("no post-traceback noise", not any("200 OK" in l for l in lines))
+    check("signature is the exception",
+          R.failure_signature(lines) == "SystemError: JVM failed to start: -1")
+
+    print("\n[11] chained tracebacks are kept whole")
+    chained = ("Traceback (most recent call last):\n"
+               '  File "a.py", line 1, in f\n'
+               "ValueError: inner\n"
+               "\n"
+               "During handling of the above exception, another exception occurred:\n"
+               "\n"
+               "Traceback (most recent call last):\n"
+               '  File "b.py", line 2, in g\n'
+               "RuntimeError: outer\n"
+               "INFO: still running\n")
+    lines = R.extract_error(write(tmp, "chained.log", chained), max_lines=30)
+    check("ends at the outermost exception", lines[-1] == "RuntimeError: outer", lines[-1])
+    check("keeps the inner cause", any("ValueError: inner" in l for l in lines))
+
+    print("\n[12] retriever dependency causes have a named fix")
+    logs2 = os.path.join(tmp, "logs2")
+    os.makedirs(logs2, exist_ok=True)
+    write(logs2, "r.faiss.log", "Traceback (most recent call last):\n"
+                                '  File "retrieval_server.py", line 7, in <module>\n'
+                                "    import faiss\n"
+                                "ModuleNotFoundError: No module named 'faiss'\n")
+    write(logs2, "r.jvm.log", noisy)
+    out = subprocess.run([sys.executable, os.path.join(ROOT, "diagnose.py"),
+                          "--logs", logs2], capture_output=True, text=True).stdout
+    check("faiss points at the interpreter mismatch", "different\n       python" in out
+          or "different" in out)
+    check("faiss suggests --check", "launch_bm25_retriever.sh --check" in out)
+    check("JVM names the conda/apt trap", "CONDA_PREFIX/lib/jvm" in out)
+
     print("\n" + "=" * 60)
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

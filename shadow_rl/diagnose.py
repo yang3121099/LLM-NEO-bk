@@ -31,9 +31,29 @@ KNOWN = [
      "The GPU ran out of memory. With one worker per GPU the usual causes are a\n"
      "       stale process still holding the card (nvidia-smi) or too high a\n"
      "       --gpu-memory-utilization. Try --gpu-memory-utilization 0.7."),
+    ("No module named 'faiss'",
+     "The retrieval server's interpreter has no faiss. `pip install faiss-cpu`\n"
+     "       having already succeeded is the usual case -- it went to a different\n"
+     "       python. Check which one the server uses:\n"
+     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
+    ("No module named 'pyserini'",
+     "Same as faiss: installed, but not in the interpreter that runs the server.\n"
+     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
+    ("JVM failed to start",
+     "JAVA_HOME points somewhere without a usable libjvm.so. conda's openjdk\n"
+     "       lives at $CONDA_PREFIX/lib/jvm, so jnius tries that path even when\n"
+     "       the JDK was installed elsewhere (e.g. by apt).\n"
+     "         apt-get install -y openjdk-21-jdk-headless\n"
+     "         ./shadow_rl/launch_bm25_retriever.sh --check   # picks a working one"),
+    ("libjvm.so",
+     "The JDK at JAVA_HOME is incomplete or missing. launch_bm25_retriever.sh now\n"
+     "       searches $JAVA_HOME, $CONDA_PREFIX, `which java` and /usr/lib/jvm/*\n"
+     "       and takes the first that really contains libjvm.so:\n"
+     "         ./shadow_rl/launch_bm25_retriever.sh --check"),
     ("Connection refused",
      "Nothing is listening on the retriever port. The SearchR1-* pairs need it:\n"
-     "       ./shadow_rl/launch_bm25_retriever.sh, or run_all.sh --auto-retriever"),
+     "       ./shadow_rl/launch_bm25_retriever.sh, or run_all.sh --auto-retriever\n"
+     "       If it exits at once, --check names the missing dependency."),
     ("Max retries exceeded",
      "The retriever stopped answering mid-run -- often it died under the load of\n"
      "       N workers querying at once. Check its own log; consider fewer --jobs."),

@@ -375,6 +375,11 @@ if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
     if retriever_alive; then
         ok "retrieval server responding at $RETRIEVER_URL"
     elif [[ $AUTO_RETRIEVER -eq 1 ]]; then
+        # Check faiss/pyserini/JVM before the download, not after it. Otherwise a
+        # missing JDK is discovered ~70GB and an hour later, and only as a
+        # dlopen error buried in the server's own log.
+        ./shadow_rl/launch_bm25_retriever.sh --check \
+            || die "the retriever cannot start; see the errors above"
         RETR_LOG="$LOG_DIR/retriever.log"
         log "starting the BM25 retriever (log: $RETR_LOG)"
         ./shadow_rl/launch_bm25_retriever.sh >>"$RETR_LOG" 2>&1 &
@@ -395,7 +400,9 @@ $(tail -20 "$RETR_LOG" 2>/dev/null)"
         die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
        Either start one in another shell:
          ./shadow_rl/launch_bm25_retriever.sh
-       or re-run with --auto-retriever to have this script manage it."
+       or re-run with --auto-retriever to have this script manage it.
+       To check its dependencies without downloading anything:
+         ./shadow_rl/launch_bm25_retriever.sh --check"
     fi
 fi
 

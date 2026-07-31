@@ -57,6 +57,43 @@ _ERROR_NOISE = (
 )
 
 
+# Lines that continue a traceback rather than ending it.
+_TB_CONTINUES = (
+    "Traceback (most recent call last)",
+    "During handling of the above exception",
+    "The above exception was the direct cause",
+)
+
+
+def _traceback_block(lines: List[str], start: int) -> List[str]:
+    """The traceback at `start`, ending at its exception line.
+
+    Not simply lines[start:] -- a server that keeps running after logging a
+    traceback appends hundreds more lines, and taking the tail of the file then
+    reports "INFO: Finished server process" as the cause. A traceback ends at
+    the first unindented line that is not a chaining marker: the
+    "SomeError: message" that everyone actually wants.
+    """
+    block = []
+    i = start
+    while i < len(lines):
+        line = lines[i]
+        block.append(line)
+        i += 1
+        stripped = line.strip()
+        if not stripped or line[:1].isspace():
+            continue                                   # frame lines are indented
+        if stripped.startswith(_TB_CONTINUES):
+            continue                                   # a chain marker or a new header
+        # An unindented line that is not a marker is "SomeError: message" -- the
+        # end, unless a chain marker follows, in which case this exception is
+        # only the cause of the next one and the chain continues.
+        if any(l.strip().startswith(_TB_CONTINUES[1:]) for l in lines[i:i + 2]):
+            continue
+        break
+    return block
+
+
 def extract_error(log_path: str, max_lines: int = 12) -> List[str]:
     """Pull the part of a worker log that explains why it died.
 
@@ -79,7 +116,15 @@ def extract_error(log_path: str, max_lines: int = 12) -> List[str]:
     # A traceback is the most informative thing available, so prefer the last one.
     starts = [i for i, l in enumerate(lines) if l.startswith("Traceback (most recent call last)")]
     if starts:
-        block = lines[starts[-1]:]
+        # Walk back over chained tracebacks. "During handling of the above
+        # exception..." means the earlier one is the cause, and the cause is
+        # usually what you need -- the outer exception is often a generic wrapper.
+        first = len(starts) - 1
+        while first > 0 and any(
+                l.strip().startswith(_TB_CONTINUES[1:])
+                for l in lines[starts[first - 1]:starts[first]]):
+            first -= 1
+        block = _traceback_block(lines, starts[first])
         if len(block) <= max_lines:
             return block
         # Keep the head (where it was raised) and the tail (what was raised).

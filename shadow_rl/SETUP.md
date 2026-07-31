@@ -114,8 +114,11 @@ index instead.
 
 ```bash
 python3 -c 'import faiss; print(faiss.get_num_gpus())'   # 0 means CPU-only
-pip install faiss-gpu-cu12                               # or:
-conda install -c pytorch -c nvidia faiss-gpu
+
+# faiss-cpu and faiss-gpu both provide the module `faiss`, so replace it:
+pip uninstall -y faiss-cpu && pip install faiss-gpu      # same 1.14.x line
+# older CUDA runtime:  pip install faiss-gpu-cu12
+# conda:               conda install -c pytorch -c nvidia faiss-gpu
 ```
 
 `get_num_gpus()` is the test, not `hasattr`. faiss-cpu defines

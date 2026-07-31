@@ -63,9 +63,9 @@ KNOWN = [
      "The retrieval server was told to use faiss on GPU, but the installed faiss\n"
      "       is faiss-cpu. Note that faiss-cpu still defines index_cpu_to_all_gpus,\n"
      "       so 'the attribute exists' proves nothing -- faiss.get_num_gpus() is\n"
-     "       the real test. Either install a GPU build and keep the flat index:\n"
-     "         pip install faiss-gpu-cu12\n"
-     "         conda install -c pytorch -c nvidia faiss-gpu\n"
+     "       the real test. Either install a GPU build and keep the flat index\n"
+     "       (both ship the same 'faiss' module, so drop the CPU one first):\n"
+     "         pip uninstall -y faiss-cpu && pip install faiss-gpu\n"
      "       or use the CPU index instead:\n"
      "         ./shadow_rl/launch_retriever.sh --retriever e5-hnsw"),
     ("EngineDeadError",

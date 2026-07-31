@@ -160,9 +160,10 @@ sys.exit(0 if ok else 1)' 2>/dev/null; then
     elif [[ "$FAISS_GPU" == "1" && $FAISS_GPU_AVAILABLE -eq 0 ]]; then
         die "--faiss-gpu asked for, but this faiss has no GPU support
        (faiss.get_num_gpus() == 0). faiss-cpu cannot do it, whatever the module
-       namespace suggests. Either install a GPU build:
-         pip install faiss-gpu-cu12
-         conda install -c pytorch -c nvidia faiss-gpu
+       namespace suggests. Either install a GPU build -- both provide the same
+       'faiss' module, so remove the CPU one first --
+         pip uninstall -y faiss-cpu && pip install faiss-gpu
+         # older CUDA runtimes: pip install faiss-gpu-cu12
        or use the CPU index:  --retriever e5-hnsw"
     fi
     # Resolve `auto` now that the faiss capability is known: exact flat search
@@ -182,7 +183,7 @@ sys.exit(0 if ok else 1)' 2>/dev/null; then
         warn "flat e5 index without faiss-gpu: every query scans 21M passages on"
         warn "the CPU. Expect this to be far too slow for a full evaluation."
         warn "Either install a GPU build of faiss and keep this index --"
-        warn "  pip install faiss-gpu-cu12   /   conda install -c pytorch -c nvidia faiss-gpu"
+        warn "  pip uninstall -y faiss-cpu && pip install faiss-gpu"
         warn "or use --retriever e5-hnsw, which is built for CPU search."
     fi
     [[ "$FAISS_GPU" == "1" ]] && ok "faiss GPU support available"

@@ -10,7 +10,7 @@ has already run.
 
     python shadow_rl/check_env.py                     # core checks
     python shadow_rl/check_env.py --full              # also vllm + Search-R1
-    python shadow_rl/check_env.py --search-r1-root ~/Search-R1 --full
+    python shadow_rl/check_env.py --search-r1-root third_party/Search-R1 --full
 """
 
 from __future__ import annotations
@@ -19,6 +19,26 @@ import argparse
 import importlib.util
 import os
 import sys
+
+
+def _default_search_r1_root() -> str:
+    """Where Search-R1 lives, agreeing with paths.sh and the rest of the tree.
+
+    Imported rather than reimplemented, but this file is also run standalone
+    from odd working directories, so fall back to the same rule inline instead
+    of failing the whole environment check over an import path.
+    """
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    try:
+        from paths import search_r1_root
+
+        return search_r1_root()
+    except Exception:  # noqa: BLE001
+        repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        in_tree = os.path.join(repo, "third_party", "Search-R1")
+        home = os.path.expanduser("~/Search-R1")
+        return os.environ.get("SEARCH_R1_ROOT") or (
+            in_tree if os.path.isdir(in_tree) or not os.path.isdir(home) else home)
 
 RESET, RED, GREEN, YELLOW = "\033[0m", "\033[1;31m", "\033[1;32m", "\033[1;33m"
 
@@ -262,15 +282,17 @@ def check_search_r1(root):
     if os.path.exists(path):
         ok(f"Search-R1 EM scorer at {path}")
     else:
+        # Point at the setup script rather than a raw git clone: it puts the
+        # checkout where everything else looks for it, which a hand-run clone
+        # into $HOME may not.
         bad(f"Search-R1 not found at {root}",
-            f"git clone https://github.com/PeterGriffinJin/Search-R1.git {root}")
+            "./shadow_rl/setup_search_r1.sh")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--full", action="store_true", help="also check vllm and Search-R1")
-    ap.add_argument("--search-r1-root", default=os.environ.get("SEARCH_R1_ROOT",
-                                                              os.path.expanduser("~/Search-R1")))
+    ap.add_argument("--search-r1-root", default=_default_search_r1_root())
     args = ap.parse_args()
 
     def guarded(label, fn, *a):

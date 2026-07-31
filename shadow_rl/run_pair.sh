@@ -4,7 +4,7 @@
 #   ./shadow_rl/run_pair.sh <pair_id> [extra args passed to evaluate.py]
 #
 # Environment:
-#   SEARCH_R1_ROOT   path to a Search-R1 checkout            (default ~/Search-R1)
+#   SEARCH_R1_ROOT   path to a Search-R1 checkout   (default third_party/Search-R1)
 #   MERGED_DIR       where merged models are written         (default shadow_rl/merged)
 #   RESULTS          results.csv path                        (default shadow_rl/results.csv)
 #   TP               tensor parallel size                    (default 1)
@@ -22,7 +22,8 @@ if [[ -z "$PAIR" ]]; then
 fi
 shift || true
 
-SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
+source "$(dirname "${BASH_SOURCE[0]}")/paths.sh"
+SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 MERGED_DIR="${MERGED_DIR:-shadow_rl/merged}"
 RESULTS="${RESULTS:-shadow_rl/results.csv}"
 TP="${TP:-1}"
@@ -30,8 +31,8 @@ RETRIEVER_URL="${RETRIEVER_URL:-http://127.0.0.1:8000/retrieve}"
 ROLES="${ROLES:-instruct_baseline rl_on_instruct rl_on_base shadow}"
 
 if [[ ! -d "$SEARCH_R1_ROOT" ]]; then
-    echo "[fail] SEARCH_R1_ROOT=$SEARCH_R1_ROOT does not exist." >&2
-    echo "       git clone https://github.com/PeterGriffinJin/Search-R1.git $SEARCH_R1_ROOT" >&2
+    echo "[fail] Search-R1 not found at $SEARCH_R1_ROOT" >&2
+    echo "       ./shadow_rl/setup_search_r1.sh" >&2
     exit 1
 fi
 

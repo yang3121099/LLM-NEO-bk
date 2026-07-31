@@ -12,7 +12,7 @@ CSV are only atomic for small writes and only on some filesystems, and a torn
 row would be a silently corrupt result.
 
     python shadow_rl/run_eval_parallel.py --pair grpo-search-3b-v0.3 \
-        --search-r1-root ~/Search-R1 --sample 200
+        --search-r1-root third_party/Search-R1 --sample 200
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from typing import List, Tuple
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from evaluate import CSV_FIELDS  # noqa: E402
 from pairs import DATASETS, MODEL_ROLES, PAIRS_BY_ID  # noqa: E402
+from paths import search_r1_root as _default_search_r1_root  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -80,7 +81,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--pair", required=True, choices=sorted(PAIRS_BY_ID))
-    ap.add_argument("--search-r1-root", required=True)
+    ap.add_argument("--search-r1-root", default=_default_search_r1_root())
     ap.add_argument("--out", default="shadow_rl/results.csv")
     ap.add_argument("--roles", default=",".join(MODEL_ROLES))
     ap.add_argument("--datasets", default=",".join(DATASETS))

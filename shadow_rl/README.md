@@ -27,15 +27,21 @@ git clone https://github.com/yang3121099/LLM-NEO-bk.git
 cd LLM-NEO-bk
 git checkout claude/shadow-ft-rl-weight-grafting-tc0uow
 
-# 2. install everything and verify (creates ~/shadow-rl-venv, clones Search-R1)
+# 2. install everything and verify
 ./shadow_rl/setup.sh                 # add --with-bm25 if you want the search pairs too
 
 # 3. activate and go
-source ~/shadow-rl-venv/bin/activate
-export SEARCH_R1_ROOT=~/Search-R1
-
+source .venv/bin/activate            # only if setup.sh created one
 ./shadow_rl/run_all.sh --pairs nosearch          # ~2h on one H200, no retrieval needed
 ```
+
+Nothing is written to `$HOME`. The virtualenv, the Search-R1 checkout
+(`third_party/Search-R1`), verl (`third_party/verl`) and the BM25 corpus
+(`corpus/`) all live in the working tree, so a box where `/root` is small or
+not writable is fine. There is no `SEARCH_R1_ROOT` to export; set one only to
+point at a checkout somewhere else. Models still go to the standard
+HuggingFace cache, which is shared with everything else on the machine —
+`SHADOW_RL_MODEL_DIR` or `HF_HOME` moves those.
 
 `setup.sh` finishes by running the three CPU test suites; if any fail it stops
 rather than letting you start a long run on a broken install.

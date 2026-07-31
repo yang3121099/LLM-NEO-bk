@@ -7,6 +7,12 @@ exactly what is being installed.
 Two paths: **conda** (self-contained, recommended for a fresh box) or **venv**
 (if the system Python is already what you want). Pick one.
 
+**Nothing lands in `$HOME`.** Checkouts, the virtualenv and the corpus all go
+into the working tree, because on a container `$HOME` is frequently `/root` —
+small, or not writable at all — and a clone that fails there surfaces much later
+as something that looks unrelated. Only the HuggingFace model cache stays where
+it normally is, so models are shared with everything else on the machine.
+
 ---
 
 ## 0. What the machine needs
@@ -51,12 +57,15 @@ pip install safetensors huggingface_hub transformers datasets accelerate request
 pip install vllm
 
 # --- the evaluation harness -------------------------------------------------
-git clone https://github.com/PeterGriffinJin/Search-R1.git ~/Search-R1
-export SEARCH_R1_ROOT=~/Search-R1
+./shadow_rl/setup_search_r1.sh       # -> third_party/Search-R1, nothing to export
 
 # --- verify -----------------------------------------------------------------
 python shadow_rl/check_env.py --full
 ```
+
+The harness is read from, never installed: `evaluate.py` imports `qa_em.py` and
+the generation loop by path. Do **not** `pip install -e` the Search-R1 checkout —
+it pins its own torch and vllm and will undo the two lines above.
 
 `check_env.py` compares your GPU's compute capability against
 `torch.cuda.get_arch_list()`, which is the decisive test — not the CUDA version
@@ -67,8 +76,8 @@ string.
 Identical, only the first two lines differ:
 
 ```bash
-python3 -m venv ~/shadow-rl-venv
-source ~/shadow-rl-venv/bin/activate
+python3 -m venv .venv          # in the working tree, not $HOME
+source .venv/bin/activate
 ```
 
 ---
@@ -124,7 +133,8 @@ If you would rather do it by hand, that is the whole of it:
 git clone --depth 1 https://github.com/volcengine/verl.git third_party/verl
 python -m pip install -e third_party/verl --no-deps
 python -m pip install -U 'ray[default]' tensordict omegaconf hydra-core \
-    codetiming dill torchdata pylatexenc pyarrow pandas tqdm
+    codetiming dill torchdata pylatexenc datasets pillow accelerate \
+    pyarrow pandas tqdm
 python shadow_rl/verl_math/setup_verl.sh --check   # or: ./…/setup_verl.sh --check
 ```
 
@@ -142,7 +152,9 @@ never logged in, so `train_grpo.sh` passes `trainer.logger=[console]`. Set
 | downloaded models | standard HuggingFace cache (`~/.cache/huggingface/hub`) | `SHADOW_RL_MODEL_DIR` |
 | merged models | `shadow_rl/merged/` | `MERGED_DIR` |
 | BM25 corpus + index | `corpus/` in the working tree | `CORPUS_DIR` |
+| Search-R1 checkout | `third_party/Search-R1` in the working tree | `SEARCH_R1_ROOT` |
 | verl checkout | `third_party/verl` in the working tree | `VERL_ROOT` |
+| virtualenv | `.venv/` in the working tree | `VENV` |
 | verl parquets | `datasets/` in the working tree | — |
 | verl checkpoints | `shadow_rl/verl_math/ckpt/` | `CKPT_DIR` |
 | results, logs | `shadow_rl/`, `shadow_rl/logs/` | `RESULTS`, `LOG_DIR` |
@@ -157,11 +169,11 @@ export HF_DATASETS_CACHE=$PWD/hf_datasets
 
 ## 5. Put it in your shell profile
 
+Only the environment activation is worth persisting — the checkout locations are
+resolved from the repo, so there is nothing else to export:
+
 ```bash
-cat >> ~/.bashrc <<'EOF'
-conda activate shadow-rl              # or: source ~/shadow-rl-venv/bin/activate
-export SEARCH_R1_ROOT=$HOME/Search-R1
-EOF
+echo 'conda activate shadow-rl' >> ~/.bashrc     # or: source <repo>/.venv/bin/activate
 ```
 
 ---
@@ -182,10 +194,10 @@ The CPU test suites need no GPU and no model, and are worth running once after
 setup:
 
 ```bash
-for t in merge similarity resume check_env report pairs; do
+for t in merge similarity resume check_env report pairs paths; do
     python shadow_rl/tests/test_$t.py | tail -1
 done
-python shadow_rl/tests/test_evaluate.py --search-r1-root $SEARCH_R1_ROOT | tail -1
+python shadow_rl/tests/test_evaluate.py | tail -1
 python shadow_rl/verl_math/math_reward.py | tail -1
 python shadow_rl/verl_math/tests/test_prepare_data.py | tail -1
 python shadow_rl/verl_math/tests/test_train_config.py | tail -1   # needs verl

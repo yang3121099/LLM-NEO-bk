@@ -14,13 +14,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # The corpus and index are ~70GB; keep them under the working tree rather than
 # in $HOME, where they tend to fill a small root volume.
 CORPUS_DIR="${CORPUS_DIR:-$REPO_ROOT/corpus}"
-SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
+source "$REPO_ROOT/shadow_rl/paths.sh"
+SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 PORT="${PORT:-8000}"
 TOPK="${TOPK:-3}"
 
 if [[ ! -d "$SEARCH_R1_ROOT" ]]; then
-    echo "[fail] SEARCH_R1_ROOT=$SEARCH_R1_ROOT does not exist." >&2
-    echo "       git clone https://github.com/PeterGriffinJin/Search-R1.git $SEARCH_R1_ROOT" >&2
+    echo "[fail] Search-R1 not found at $SEARCH_R1_ROOT" >&2
+    echo "       ./shadow_rl/setup_search_r1.sh" >&2
     exit 1
 fi
 

@@ -16,7 +16,7 @@ prompt + rollout, exactly as verl's reward manager decodes it.
 Example
 -------
     python shadow_rl/evaluate.py \
-        --search-r1-root ~/Search-R1 \
+        --search-r1-root third_party/Search-R1 \
         --pair ppo-nosearch-3b-v0.2 \
         --role rl_on_base \
         --out shadow_rl/results.csv
@@ -35,6 +35,7 @@ import sys
 from typing import Dict, List, Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from paths import search_r1_root as _default_search_r1_root  # noqa: E402
 from pairs import (  # noqa: E402
     DATASET_SPECS, DATASETS, MODEL_ROLES, PAIRS_BY_ID, Pair,
 )
@@ -100,8 +101,8 @@ def load_qa_em(search_r1_root: str):
         sys.exit(
             f"[fail] {path} not found.\n"
             "Clone the harness first:\n"
-            "  git clone https://github.com/PeterGriffinJin/Search-R1.git\n"
-            "and pass its path with --search-r1-root."
+            "  ./shadow_rl/setup_search_r1.sh\n"
+            "or point --search-r1-root at an existing checkout."
         )
     spec = importlib.util.spec_from_file_location("qa_em", path)
     module = importlib.util.module_from_spec(spec)
@@ -377,7 +378,11 @@ def append_rows(path: str, rows: List[Dict]) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--search-r1-root", required=True, help="path to a Search-R1 checkout")
+    # Defaulted, not required: setup_search_r1.sh puts the checkout where
+    # paths.py looks, so the common case needs no flag and no exported variable.
+    ap.add_argument("--search-r1-root", default=_default_search_r1_root(),
+                    help="path to a Search-R1 checkout "
+                         "(default: third_party/Search-R1)")
     ap.add_argument("--pair", required=True, choices=sorted(PAIRS_BY_ID))
     ap.add_argument("--role", required=True, choices=MODEL_ROLES)
     ap.add_argument("--model-path", default=None,

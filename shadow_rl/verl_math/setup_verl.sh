@@ -21,7 +21,8 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$REPO_ROOT"
 
-VERL_ROOT="${VERL_ROOT:-$REPO_ROOT/third_party/verl}"
+source "$REPO_ROOT/shadow_rl/paths.sh"
+VERL_ROOT="$(shadow_rl_verl_root)"
 VERL_REPO="${VERL_REPO:-https://github.com/volcengine/verl.git}"
 CHECK_ONLY=0
 [[ "${1:-}" == "--check" ]] && CHECK_ONLY=1

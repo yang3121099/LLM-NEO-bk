@@ -72,7 +72,8 @@ FORCE=0
 SKIP_ENV_CHECK=0
 STRICT_ENV=0
 
-SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
+source "$REPO_ROOT/shadow_rl/paths.sh"
+SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 MERGED_DIR="${MERGED_DIR:-$REPO_ROOT/shadow_rl/merged}"
 RESULTS="${RESULTS:-$REPO_ROOT/shadow_rl/results.csv}"
 LOG_DIR="${LOG_DIR:-$REPO_ROOT/shadow_rl/logs}"

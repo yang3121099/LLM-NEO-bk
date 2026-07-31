@@ -7,22 +7,35 @@
 # Safe to re-run: every step is skipped if already satisfied.
 #
 # Environment:
-#   SEARCH_R1_ROOT  where to clone the harness   (default $HOME/Search-R1)
-#   VENV            virtualenv to create/use     (default $HOME/shadow-rl-venv, "" to skip)
+#   SEARCH_R1_ROOT  where to clone the harness   (default third_party/Search-R1)
+#   VENV            virtualenv to create/use     (default .venv here, "" to skip)
 #   TORCH_INDEX     torch wheel index            (default CUDA 13.0, for B200/B300)
+#
+# Nothing is written to $HOME. On a container it is often /root, small or not
+# writable, and a checkout or a venv landing there fails much later as something
+# that looks unrelated.
 set -euo pipefail
 
-SEARCH_R1_ROOT="${SEARCH_R1_ROOT:-$HOME/Search-R1}"
-VENV="${VENV-$HOME/shadow-rl-venv}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$REPO_ROOT"
+source "$REPO_ROOT/shadow_rl/paths.sh"
+
+SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
+# An already-active virtualenv wins: re-running setup should install into the
+# environment you are standing in, not silently build a second one beside it.
+if [[ -z "${VENV+x}" && -n "${VIRTUAL_ENV:-}" ]]; then
+    VENV="$VIRTUAL_ENV"
+elif [[ -z "${VENV+x}" && -d "$HOME/shadow-rl-venv" ]]; then
+    VENV="$HOME/shadow-rl-venv"      # created by an earlier version; keep using it
+else
+    VENV="${VENV-$REPO_ROOT/.venv}"
+fi
 # CUDA 13.0 by default: B200/B300 are Blackwell (sm_100) and a cu12 wheel has no
 # kernels for them. Override for older fleets, e.g.
 #   TORCH_INDEX=https://download.pytorch.org/whl/cu128 ./shadow_rl/setup.sh
 TORCH_INDEX="${TORCH_INDEX:-https://download.pytorch.org/whl/cu130}"
 WITH_BM25=0
 [[ "${1:-}" == "--with-bm25" ]] && WITH_BM25=1
-
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$REPO_ROOT"
 
 log()  { printf '\033[1;34m[setup]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[warn]\033[0m %s\n' "$*" >&2; }
@@ -148,16 +161,10 @@ fi
 log "torch and companions reconciled"
 
 # ---- 5. Search-R1 harness -------------------------------------------------- #
-if [[ -d "$SEARCH_R1_ROOT/.git" ]]; then
-    log "Search-R1 already at $SEARCH_R1_ROOT"
-else
-    log "cloning Search-R1 -> $SEARCH_R1_ROOT"
-    git clone --depth 1 https://github.com/PeterGriffinJin/Search-R1.git "$SEARCH_R1_ROOT" \
-        || die "clone failed"
-fi
-[[ -f "$SEARCH_R1_ROOT/verl/utils/reward_score/qa_em.py" ]] \
-    || die "qa_em.py missing under $SEARCH_R1_ROOT -- is that really a Search-R1 checkout?"
-log "official EM scorer found"
+# Delegated so that a broken checkout can be repaired on its own, without
+# re-running the torch install above.
+SEARCH_R1_ROOT="$SEARCH_R1_ROOT" ./shadow_rl/setup_search_r1.sh \
+    || die "Search-R1 setup failed"
 
 # ---- 6. BM25 (optional, only for the SearchR1-* pairs) --------------------- #
 if [[ $WITH_BM25 -eq 1 ]]; then

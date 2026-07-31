@@ -7,7 +7,7 @@ wrong: that we feed `qa_em.compute_score_em` the same string verl feeds it
 (prompt + rollout), so the two-`<answer>` rule in `extract_solution` resolves the
 way the official harness intends.
 
-Run:  python shadow_rl/tests/test_evaluate.py --search-r1-root ~/Search-R1
+Run:  python shadow_rl/tests/test_evaluate.py --search-r1-root third_party/Search-R1
 """
 
 import argparse
@@ -21,6 +21,8 @@ import types
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, ROOT)
+
+from paths import search_r1_root as _default_search_r1_root  # noqa: E402
 
 FAILURES = []
 
@@ -80,7 +82,10 @@ class FakeRetriever:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--search-r1-root", default=os.environ.get("SEARCH_R1_ROOT", ""))
+    # Default to the resolved checkout so the scoring sections actually run.
+    # They used to default to "" and silently skip, which meant a green run said
+    # nothing about the part that matters most -- the official EM scorer.
+    ap.add_argument("--search-r1-root", default=_default_search_r1_root())
     args = ap.parse_args()
 
     # evaluate.py imports vllm lazily inside run_rollouts; stub it out.

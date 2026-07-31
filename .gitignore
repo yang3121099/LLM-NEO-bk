@@ -132,5 +132,8 @@ shadow_rl/*.jsonl
 shadow_rl/logs/
 shadow_rl/similarity_params.csv
 
-# verl and other checkouts installed into the working tree by setup scripts
+# Checkouts and environments the setup scripts create in the working tree,
+# because $HOME is often /root and not writable on a container.
+# Search-R1, verl
 third_party/
+.venv/

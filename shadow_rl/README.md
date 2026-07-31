@@ -71,6 +71,7 @@ Before committing to a full run, look at the plan:
 | `check_env.py` | validates torch/torchvision/transformers and prints exact fixes |
 | `run_eval_parallel.py` | spreads one pair's (role, dataset) cells across the GPUs |
 | `diagnose.py` | groups the failures in `logs/` by cause and names the fix |
+| `check_retriever.py` | asks the retrieval server a real question and shows the passages |
 | `paths.sh` / `paths.py` | where checkouts live; keeps shell and python agreeing |
 | `setup_search_r1.sh` | clones the eval harness into `third_party/` |
 | `setup_bm25.sh` | JDK + faiss + pyserini + a `JAVA_HOME` that survives the shell |
@@ -297,6 +298,22 @@ comparable to the published numbers instead of sitting below them.
 `auto` resolves to `e5` when faiss-gpu is installed and a GPU is visible, and to
 `e5-hnsw` otherwise. It never picks `bm25` — Java is opt-in, not a fallback you
 land in by accident. `run_all.sh --retriever X` passes the choice through.
+
+Once it is serving, check that it *answers* rather than merely listens:
+
+```bash
+python shadow_rl/check_retriever.py
+```
+
+`Uvicorn running on http://0.0.0.0:8000` only means a port was bound. This sends
+a real query and prints the passages, the per-query latency, and a warning if
+that latency would dominate the run. `run_all.sh` runs it automatically before
+starting the evaluation.
+
+Incidental: the server defines exactly one route, `POST /retrieve`. Requests to
+anything else — `GET /json` is a common one from IDE port-forwarding probes and
+service scanners — correctly return 404 and have nothing to do with the
+evaluation.
 
 Do not mix retrievers within one `results.csv`: search-pair EM is not comparable
 across them. `run_all.sh` records the retriever in `results.retriever` and warns

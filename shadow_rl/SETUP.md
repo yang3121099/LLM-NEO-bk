@@ -301,6 +301,13 @@ python shadow_rl/check_env.py --full          # should be all green
 python shadow_rl/report.py
 ```
 
+If a run uses retrieval, confirm the server *answers* rather than merely
+listens — `Uvicorn running on ...` only means a port was bound:
+
+```bash
+python shadow_rl/check_retriever.py
+```
+
 The CPU test suites need no GPU and no model, and are worth running once after
 setup:
 

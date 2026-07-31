@@ -225,6 +225,66 @@ def main():
     except ImportError:
         print("     (skipped: faiss not installed)")
 
+    print("\n[14] check_retriever distinguishes the retriever's failure modes")
+    # "Uvicorn running on ..." only means a port was bound. These are the states
+    # that look identical from the outside and are not.
+    import http.server
+    import json as _json
+    import threading
+
+    class Stub(http.server.BaseHTTPRequestHandler):
+        mode = "ok"
+
+        def log_message(self, *a):
+            pass
+
+        def do_POST(self):
+            if self.path != "/retrieve":
+                self.send_error(404)
+                return
+            req = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            if Stub.mode == "empty":
+                body = [[] for _ in req["queries"]]
+            else:
+                body = [[{"document": {"contents": f"about {q}"}, "score": 0.9}]
+                        for q in req["queries"]]
+            data = _json.dumps(body).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+    srv = http.server.HTTPServer(("127.0.0.1", 0), Stub)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = f"http://127.0.0.1:{srv.server_address[1]}/retrieve"
+    script = os.path.join(ROOT, "check_retriever.py")
+
+    def run_check(u):
+        return subprocess.run([sys.executable, script, "--url", u, "--timeout", "20"],
+                              capture_output=True, text=True)
+
+    Stub.mode = "ok"
+    proc = run_check(url)
+    check("healthy server -> exit 0", proc.returncode == 0, str(proc.returncode))
+    check("shows the passages", "about who wrote" in proc.stdout)
+
+    Stub.mode = "empty"
+    proc = run_check(url)
+    check("empty results -> exit 1", proc.returncode == 1, str(proc.returncode))
+    check("says the index is not answering",
+          "returned nothing" in proc.stdout, proc.stdout.strip()[-60:])
+
+    proc = run_check(url.replace("/retrieve", "/json"))
+    check("wrong path -> exit 1", proc.returncode == 1, str(proc.returncode))
+    check("explains that 404 is the server behaving",
+          "only endpoint is POST /retrieve" in proc.stdout)
+
+    proc = run_check("http://127.0.0.1:1/retrieve")
+    check("nothing listening -> exit 1", proc.returncode == 1, str(proc.returncode))
+    check("says how to start it", "launch_retriever.sh" in proc.stdout)
+    srv.shutdown()
+
     print("\n" + "=" * 60)
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

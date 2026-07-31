@@ -396,6 +396,8 @@ if [[ $NEEDS_SEARCH -eq 1 ]] && has_stage eval; then
     fi
     if retriever_alive; then
         ok "retrieval server responding at $RETRIEVER_URL"
+        python3 shadow_rl/check_retriever.py --url "$RETRIEVER_URL" --quiet \
+            || die "the retriever is listening but not returning passages (see above)"
         # Started outside this script, so its retriever cannot be interrogated --
         # the server exposes no such endpoint. Record only what was asserted.
         [[ "$RETRIEVER" != auto ]] && echo "$RETRIEVER" > "$RETRIEVER_MARK"
@@ -422,6 +424,11 @@ $(tail -20 "$RETR_LOG" 2>/dev/null)"
         retriever_alive || die "retriever did not become ready. See $RETR_LOG"
         ok "retrieval server up at $RETRIEVER_URL (pid $RETRIEVER_PID)"
         echo "$RETRIEVER" > "$RETRIEVER_MARK"
+        # Binding a port is not the same as answering usefully. Ask it a real
+        # question once: an index that loads but returns nothing, or takes
+        # seconds per query, would otherwise be discovered dataset by dataset.
+        python3 shadow_rl/check_retriever.py --url "$RETRIEVER_URL" --quiet \
+            || die "the retriever is listening but not returning passages (see above)"
     else
         die "selection includes search pairs, but no retrieval server at $RETRIEVER_URL.
        Either start one in another shell:

@@ -73,6 +73,7 @@ Before committing to a full run, look at the plan:
 | `diagnose.py` | groups the failures in `logs/` by cause and names the fix |
 | `paths.sh` / `paths.py` | where checkouts live; keeps shell and python agreeing |
 | `setup_search_r1.sh` | clones the eval harness into `third_party/` |
+| `setup_bm25.sh` | JDK + faiss + pyserini + a `JAVA_HOME` that survives the shell |
 | `SETUP.md` | the environment setup as explicit copy-pasteable commands |
 | `tests/` | CPU-only tests: merge arithmetic, similarity stats, eval contract, resume logic |
 
@@ -276,7 +277,8 @@ Two failures account for most of them, and both are now caught before the ~70 GB
 download rather than an hour into it:
 
 ```bash
-./shadow_rl/launch_bm25_retriever.sh --check    # deps only, downloads nothing
+./shadow_rl/setup_bm25.sh            # install + verify + persist JAVA_HOME
+./shadow_rl/setup_bm25.sh --check    # verify only, changes nothing
 ```
 
 - **`No module named 'faiss'` after installing `faiss-cpu`.** It went to a

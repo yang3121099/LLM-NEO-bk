@@ -87,26 +87,94 @@ source .venv/bin/activate
 The `R1-*` (no-search) pairs skip this entirely.
 
 ```bash
-# Java 21: pyserini wraps Lucene, and an older JDK fails at query time
-apt-get install -y openjdk-21-jdk-headless
-# no root? conda works too:
-# conda install -y -c conda-forge openjdk=21 maven
+./shadow_rl/setup_bm25.sh          # JDK + faiss + pyserini + JAVA_HOME, verified
+```
 
-pip install -U faiss-cpu pyserini
+That is the whole thing. It installs what is missing, **boots the JVM to prove
+it works**, and writes `JAVA_HOME` into your environment's activation hook so the
+next shell keeps it. `--check` verifies without changing anything;
+`--no-persist` skips the activation hook.
 
-# corpus + index, ~70 GB, into the working tree (not $HOME)
-./shadow_rl/launch_bm25_retriever.sh          # downloads then serves on :8000
+Then:
+
+```bash
+./shadow_rl/launch_bm25_retriever.sh    # ~70 GB corpus + index, then serves :8000
 ```
 
 Leave that running in its own shell, or let `run_all.sh --auto-retriever` start
 and stop it for you.
 
-If `import pyserini` fails, check `JAVA_HOME`:
+### Why this needs a script
+
+Three failures dominate here, and each one surfaces far from its cause.
+
+**1. `No module named 'faiss'` — after `pip install faiss-cpu` succeeded.**
+
+The install went to a different interpreter than the one launching the server.
+`pip` on `$PATH` is not necessarily the `pip` of the python that runs
+`retrieval_server.py`. Always install with the interpreter itself:
 
 ```bash
-java -version
-export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
+python3 -m pip install -U faiss-cpu pyserini      # not: pip install ...
+python3 -c 'import faiss, sys; print(sys.executable)'   # this is the one that matters
 ```
+
+**2. `JVM failed to start: -1`, or**
+`dlopen('$CONDA_PREFIX/lib/jvm/lib/server/libjvm.so'): No such file or directory`
+
+pyserini wraps Lucene and loads it through jnius, which `dlopen`s
+`$JAVA_HOME/lib/server/libjvm.so`. conda's openjdk installs to
+`$CONDA_PREFIX/lib/jvm`, so **jnius reaches for that path even when your JDK came
+from apt and lives in `/usr/lib/jvm/`**. A `JAVA_HOME` that exists but has no
+`libjvm.so` under it is worse than none at all — it fails at query time, deep
+inside the retrieval server.
+
+The test is not "is Java installed" but "is there a `libjvm.so` under
+`JAVA_HOME`":
+
+```bash
+ls "$JAVA_HOME"/lib/server/libjvm.so      # must exist. If not, JAVA_HOME is wrong.
+
+# find one that does:
+ls -d /usr/lib/jvm/*/                     # apt puts it here
+export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
+```
+
+Installing the JDK, either way:
+
+```bash
+apt-get install -y openjdk-21-jdk-headless        # with root
+conda install -y -c conda-forge openjdk=21 maven  # without
+```
+
+Java 21 specifically: current pyserini targets it, and an older JDK fails at
+query time rather than at import.
+
+**3. `JAVA_HOME` is right in one shell and wrong in the next.**
+
+Exporting it inside a setup script dies with that script, and conda re-points it
+on every `conda activate`. `setup_bm25.sh` writes it to
+`$CONDA_PREFIX/etc/conda/activate.d/zz-shadow-rl-java.sh` (or appends to the
+venv's `activate`) so it survives. To do it by hand:
+
+```bash
+mkdir -p "$CONDA_PREFIX/etc/conda/activate.d"
+echo 'export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64' \
+    > "$CONDA_PREFIX/etc/conda/activate.d/zz-shadow-rl-java.sh"
+```
+
+Delete that file to undo it.
+
+### Checking without downloading 70 GB
+
+```bash
+./shadow_rl/setup_bm25.sh --check              # deps + JVM, changes nothing
+./shadow_rl/launch_bm25_retriever.sh --check   # same checks, from the launcher
+```
+
+Both print the interpreter and the `JAVA_HOME` in use, so a mismatch is visible
+rather than inferred. `run_all.sh --auto-retriever` runs them before the
+download starts.
 
 ---
 
@@ -228,6 +296,10 @@ nothing here, so removing those is fine.
 
 **`no kernels for sm_100`** — a cu12 torch on a Blackwell GPU. Reinstall from the
 cu130 index.
+
+**`No module named 'faiss'` / `JVM failed to start`** — see section 2; run
+`./shadow_rl/setup_bm25.sh --check`, which names the interpreter and the
+`JAVA_HOME` actually in use.
 
 **Gated repos** — Llama originals and GPQA-Diamond need the licence accepted on
 their model page, then `huggingface-cli login`.

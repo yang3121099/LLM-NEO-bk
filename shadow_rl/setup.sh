@@ -167,41 +167,12 @@ SEARCH_R1_ROOT="$SEARCH_R1_ROOT" ./shadow_rl/setup_search_r1.sh \
     || die "Search-R1 setup failed"
 
 # ---- 6. BM25 (optional, only for the SearchR1-* pairs) --------------------- #
+# Delegated: the JDK / JAVA_HOME / pyserini tangle is worth its own script, and
+# worth being able to re-run on its own after this one has succeeded.
 if [[ $WITH_BM25 -eq 1 ]]; then
-    # pyserini is a thin wrapper over Lucene, so it needs a JVM. Java 21 is what
-    # current pyserini targets; an older JDK fails at query time, not at import.
-    if command -v java >/dev/null 2>&1; then
-        log "java present: $(java -version 2>&1 | head -1)"
-    elif command -v apt-get >/dev/null 2>&1 && [[ $EUID -eq 0 ]]; then
-        log "installing OpenJDK 21 (headless) via apt"
-        apt-get update -qq && apt-get install -y -qq openjdk-21-jdk-headless \
-            || warn "apt install of openjdk-21-jdk-headless failed"
-    elif command -v conda >/dev/null 2>&1; then
-        log "installing OpenJDK 21 via conda"
-        conda install -y -c conda-forge openjdk=21 maven >/dev/null \
-            || warn "conda install of openjdk failed"
-    else
-        warn "no java, no root apt, no conda. Install a JDK 21 yourself:"
-        warn "  apt-get install -y openjdk-21-jdk-headless"
-    fi
-
-    if command -v java >/dev/null 2>&1 && [[ -z "${JAVA_HOME:-}" ]]; then
-        # pyserini reads JAVA_HOME; resolve it from the java binary rather than
-        # guessing the distribution's layout.
-        JH=$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")
-        [[ -d "$JH" ]] && export JAVA_HOME="$JH" && log "JAVA_HOME=$JAVA_HOME"
-    fi
-
-    log "installing faiss-cpu and pyserini"
-    $PYBIN -m pip install -U --quiet faiss-cpu pyserini \
-        || warn "faiss-cpu/pyserini install failed; BM25 retrieval will not work"
-    $PYBIN -m pip install --quiet fastapi uvicorn || true
-
-    if $PYBIN -c 'import pyserini' 2>/dev/null; then
-        log "pyserini imports"
-    else
-        warn "pyserini still does not import; check java and the install log"
-    fi
+    PYTHON="$PYBIN" ./shadow_rl/setup_bm25.sh \
+        || warn "BM25 setup failed; the SearchR1-* pairs will not run.
+       Re-run it alone once fixed: ./shadow_rl/setup_bm25.sh"
 fi
 
 # ---- 7. verify ------------------------------------------------------------- #

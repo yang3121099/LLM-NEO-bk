@@ -290,7 +290,7 @@ comparable to the published numbers instead of sitting below them.
 
 | | index | needs | notes |
 |---|---|---|---|
-| `e5` | `e5_Flat.index` | faiss-**gpu** | exact; what the paper used |
+| `e5` | `e5_Flat.index` | faiss-**gpu** (`get_num_gpus() > 0`) | exact; what the paper used |
 | `e5-hnsw` | `e5_HNSW64.index` | faiss-cpu | approximate, CPU-fast, no Java |
 | `bm25` | `bm25/` | pyserini + JDK 21 | no GPU, but the JVM is the fragile part |
 

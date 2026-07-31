@@ -200,6 +200,31 @@ def main():
     check("JVM names the conda/apt trap", "CONDA_PREFIX/lib/jvm" in out)
     check("JVM offers the no-Java escape", "--retriever e5-hnsw" in out)
 
+    print("\n[13] the faiss-GPU probe agrees with what the server needs")
+    # The trap this exists for: faiss-cpu *does* define index_cpu_to_all_gpus
+    # (a pure-python wrapper), so probing that attribute reports GPU support on
+    # a build that has none, and retrieval_server.py then dies on
+    # GpuMultipleClonerOptions. get_num_gpus() is the honest test.
+    try:
+        import faiss
+
+        launcher = open(os.path.join(ROOT, "launch_retriever.sh")).read()
+        check("probe uses get_num_gpus", "get_num_gpus" in launcher)
+        check("probe checks GpuMultipleClonerOptions",
+              "GpuMultipleClonerOptions" in launcher)
+        gpu_real = getattr(faiss, "get_num_gpus", lambda: 0)() > 0
+        server_ok = hasattr(faiss, "GpuMultipleClonerOptions")
+        check("probe verdict matches the symbol the server calls",
+              gpu_real == server_ok, f"get_num_gpus>0={gpu_real} "
+                                     f"GpuMultipleClonerOptions={server_ok}")
+        if not gpu_real:
+            # Documents the exact discrepancy that caused the bug.
+            check("index_cpu_to_all_gpus alone would have lied",
+                  hasattr(faiss, "index_cpu_to_all_gpus"),
+                  "present on faiss-cpu, hence unusable as a probe")
+    except ImportError:
+        print("     (skipped: faiss not installed)")
+
     print("\n" + "=" * 60)
     if FAILURES:
         print(f"{len(FAILURES)} FAILED: {', '.join(FAILURES)}")

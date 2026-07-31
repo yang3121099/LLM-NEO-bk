@@ -59,6 +59,15 @@ KNOWN = [
     ("Max retries exceeded",
      "The retriever stopped answering mid-run -- often it died under the load of\n"
      "       N workers querying at once. Check its own log; consider fewer --jobs."),
+    ("GpuMultipleClonerOptions",
+     "The retrieval server was told to use faiss on GPU, but the installed faiss\n"
+     "       is faiss-cpu. Note that faiss-cpu still defines index_cpu_to_all_gpus,\n"
+     "       so 'the attribute exists' proves nothing -- faiss.get_num_gpus() is\n"
+     "       the real test. Either install a GPU build and keep the flat index:\n"
+     "         pip install faiss-gpu-cu12\n"
+     "         conda install -c pytorch -c nvidia faiss-gpu\n"
+     "       or use the CPU index instead:\n"
+     "         ./shadow_rl/launch_retriever.sh --retriever e5-hnsw"),
     ("EngineDeadError",
      "The vLLM engine process died. Look further up the log for the real error;\n"
      "       it is usually a CUDA/driver mismatch or an out-of-memory kill."),

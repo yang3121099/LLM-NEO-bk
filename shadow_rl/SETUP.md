@@ -108,8 +108,21 @@ paper used, so it is the more faithful option, not a workaround.
 
 Flat E5 without faiss-gpu means scanning 21M passages per query on the CPU —
 correct but far too slow for an evaluation, which is why `auto` picks the HNSW
-index instead. The launcher refuses `--faiss-gpu` when the installed faiss has
-no `index_cpu_to_all_gpus` rather than letting the server crash on it.
+index instead.
+
+**`faiss-cpu` is not enough for `--retriever e5`.** It has to be a GPU build:
+
+```bash
+python3 -c 'import faiss; print(faiss.get_num_gpus())'   # 0 means CPU-only
+pip install faiss-gpu-cu12                               # or:
+conda install -c pytorch -c nvidia faiss-gpu
+```
+
+`get_num_gpus()` is the test, not `hasattr`. faiss-cpu defines
+`index_cpu_to_all_gpus` anyway — it is a pure-python wrapper in
+`gpu_wrappers.py` — so the attribute is present on a build with no GPU support
+at all, and the server only fails later on `faiss.GpuMultipleClonerOptions`.
+The launcher probes `get_num_gpus()` and refuses `--faiss-gpu` up front.
 
 ### BM25, if you specifically want it
 

@@ -137,19 +137,33 @@ print(f"[ok]   dependencies present ({sys.executable})")
 PY
 
 if [[ "$RETRIEVER" != bm25 ]]; then
-    # --faiss_gpu calls faiss.index_cpu_to_all_gpus, which only exists in
-    # faiss-gpu. Passing it with faiss-cpu installed is an AttributeError at
-    # startup, so decide here rather than let the server discover it.
-    if python3 -c 'import faiss, sys; sys.exit(0 if hasattr(faiss, "index_cpu_to_all_gpus") else 1)' 2>/dev/null \
-       && command -v nvidia-smi >/dev/null 2>&1; then
+    # Does this faiss actually do GPU? Ask faiss, not the module namespace.
+    #
+    # hasattr(faiss, "index_cpu_to_all_gpus") is NOT a valid test: faiss-cpu
+    # defines it anyway, as a pure-python wrapper in gpu_wrappers.py, so the
+    # attribute is present on a build with no GPU support at all. The server
+    # then dies on the first genuinely GPU-only symbol it touches:
+    #   AttributeError: module 'faiss' has no attribute 'GpuMultipleClonerOptions'
+    # get_num_gpus() returns 0 on faiss-cpu and is the honest answer; the two
+    # symbols below are the ones retrieval_server.py actually calls.
+    if python3 -c '
+import sys
+import faiss
+ok = (getattr(faiss, "get_num_gpus", lambda: 0)() > 0
+      and hasattr(faiss, "GpuMultipleClonerOptions")
+      and hasattr(faiss, "index_cpu_to_all_gpus"))
+sys.exit(0 if ok else 1)' 2>/dev/null; then
         FAISS_GPU_AVAILABLE=1
     fi
     if [[ "$FAISS_GPU" == "auto" ]]; then
         FAISS_GPU=$FAISS_GPU_AVAILABLE
     elif [[ "$FAISS_GPU" == "1" && $FAISS_GPU_AVAILABLE -eq 0 ]]; then
-        die "--faiss-gpu asked for, but this faiss has no index_cpu_to_all_gpus.
-       That comes from faiss-gpu; faiss-cpu cannot do it.
-       Either install faiss-gpu, or use --retriever e5-hnsw (CPU, approximate)."
+        die "--faiss-gpu asked for, but this faiss has no GPU support
+       (faiss.get_num_gpus() == 0). faiss-cpu cannot do it, whatever the module
+       namespace suggests. Either install a GPU build:
+         pip install faiss-gpu-cu12
+         conda install -c pytorch -c nvidia faiss-gpu
+       or use the CPU index:  --retriever e5-hnsw"
     fi
     # Resolve `auto` now that the faiss capability is known: exact flat search
     # if it can run on the GPU, the approximate CPU index otherwise. Picking
@@ -167,7 +181,9 @@ if [[ "$RETRIEVER" != bm25 ]]; then
     if [[ "$RETRIEVER" == "e5" && "$FAISS_GPU" != "1" ]]; then
         warn "flat e5 index without faiss-gpu: every query scans 21M passages on"
         warn "the CPU. Expect this to be far too slow for a full evaluation."
-        warn "Use --retriever e5-hnsw instead, or install faiss-gpu."
+        warn "Either install a GPU build of faiss and keep this index --"
+        warn "  pip install faiss-gpu-cu12   /   conda install -c pytorch -c nvidia faiss-gpu"
+        warn "or use --retriever e5-hnsw, which is built for CPU search."
     fi
     [[ "$FAISS_GPU" == "1" ]] && ok "faiss GPU support available"
 fi

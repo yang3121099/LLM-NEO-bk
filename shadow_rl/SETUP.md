@@ -194,7 +194,7 @@ The CPU test suites need no GPU and no model, and are worth running once after
 setup:
 
 ```bash
-for t in merge similarity resume check_env report pairs paths; do
+for t in merge similarity resume check_env report pairs paths parallel; do
     python shadow_rl/tests/test_$t.py | tail -1
 done
 python shadow_rl/tests/test_evaluate.py | tail -1

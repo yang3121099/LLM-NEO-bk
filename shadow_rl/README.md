@@ -234,6 +234,36 @@ the machine has is refused up front rather than failing inside vLLM. With one
 GPU the runner falls back to the sequential path, which loads each model once
 instead of once per dataset.
 
+### When the parallel run fails
+
+Almost nothing breaks *one* worker. A vLLM engine that will not start, a model
+that will not load, a retriever that is not listening — these break every worker
+identically, so the run's job is to say so once, early, and stop.
+
+- **Preflight** rejects a missing `--shadow-path` and a silent retriever before
+  any model is loaded.
+- **A canary cell runs alone first.** If it fails, the other jobs are never
+  started and its log is printed.
+- **Every failure prints its own cause inline** — the traceback, or the OOM
+  line, or the refused connection — not a bare `FAIL` and a path.
+- **`--fail-fast N`** (default 3) stops after N consecutive failures. Thirty
+  identical errors take an hour and teach nothing. `--fail-fast 0` to push on.
+- **`--stagger SEC`** (default 15) spaces out worker starts. N vLLM engines
+  initialising at the same instant contend for ports, the HuggingFace cache lock
+  and host RAM, which turns a working configuration into a flaky one.
+- **`--job-timeout MIN`** kills a cell that hangs instead of blocking the queue.
+
+For a run that already failed, the logs are still there:
+
+```bash
+python shadow_rl/diagnose.py           # group every failing log by cause, with fixes
+python shadow_rl/diagnose.py --full    # every log, not one per cause
+```
+
+It reads `shadow_rl/logs/*.log`, collapses identical failures, and names the fix
+for the ones with a known remedy (missing vllm, OOM, dead retriever, a cu12
+torch on a Blackwell card, a worker killed by the host OOM killer).
+
 The runtime estimate in the plan accounts for the worker count:
 
 | run | 1 GPU | 8 GPUs |

@@ -40,6 +40,13 @@
 #   --fast         smallest useful run: one 3B pair, 4 datasets (2 in-domain +
 #                  2 OOD), 200 questions, all five models. A few minutes.
 #   --force        redo work that is already complete (merge, smoke test)
+#   --fail-fast N  stop after N consecutive cell failures (default 3, 0 = never).
+#                  Multi-GPU breakage is almost always systematic; reproducing
+#                  it on every remaining cell wastes hours and tells you nothing.
+#   --no-canary    fan out immediately instead of proving one cell works first
+#   --stagger SEC  delay between worker starts (default 15). Simultaneous vLLM
+#                  engine inits contend for ports, the HF cache lock and host RAM.
+#   --job-timeout MIN  kill any single cell that runs longer than this
 #   --skip-env-check  do not run the environment check at all
 #   --strict-env      abort if the environment check reports problems
 #   --dry-run      print the plan and exit
@@ -66,6 +73,13 @@ AUTO_RETRIEVER=0
 RETRIEVER_PID=""
 TP="${TP:-1}"
 JOBS="auto"
+# Multi-GPU robustness. Most breakage on a multi-GPU box hits every worker
+# identically, so the default is to prove one job works before fanning out and
+# to stop after a few identical failures rather than reproduce them N times.
+FAIL_FAST="${FAIL_FAST:-3}"
+STAGGER="${STAGGER:-15}"
+JOB_TIMEOUT="${JOB_TIMEOUT:-}"
+NO_CANARY=0
 DRY=0
 ASSUME_YES=0
 FORCE=0
@@ -107,6 +121,10 @@ while [[ $# -gt 0 ]]; do
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --tp)      TP="$2";        shift 2 ;;
         --jobs)    JOBS="$2";      shift 2 ;;
+        --fail-fast)  FAIL_FAST="$2";   shift 2 ;;
+        --stagger)    STAGGER="$2";     shift 2 ;;
+        --job-timeout) JOB_TIMEOUT="$2"; shift 2 ;;
+        --no-canary)  NO_CANARY=1;      shift ;;
         --cleanup) CLEANUP=1;      shift ;;
         --fast)    FAST=1;         shift ;;
         --force)   FORCE=1;        shift ;;
@@ -114,7 +132,7 @@ while [[ $# -gt 0 ]]; do
         --strict-env)     STRICT_ENV=1;     shift ;;
         --dry-run) DRY=1;          shift ;;
         --yes|-y)  ASSUME_YES=1;   shift ;;
-        -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,/^set -/p' "$0" | sed '$d'; exit 0 ;;
         *) echo "unknown option: $1" >&2; exit 2 ;;
     esac
 done
@@ -620,6 +638,9 @@ PY
             [[ -n "$SAMPLE" ]] && PAR+=(--sample "$SAMPLE")
             [[ -n "$LIMIT" ]]  && PAR+=(--limit "$LIMIT")
             [[ $FORCE -eq 1 ]] && PAR+=(--force)
+            PAR+=(--fail-fast "$FAIL_FAST" --stagger "$STAGGER")
+            [[ -n "$JOB_TIMEOUT" ]] && PAR+=(--timeout "$JOB_TIMEOUT")
+            [[ $NO_CANARY -eq 1 ]] && PAR+=(--no-canary)
             if python3 shadow_rl/run_eval_parallel.py "${PAR[@]}" 2>&1 | tee -a "$PAIR_LOG"; then
                 ok "  all cells done"
             else

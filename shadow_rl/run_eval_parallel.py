@@ -150,6 +150,21 @@ def failure_signature(error_lines: List[str]) -> str:
     return (error_lines[-1].strip()[:120] if error_lines else "unknown")
 
 
+def _revision() -> str:
+    """The commit this is running from.
+
+    Worth a line of output: the usual confusion after a fix is whether the run
+    that misbehaved actually contained it, and the failure mode of an older
+    checkout is precisely a run that behaves like an older checkout.
+    """
+    try:
+        out = subprocess.run(["git", "-C", HERE, "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, timeout=10)
+        return out.stdout.strip() or "unknown"
+    except Exception:  # noqa: BLE001
+        return "unknown"
+
+
 def visible_gpus() -> int:
     env = os.environ.get("CUDA_VISIBLE_DEVICES")
     if env:
@@ -278,7 +293,9 @@ def main() -> None:
             print(f"    - {p}")
         sys.exit(1)
 
-    print(f"[parallel] pair={args.pair}  gpus={n_gpu}  workers={jobs}  tp={args.tp}")
+    print(f"[parallel] {_revision()}  pair={args.pair}  gpus={n_gpu}  "
+          f"workers={jobs}  tp={args.tp}  fail-fast={args.fail_fast}  "
+          f"canary={'off' if args.no_canary else 'on'}")
     print(f"[parallel] {len(roles)} role(s) x {len(datasets)} dataset(s) = "
           f"{len(roles) * len(datasets)} cell(s); {len(work)} to run, "
           f"{len(roles) * len(datasets) - len(work)} already done")

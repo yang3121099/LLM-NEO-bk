@@ -189,6 +189,13 @@ print(','.join(d for d in DATASETS if d not in want))") \
         || { echo "[fail] bad --datasets" >&2; exit 1; }
 fi
 
+# Which commit is actually running. A long session accumulates pulls, and
+# "did that fix land in what I am running?" is otherwise unanswerable from the
+# output alone -- the symptom being a run that behaves like an older version.
+GIT_REV="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+GIT_DIRTY=""
+git -C "$REPO_ROOT" diff --quiet 2>/dev/null || GIT_DIRTY=" (uncommitted changes)"
+
 mkdir -p "$LOG_DIR" "$MERGED_DIR" "$MODEL_DIR"
 RUN_LOG="$LOG_DIR/run_$(date +%Y%m%d_%H%M%S).log"
 
@@ -561,6 +568,7 @@ cat <<EOF | tee -a "$RUN_LOG"
  models   : $MODEL_DIR$( [[ -z "${SHADOW_RL_MODEL_DIR:-}" ]] && echo "  (HuggingFace cache)" )
  merged   : $MERGED_DIR
  results  : $RESULTS
+ version  : $GIT_REV$GIT_DIRTY
  log      : $RUN_LOG
  gpus     : $NGPU visible, tp=$TP, workers=$( if [[ "$JOBS" == "auto" ]]; then
    j=$(( NGPU / TP )); [[ $j -lt 1 ]] && j=1; echo "$j (auto)"; else echo "$JOBS"; fi )

@@ -214,6 +214,26 @@ die()  { err "$*"; exit 1; }
 
 has_stage() { [[ ",$STAGES," == *",$1,"* ]]; }
 
+DISK_CLEANUP_PATH="${DISK_CLEANUP_PATH:-/workspace/.hf_home/}"
+DISK_MIN_GB="${DISK_MIN_GB:-150}"
+check_disk() {
+    local avail
+    avail=$(df -BG "${DISK_CLEANUP_PATH%/}" 2>/dev/null \
+            | awk 'NR==2{gsub("G","",$4);print $4}') || return 0
+    [[ -n "$avail" ]] || return 0
+    if [[ "$avail" -lt "$DISK_MIN_GB" ]]; then
+        warn "disk: ${avail}GB free (< ${DISK_MIN_GB}GB), cleaning $DISK_CLEANUP_PATH"
+        rm -rf "${DISK_CLEANUP_PATH%/}"/hub/models--*/blobs/* 2>/dev/null || true
+        find "$DISK_CLEANUP_PATH" -name "*.lock" -delete 2>/dev/null || true
+        local after
+        after=$(df -BG "${DISK_CLEANUP_PATH%/}" 2>/dev/null \
+                | awk 'NR==2{gsub("G","",$4);print $4}')
+        log "disk: freed $((after - avail))GB -> ${after}GB free"
+    else
+        log "disk: ${avail}GB free"
+    fi
+}
+
 # A merged model counts as done only if the merge ran to completion: merge.py
 # writes shadow_merge_stats.json last, after the shards and the config, and every
 # shard named in the index must actually exist. Checking only for config.json
@@ -718,6 +738,7 @@ PY
         fi
 
         if [[ "$EFFECTIVE_JOBS" -gt 1 ]]; then
+            check_disk
             log "  eval: $EFFECTIVE_JOBS parallel worker(s) x tp=$TP over $NGPU GPU(s)"
             PAR=(--pair "$pid" --search-r1-root "$SEARCH_R1_ROOT"
                  --out "$RESULTS" --roles "$ROLES"
@@ -773,6 +794,7 @@ DEDUPPY
                     continue
                 fi
             fi
+            check_disk
             log "  eval: $role"
             EXTRA=()
             [[ "$role" == "shadow" ]] && EXTRA=(--model-path "$SHADOW_PATH")

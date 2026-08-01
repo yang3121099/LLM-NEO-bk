@@ -129,6 +129,7 @@ ARGS=(
     actor_rollout_ref.rollout.top_p=1.0 \
     actor_rollout_ref.rollout.tensor_model_parallel_size=1 \
     actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu=1 \
+    +actor_rollout_ref.model.override_config.attn_implementation=sdpa \
     "${REWARD_ARGS[@]}" \
     trainer.n_gpus_per_node="$N_GPUS" \
     trainer.nnodes=1 \

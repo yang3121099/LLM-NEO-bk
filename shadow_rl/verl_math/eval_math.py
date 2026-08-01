@@ -57,6 +57,9 @@ def main() -> None:
     ap.add_argument("--tensor-parallel-size", type=int, default=1)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     ap.add_argument("--max-model-len", type=int, default=32768)
+    ap.add_argument("--enforce-eager", action="store_true", default=True,
+                    help="disable CUDA graphs (default: on, for Blackwell compat)")
+    ap.add_argument("--no-enforce-eager", dest="enforce_eager", action="store_false")
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
@@ -72,7 +75,7 @@ def main() -> None:
     llm = LLM(model=args.model, tensor_parallel_size=args.tensor_parallel_size,
               gpu_memory_utilization=args.gpu_memory_utilization,
               max_model_len=args.max_model_len, trust_remote_code=True,
-              dtype="bfloat16")
+              dtype="bfloat16", enforce_eager=args.enforce_eager)
 
     # k=1 is greedy and reproducible; k>1 needs sampling or every draw is identical.
     params = SamplingParams(

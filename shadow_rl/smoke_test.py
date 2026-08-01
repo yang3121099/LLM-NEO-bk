@@ -38,7 +38,8 @@ def main() -> None:
     print(f"[load] {args.model}")
     tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
     model = AutoModelForCausalLM.from_pretrained(
-        args.model, torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=True
+        args.model, torch_dtype=torch.bfloat16, device_map="auto",
+        trust_remote_code=True, attn_implementation="sdpa",
     )
     model.eval()
     print(f"[ok] loaded, dtype={next(model.parameters()).dtype}, "

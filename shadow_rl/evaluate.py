@@ -420,6 +420,9 @@ def main() -> None:
     ap.add_argument("--tensor-parallel-size", type=int, default=1)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     ap.add_argument("--max-model-len", type=int, default=8192)
+    ap.add_argument("--enforce-eager", action="store_true", default=True,
+                    help="disable CUDA graphs (default: on, for Blackwell compat)")
+    ap.add_argument("--no-enforce-eager", dest="enforce_eager", action="store_false")
     ap.add_argument("--dump-generations", default=None, help="optional .jsonl of raw rollouts")
     ap.add_argument("--overwrite", action="store_true", help="re-run rows already in results.csv")
     args = ap.parse_args()
@@ -470,6 +473,7 @@ def main() -> None:
         max_model_len=args.max_model_len,
         trust_remote_code=True,
         dtype="bfloat16",
+        enforce_eager=args.enforce_eager,
     )
 
     dump = open(args.dump_generations, "a") if args.dump_generations else None

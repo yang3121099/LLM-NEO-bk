@@ -50,6 +50,7 @@ EXPECTED = {
     "actor_rollout_ref.rollout.top_p": 1.0,
     "actor_rollout_ref.rollout.tensor_model_parallel_size": 1,
     "actor_rollout_ref.rollout.log_prob_micro_batch_size_per_gpu": 1,
+    "actor_rollout_ref.rollout.enforce_eager": True,
     "trainer.nnodes": 1,
     "trainer.total_epochs": 1,
     "trainer.n_gpus_per_node": 1,

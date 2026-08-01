@@ -125,12 +125,21 @@ def main() -> int:
               "       or use the index built for CPU: --retriever e5-hnsw")
         return 1
 
-    # The server returns one list of hits per query.
+    # retrieval_server.py ends with `return {"result": resp}` -- the list of
+    # per-query hits is wrapped. evaluate.py already unwraps it (`.json()["result"]`);
+    # this checker did not, and so called a perfectly healthy server broken.
+    if isinstance(result, dict) and "result" in result:
+        result = result["result"]
+
+    # One list of hits per query.
     if not isinstance(result, list) or len(result) != len(queries):
         print(f"[fail] unexpected response shape: {type(result).__name__}, "
               f"{len(result) if hasattr(result, '__len__') else '?'} item(s) "
               f"for {len(queries)} query/queries")
         print(f"       {json.dumps(result)[:400]}")
+        print("       Expected either [[hit, ...], ...] or {\"result\": [[hit, ...], ...]},\n"
+              "       one list per query. If the server changed shape, evaluate.py's\n"
+              "       Retriever._to_string needs the same update.")
         return 1
 
     empty = 0

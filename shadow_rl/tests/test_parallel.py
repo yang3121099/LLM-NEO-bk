@@ -18,7 +18,8 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
+ROOT = os.path.dirname(HERE)                       # shadow_rl/
+REPO = os.path.dirname(ROOT)
 sys.path.insert(0, ROOT)
 
 import run_eval_parallel as R  # noqa: E402
@@ -200,6 +201,23 @@ def main():
     check("JVM names the conda/apt trap", "CONDA_PREFIX/lib/jvm" in out)
     check("JVM offers the no-Java escape", "--retriever e5-hnsw" in out)
 
+    print("\n[15] the response envelope matches the real retrieval_server.py")
+    # This is the shape that made a healthy retriever look broken: upstream ends
+    # with `return {"result": resp}`, and the checker asserted a bare list.
+    # Assert against the actual source when a checkout is present, so an
+    # assumption cannot outlive the code it was about.
+    server_src = os.path.join(REPO, "third_party", "Search-R1", "search_r1",
+                              "search", "retrieval_server.py")
+    if os.path.exists(server_src):
+        text = open(server_src).read()
+        check("upstream wraps the result", 'return {"result": resp}' in text)
+        evaluate_src = open(os.path.join(ROOT, "evaluate.py")).read()
+        check("evaluate.py unwraps it", '["result"]' in evaluate_src)
+        checker_src = open(os.path.join(ROOT, "check_retriever.py")).read()
+        check("check_retriever.py unwraps it too", '"result" in result' in checker_src)
+    else:
+        print("     (skipped: no Search-R1 checkout)")
+
     print("\n[13] the faiss-GPU probe agrees with what the server needs")
     # The trap this exists for: faiss-cpu *does* define index_cpu_to_all_gpus
     # (a pure-python wrapper), so probing that attribute reports GPU support on
@@ -243,11 +261,15 @@ def main():
                 self.send_error(404)
                 return
             req = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            # Upstream wraps the per-query lists: `return {"result": resp}`.
             if Stub.mode == "empty":
-                body = [[] for _ in req["queries"]]
-            else:
+                body = {"result": [[] for _ in req["queries"]]}
+            elif Stub.mode == "bare":
                 body = [[{"document": {"contents": f"about {q}"}, "score": 0.9}]
                         for q in req["queries"]]
+            else:
+                body = {"result": [[{"document": {"contents": f"about {q}"}, "score": 0.9}]
+                                   for q in req["queries"]]}
             data = _json.dumps(body).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -268,6 +290,10 @@ def main():
     proc = run_check(url)
     check("healthy server -> exit 0", proc.returncode == 0, str(proc.returncode))
     check("shows the passages", "about who wrote" in proc.stdout)
+
+    Stub.mode = "bare"
+    proc = run_check(url)
+    check("a bare list is accepted too", proc.returncode == 0, str(proc.returncode))
 
     Stub.mode = "empty"
     proc = run_check(url)

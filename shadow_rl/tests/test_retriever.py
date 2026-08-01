@@ -49,8 +49,9 @@ app = FastAPI()
 
 @app.post("/retrieve")
 def retrieve_endpoint(request: QueryRequest):
-    return [[{"document": {"contents": "about " + q}, "score": 0.9}]
-            for q in request.queries]
+    # Upstream ends with `return {"result": resp}` -- the envelope matters.
+    return {"result": [[{"document": {"contents": "about " + q}, "score": 0.9}]
+                       for q in request.queries]}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

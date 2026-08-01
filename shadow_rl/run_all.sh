@@ -16,7 +16,9 @@
 # Options
 #   --pairs X      groups: all demo nosearch search grpo ppo 3b 7b 14b qwen
 #                          llama v0.1 v0.2 v0.3 latest
-#                  groups intersect:  'v0.3,grpo'  = the v0.3 GRPO pairs
+#                  version groups union: 'v0.1,v0.3' = all v0.1 + v0.3 pairs
+#                  other groups intersect: 'v0.3,grpo' = the v0.3 GRPO pairs
+#                  combined: 'v0.1,v0.3,grpo' = (v0.1 OR v0.3) AND grpo
 #                  a leading - excludes: 'all,-v0.2' = everything but v0.2
 #                  or explicit ids: <pair_id>[,<pair_id>...]
 #   --stages X     comma list of: similarity,merge,eval,aggregate
@@ -276,10 +278,23 @@ if unknown_ex:
     sys.exit(f"unknown group to exclude: {', '.join(unknown_ex)}")
 
 if include and all(x in groups for x in include):
-    # Every term is a group: a pair must satisfy all of them (intersection), so
-    # "v0.3,grpo" narrows rather than widens.
+    # Version groups (v0.1, v0.2, v0.3, latest) union with each other — a pair
+    # cannot belong to two versions, so intersecting them always gives zero.
+    # Other groups intersect: "v0.3,grpo" = v0.3 AND grpo.
+    # Combined: "v0.1,v0.3,grpo" = (v0.1 OR v0.3) AND grpo.
+    _VERSIONS = {"v0.1", "v0.2", "v0.3", "latest"}
+    ver_terms = [x for x in include if x in _VERSIONS]
+    other_terms = [x for x in include if x not in _VERSIONS]
+
+    def _match(p):
+        if ver_terms and not any(groups[v](p) for v in ver_terms):
+            return False
+        if other_terms and not all(groups[o](p) for o in other_terms):
+            return False
+        return True
+
     chosen = [p.pair_id for p in PAIRS
-              if all(groups[x](p) for x in include)
+              if _match(p)
               and not any(groups[x](p) for x in exclude)]
 elif any(x in groups for x in include):
     sys.exit(f"do not mix group names with pair ids: {sel}")

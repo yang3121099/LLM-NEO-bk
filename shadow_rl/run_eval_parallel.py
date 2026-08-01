@@ -35,7 +35,7 @@ import time
 from typing import List, Tuple
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from evaluate import CSV_FIELDS  # noqa: E402
+from evaluate import CSV_FIELDS, _default_retriever_url  # noqa: E402
 from pairs import DATASETS, MODEL_ROLES, PAIRS_BY_ID  # noqa: E402
 from paths import search_r1_root as _default_search_r1_root  # noqa: E402
 
@@ -220,7 +220,7 @@ def main() -> None:
     ap.add_argument("--shadow-path", default=None, help="alias of --model-path")
     ap.add_argument("--sample", type=int, default=None)
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--retriever-url", default="http://127.0.0.1:8000/retrieve")
+    ap.add_argument("--retriever-url", default=_default_retriever_url())
     ap.add_argument("--tp", type=int, default=1, help="GPUs per worker")
     ap.add_argument("--jobs", default="auto",
                     help="concurrent workers; 'auto' = visible GPUs // tp")

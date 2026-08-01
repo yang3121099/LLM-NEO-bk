@@ -27,6 +27,13 @@ SEARCH_R1_ROOT="$(shadow_rl_search_r1_root)"
 MERGED_DIR="${MERGED_DIR:-shadow_rl/merged}"
 RESULTS="${RESULTS:-shadow_rl/results.csv}"
 TP="${TP:-1}"
+# Read the URL the launcher recorded; fall back to :8000 if nothing was saved.
+if [[ -z "${RETRIEVER_URL:-}" ]]; then
+    _URLFILE="$(dirname "${BASH_SOURCE[0]}")/logs/retriever.url"
+    if [[ -f "$_URLFILE" ]]; then
+        RETRIEVER_URL="$(cat "$_URLFILE")"
+    fi
+fi
 RETRIEVER_URL="${RETRIEVER_URL:-http://127.0.0.1:8000/retrieve}"
 ROLES="${ROLES:-instruct_baseline rl_on_instruct rl_on_base shadow}"
 

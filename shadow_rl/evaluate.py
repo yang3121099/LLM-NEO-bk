@@ -91,6 +91,22 @@ INVALID_ACTION_OBS = (
 )
 
 
+def _default_retriever_url() -> str:
+    env = os.environ.get("RETRIEVER_URL")
+    if env:
+        return env
+    recorded = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "logs", "retriever.url")
+    try:
+        with open(recorded) as fh:
+            url = fh.read().strip()
+        if url:
+            return url
+    except OSError:
+        pass
+    return "http://127.0.0.1:8000/retrieve"
+
+
 # --------------------------------------------------------------------------- #
 # official scorer
 # --------------------------------------------------------------------------- #
@@ -396,7 +412,7 @@ def main() -> None:
     ap.add_argument("--sample", type=int, default=None,
                     help="deterministic random subsample of N questions per dataset; "
                          "identical across roles, so the four stay comparable")
-    ap.add_argument("--retriever-url", default="http://127.0.0.1:8000/retrieve")
+    ap.add_argument("--retriever-url", default=_default_retriever_url())
     ap.add_argument("--topk", type=int, default=3)
     ap.add_argument("--max-turns", type=int, default=4, help="max action budget")
     ap.add_argument("--max-response-length", type=int, default=500)

@@ -57,13 +57,21 @@ def main() -> None:
     ap.add_argument("--tensor-parallel-size", type=int, default=1)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     ap.add_argument("--max-model-len", type=int, default=32768)
-    ap.add_argument("--enforce-eager", action="store_true", default=True,
-                    help="disable CUDA graphs (default: on, for Blackwell compat)")
+    ap.add_argument("--enforce-eager", action="store_true", default=None,
+                    help="disable CUDA graphs; auto-detected from GPU arch if omitted")
     ap.add_argument("--no-enforce-eager", dest="enforce_eager", action="store_false")
     args = ap.parse_args()
 
     from transformers import AutoTokenizer
     from vllm import LLM, SamplingParams
+
+    if args.enforce_eager is None:
+        try:
+            import torch
+            major, _ = torch.cuda.get_device_capability(0)
+            args.enforce_eager = major >= 10
+        except Exception:
+            args.enforce_eager = False
 
     wanted = [b.strip() for b in args.benchmarks.split(",") if b.strip()]
     unknown = set(wanted) - set(BENCHMARKS)

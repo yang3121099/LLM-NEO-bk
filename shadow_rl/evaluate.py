@@ -107,6 +107,18 @@ def _default_retriever_url() -> str:
     return "http://127.0.0.1:8000/retrieve"
 
 
+def _needs_enforce_eager() -> bool:
+    """True on Blackwell (sm_100+) where CUDA graphs are unreliable."""
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            return False
+        major, _ = torch.cuda.get_device_capability(0)
+        return major >= 10
+    except Exception:
+        return False
+
+
 # --------------------------------------------------------------------------- #
 # official scorer
 # --------------------------------------------------------------------------- #
@@ -420,8 +432,8 @@ def main() -> None:
     ap.add_argument("--tensor-parallel-size", type=int, default=1)
     ap.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     ap.add_argument("--max-model-len", type=int, default=8192)
-    ap.add_argument("--enforce-eager", action="store_true", default=True,
-                    help="disable CUDA graphs (default: on, for Blackwell compat)")
+    ap.add_argument("--enforce-eager", action="store_true", default=None,
+                    help="disable CUDA graphs; auto-detected from GPU arch if omitted")
     ap.add_argument("--no-enforce-eager", dest="enforce_eager", action="store_false")
     ap.add_argument("--dump-generations", default=None, help="optional .jsonl of raw rollouts")
     ap.add_argument("--overwrite", action="store_true", help="re-run rows already in results.csv")
@@ -463,6 +475,9 @@ def main() -> None:
 
     from transformers import AutoTokenizer
     from vllm import LLM
+
+    if args.enforce_eager is None:
+        args.enforce_eager = _needs_enforce_eager()
 
     print(f"[load] {model_path}")
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)

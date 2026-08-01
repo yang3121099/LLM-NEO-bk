@@ -42,6 +42,9 @@
 #                  approximate HNSW one on CPU otherwise. Only bm25 needs a JVM,
 #                  and it is never chosen for you.
 #   --cleanup      delete a pair's RL checkpoints and merged model once it is evaluated
+#   --gpu-mem-util F  vLLM gpu_memory_utilization (default 0.85). Lower this when
+#                  sharing the GPU with a retriever: e.g. 0.5 leaves ~40GB for
+#                  the E5 flat index on an 80GB card.
 #   --tp N         GPUs per worker (default 1; a 3B/7B model needs only 1)
 #   --jobs N       concurrent eval workers, one GPU group each.
 #                  'auto' (default) = visible GPUs / tp, so 8 GPUs run 8
@@ -85,6 +88,7 @@ RETRIEVER_PID=""
 # absolute numbers are comparable to the published ones.
 RETRIEVER="${RETRIEVER:-auto}"
 TP="${TP:-1}"
+GPU_MEM_UTIL="${GPU_MEM_UTIL:-}"
 JOBS="auto"
 # Multi-GPU robustness. Most breakage on a multi-GPU box hits every worker
 # identically, so the default is to prove one job works before fanning out and
@@ -141,6 +145,7 @@ while [[ $# -gt 0 ]]; do
         --auto-retriever) AUTO_RETRIEVER=1; shift ;;
         --retriever) RETRIEVER="$2"; shift 2 ;;
         --port)      RETRIEVER_PORT="$2"; shift 2 ;;
+        --gpu-mem-util) GPU_MEM_UTIL="$2"; shift 2 ;;
         --tp)      TP="$2";        shift 2 ;;
         --jobs)    JOBS="$2";      shift 2 ;;
         --fail-fast)  FAIL_FAST="$2";   shift 2 ;;
@@ -586,7 +591,7 @@ cat <<EOF | tee -a "$RUN_LOG"
  version  : $GIT_REV$GIT_DIRTY
  log      : $RUN_LOG
  gpus     : $NGPU visible, tp=$TP, workers=$( if [[ "$JOBS" == "auto" ]]; then
-   j=$(( NGPU / TP )); [[ $j -lt 1 ]] && j=1; echo "$j (auto)"; else echo "$JOBS"; fi )
+   j=$(( NGPU / TP )); [[ $j -lt 1 ]] && j=1; echo "$j (auto)"; else echo "$JOBS"; fi )$( [[ -n "$GPU_MEM_UTIL" ]] && echo ", gpu_mem_util=$GPU_MEM_UTIL" )
  datasets : $N_DATASETS of $N_DATASETS_ALL$( [[ -n "$SKIP_DATASETS" ]] && echo " (skipping $SKIP_DATASETS)" )
  questions: $( if [[ -n "$SAMPLE" ]]; then echo "$SAMPLE sampled per dataset, $PER_ROLE per role"; elif [[ -n "$LIMIT" ]]; then echo "first $LIMIT per dataset, $PER_ROLE per role (biased; smoke only)"; else echo "FULL test sets, $PER_ROLE per role"; fi )
  est. time: $EST_HOURS
@@ -722,6 +727,7 @@ PY
             [[ -n "$SKIP_DATASETS" ]] && PAR+=(--skip-datasets "$SKIP_DATASETS")
             [[ -n "$SAMPLE" ]] && PAR+=(--sample "$SAMPLE")
             [[ -n "$LIMIT" ]]  && PAR+=(--limit "$LIMIT")
+            [[ -n "$GPU_MEM_UTIL" ]] && PAR+=(--gpu-memory-utilization "$GPU_MEM_UTIL")
             [[ $FORCE -eq 1 ]] && PAR+=(--force)
             PAR+=(--fail-fast "$FAIL_FAST" --stagger "$STAGGER")
             [[ -n "$JOB_TIMEOUT" ]] && PAR+=(--timeout "$JOB_TIMEOUT")
@@ -773,6 +779,7 @@ DEDUPPY
             [[ -n "$LIMIT" ]]  && EXTRA+=(--limit "$LIMIT")
             [[ -n "$SAMPLE" ]] && EXTRA+=(--sample "$SAMPLE")
             [[ -n "$SKIP_DATASETS" ]] && EXTRA+=(--skip-datasets "$SKIP_DATASETS")
+            [[ -n "$GPU_MEM_UTIL" ]] && EXTRA+=(--gpu-memory-utilization "$GPU_MEM_UTIL")
             if python3 shadow_rl/evaluate.py \
                     --search-r1-root "$SEARCH_R1_ROOT" \
                     --pair "$pid" --role "$role" --out "$RESULTS" \

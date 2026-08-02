@@ -7,6 +7,7 @@ rows, datasets as columns, with the two margins that matter called out.
 
     python shadow_rl/report.py                       # every pair with results
     python shadow_rl/report.py --pair ppo-nosearch-3b-v0.2
+    python shadow_rl/report.py --datasets hotpotqa,musique,bamboogle,simpleqa
     python shadow_rl/report.py --no-color            # for piping to a file
 """
 
@@ -255,6 +256,8 @@ def main() -> None:
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--progress", action="store_true",
                     help="completion grid: which (role, dataset) cells are done")
+    ap.add_argument("--datasets", default=None,
+                    help="only these datasets in the avg (comma list, e.g. hotpotqa,bamboogle)")
     ap.add_argument("--roles", default=",".join(MODEL_ROLES),
                     help="roles the run was launched with, for the progress denominator")
     ap.add_argument("--pairs", default=None,
@@ -263,6 +266,19 @@ def main() -> None:
 
     st = Style(not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
     results, counts, nmap = load(args.results)
+
+    if args.datasets:
+        keep = {d.strip() for d in args.datasets.split(",") if d.strip()}
+        bad = keep - set(DATASETS)
+        if bad:
+            sys.exit(f"unknown dataset(s): {', '.join(sorted(bad))}")
+        for pid in results:
+            for role in results[pid]:
+                results[pid][role] = {d: v for d, v in results[pid][role].items() if d in keep}
+        for pid in nmap:
+            for role in nmap[pid]:
+                nmap[pid][role] = {d: v for d, v in nmap[pid][role].items() if d in keep}
+        counts = {d: v for d, v in counts.items() if d in keep}
 
     if args.progress:
         show_progress(results, args, st)

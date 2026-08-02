@@ -20,8 +20,54 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from aggregate import avg, is_complete, load, se_avg, se_diff  # noqa: E402
 from pairs import (  # noqa: E402
-    DATASETS, IN_DOMAIN, MODEL_ROLES, PAIRS, reference_avg, reference_for,
+    DATASETS, IN_DOMAIN, MODEL_ROLES, PAIRS, PAIRS_BY_ID, reference_avg, reference_for,
 )
+
+_GROUPS = {
+    "all":      lambda p: True,
+    "nosearch": lambda p: not p.with_search,
+    "search":   lambda p: p.with_search,
+    "grpo":     lambda p: p.algo == "grpo",
+    "ppo":      lambda p: p.algo == "ppo",
+    "3b":       lambda p: p.size == "3b",
+    "7b":       lambda p: p.size == "7b",
+    "14b":      lambda p: p.size == "14b",
+    "qwen":     lambda p: not p.size.startswith("llama"),
+    "llama":    lambda p: p.size.startswith("llama"),
+    "v0.1":     lambda p: p.version == "v0.1",
+    "v0.2":     lambda p: p.version == "v0.2",
+    "v0.3":     lambda p: p.version == "v0.3",
+    "latest":   lambda p: p.version == "v0.3",
+}
+_VERSIONS = {"v0.1", "v0.2", "v0.3", "latest"}
+
+
+def resolve_pairs(sel: str) -> set:
+    """Resolve a pair selector to a set of pair_ids.
+
+    Accepts exact ids, group names, comma-separated combinations with the same
+    union/intersect semantics as run_all.sh, and - prefixed exclusions.
+    """
+    parts = [x.strip() for x in sel.split(",") if x.strip()]
+    include = [x for x in parts if not x.startswith("-")]
+    exclude = [x[1:] for x in parts if x.startswith("-")]
+
+    if include and all(x in _GROUPS for x in include):
+        ver = [x for x in include if x in _VERSIONS]
+        other = [x for x in include if x not in _VERSIONS]
+
+        def _match(p):
+            if ver and not any(_GROUPS[v](p) for v in ver):
+                return False
+            if other and not all(_GROUPS[o](p) for o in other):
+                return False
+            return True
+
+        ids = {p.pair_id for p in PAIRS
+               if _match(p) and not any(_GROUPS.get(x, lambda _: False)(p) for x in exclude)}
+    else:
+        ids = {x for x in include if x in PAIRS_BY_ID}
+    return ids
 
 # Short labels; the long ones do not fit next to seven dataset columns.
 SHORT = {
@@ -252,7 +298,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--results", default="shadow_rl/results.csv")
-    ap.add_argument("--pair", default=None, help="only this pair")
+    ap.add_argument("--pair", default=None,
+                    help="filter pairs: exact id, group name, or combo "
+                         "(v0.3  3b  grpo,search  v0.1,v0.3  all,-v0.2)")
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--progress", action="store_true",
                     help="completion grid: which (role, dataset) cells are done")
@@ -266,6 +314,8 @@ def main() -> None:
 
     st = Style(not args.no_color and sys.stdout.isatty() and not os.environ.get("NO_COLOR"))
     results, counts, nmap = load(args.results)
+
+    pair_filter = resolve_pairs(args.pair) if args.pair else None
 
     if args.datasets:
         keep = {d.strip() for d in args.datasets.split(",") if d.strip()}
@@ -292,7 +342,7 @@ def main() -> None:
 
     shown = 0
     for pair in PAIRS:
-        if args.pair and pair.pair_id != args.pair:
+        if pair_filter and pair.pair_id not in pair_filter:
             continue
         if pair.pair_id not in results:
             continue
@@ -313,7 +363,7 @@ def main() -> None:
         out.append(st.dim("  " + "─" * 94))
         wins = losses = 0
         for pair in PAIRS:
-            if pair.pair_id not in results or (args.pair and pair.pair_id != args.pair):
+            if pair.pair_id not in results or (pair_filter and pair.pair_id not in pair_filter):
                 continue
             rd = results[pair.pair_id]
             line = st.pad(f"  {pair.pair_id}", 26)

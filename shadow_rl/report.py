@@ -125,8 +125,10 @@ def fmt_em(x, st: Style, best=False):
     return st.bold(s) if best else s
 
 
-def render_pair(pair, roles_data, nmap, counts, st: Style, out):
-    present = [d for d in DATASETS if any(d in roles_data.get(r, {}) for r in MODEL_ROLES)]
+def render_pair(pair, roles_data, nmap, counts, st: Style, out,
+                visible_roles=None):
+    vis = visible_roles or MODEL_ROLES
+    present = [d for d in DATASETS if any(d in roles_data.get(r, {}) for r in vis)]
     if not present:
         return
 
@@ -159,7 +161,7 @@ def render_pair(pair, roles_data, nmap, counts, st: Style, out):
     best = {}
     for d in present + ["__avg__"]:
         vals = []
-        for r in MODEL_ROLES:
+        for r in vis:
             per = roles_data.get(r, {})
             v = avg(per) if d == "__avg__" else per.get(d)
             if v is not None:
@@ -168,7 +170,7 @@ def render_pair(pair, roles_data, nmap, counts, st: Style, out):
 
     shadow_avg = avg(roles_data.get("shadow", {}))
 
-    for role in MODEL_ROLES:
+    for role in vis:
         per = roles_data.get(role, {})
         if not per:
             continue
@@ -198,6 +200,8 @@ def render_pair(pair, roles_data, nmap, counts, st: Style, out):
         out.append(st.dim("  W_shadow not evaluated for this pair yet"))
     else:
         for competitor, label in (("rl_on_instruct", "RL(W_I)"), ("rl_on_base", "RL(W_B)")):
+            if competitor not in vis:
+                continue
             other = avg(roles_data.get(competitor, {}))
             if other is None:
                 continue
@@ -221,7 +225,7 @@ def render_pair(pair, roles_data, nmap, counts, st: Style, out):
 
     # ---- reproduction against the published numbers ------------------------ #
     checks = []
-    for role in ("rl_on_base", "rl_on_instruct"):
+    for role in [r for r in ("rl_on_base", "rl_on_instruct") if r in vis]:
         per = roles_data.get(role, {})
         ours = avg(per)
         ref = reference_avg(pair, role, subset=set(per))
@@ -304,6 +308,8 @@ def main() -> None:
     ap.add_argument("--no-color", action="store_true")
     ap.add_argument("--progress", action="store_true",
                     help="completion grid: which (role, dataset) cells are done")
+    ap.add_argument("--compact", action="store_true",
+                    help="hide W_B and RL(W_B), show only W_I / RL(W_I) / W_shadow")
     ap.add_argument("--datasets", default=None,
                     help="only these datasets in the avg (comma list, e.g. hotpotqa,bamboogle)")
     ap.add_argument("--roles", default=",".join(MODEL_ROLES),
@@ -316,6 +322,10 @@ def main() -> None:
     results, counts, nmap = load(args.results)
 
     pair_filter = resolve_pairs(args.pair) if args.pair else None
+    if args.compact:
+        visible_roles = [r for r in MODEL_ROLES if r not in ("base_baseline", "rl_on_base")]
+    else:
+        visible_roles = list(MODEL_ROLES)
 
     if args.datasets:
         keep = {d.strip() for d in args.datasets.split(",") if d.strip()}
@@ -347,7 +357,7 @@ def main() -> None:
         if pair.pair_id not in results:
             continue
         render_pair(pair, results[pair.pair_id], nmap.get(pair.pair_id, {}),
-                    counts, st, out)
+                    counts, st, out, visible_roles=visible_roles)
         shown += 1
 
     if shown > 1:
@@ -356,9 +366,13 @@ def main() -> None:
         out.append(st.bold("  overview") + st.dim("   Avg EM across the datasets each pair ran"))
         out.append(st.cyan("━" * 96))
         head = st.pad("  pair", 26)
-        for sym, _ in (SHORT[r] for r in MODEL_ROLES):
+        for sym, _ in (SHORT[r] for r in visible_roles):
             head += st.pad(sym, 11, right=False)
-        head += st.pad("vs RL(W_I)", 13, right=False) + st.pad("vs RL(W_B)", 13, right=False)
+        margin_cols = [(c, l) for c, l in (("rl_on_instruct", "vs RL(W_I)"),
+                                            ("rl_on_base", "vs RL(W_B)"))
+                       if c in visible_roles]
+        for _, label in margin_cols:
+            head += st.pad(label, 13, right=False)
         out.append(st.dim(head))
         out.append(st.dim("  " + "─" * 94))
         wins = losses = 0
@@ -367,11 +381,11 @@ def main() -> None:
                 continue
             rd = results[pair.pair_id]
             line = st.pad(f"  {pair.pair_id}", 26)
-            a = {r: avg(rd.get(r, {})) for r in MODEL_ROLES}
-            for r in MODEL_ROLES:
+            a = {r: avg(rd.get(r, {})) for r in visible_roles}
+            for r in visible_roles:
                 line += st.pad(fmt_em(a[r], st, best=(r == "shadow")), 11, right=False)
-            for competitor in ("rl_on_instruct", "rl_on_base"):
-                if a["shadow"] is None or a[competitor] is None:
+            for competitor, _ in margin_cols:
+                if a.get("shadow") is None or a.get(competitor) is None:
                     line += st.pad(st.dim("  -  "), 13, right=False)
                     continue
                 d = a["shadow"] - a[competitor]

@@ -28,46 +28,44 @@ datasets = sum((v for k, v in locals().items() if k.endswith('_datasets')), [])
 
 work_dir = 'outputs/eval-qwen3-4b-base-bench/'
 
-from opencompass.models import VLLM
+from opencompass.models import TurboMindModelwithChatTemplate, TurboMindModel
+
+Instruct_settings = [
+    ('Qwen3-4B', 'Qwen/Qwen3-4B'),
+]
+
+Baseline_settings = [
+    ('Qwen3-4B-Base', 'Qwen/Qwen3-4B-Base'),
+]
 
 models = []
 
-# --- Qwen3-4B (Instruct) ---
-models.append(
-    dict(
-        type=VLLM,
-        abbr='Qwen3-4B',
-        path='Qwen/Qwen3-4B',
-        model_kwargs=dict(tensor_parallel_size=1),
-        max_out_len=1024,
-        max_seq_len=4096,
-        batch_size=32,
-        generation_kwargs=dict(
-            temperature=0.6,
-            top_p=0.95,
-            top_k=20,
-            do_sample=True,
-        ),
-        run_cfg=dict(num_gpus=1, num_procs=1),
+for abbr, path in Instruct_settings:
+    models.append(
+        dict(
+            type=TurboMindModelwithChatTemplate,
+            abbr=abbr,
+            path=path,
+            engine_config=dict(session_len=16384, max_batch_size=1024, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            max_seq_len=16384,
+            max_out_len=4096,
+            batch_size=512,
+            run_cfg=dict(num_gpus=1),
+        )
     )
-)
 
-# --- Qwen3-4B-Base ---
-models.append(
-    dict(
-        type=VLLM,
-        abbr='Qwen3-4B-Base',
-        path='Qwen/Qwen3-4B-Base',
-        model_kwargs=dict(tensor_parallel_size=1),
-        max_out_len=1024,
-        max_seq_len=4096,
-        batch_size=32,
-        generation_kwargs=dict(
-            temperature=0.6,
-            top_p=0.95,
-            top_k=20,
-            do_sample=True,
-        ),
-        run_cfg=dict(num_gpus=1, num_procs=1),
+for abbr, path in Baseline_settings:
+    models.append(
+        dict(
+            type=TurboMindModel,
+            abbr=abbr,
+            path=path,
+            engine_config=dict(session_len=16384, max_batch_size=1024, tp=1),
+            gen_config=dict(top_k=1, temperature=0, top_p=0.9, max_new_tokens=4096),
+            max_seq_len=16384,
+            max_out_len=4096,
+            batch_size=512,
+            run_cfg=dict(num_gpus=1),
+        )
     )
-)

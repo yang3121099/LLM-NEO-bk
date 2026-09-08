@@ -32,6 +32,7 @@ from opencompass.models import TurboMindModelwithChatTemplate, TurboMindModel
 
 Instruct_settings = [
     ('Qwen3-4B', 'Qwen/Qwen3-4B'),
+    ('Qwen3-4B-PTQTP-1.58b', 'yang31210999/Qwen3-4B-PTQTP-1.58b'),
 ]
 
 Baseline_settings = [

@@ -24,7 +24,7 @@ MODELS=(
 )
 
 # Task groups by few-shot count (aligned with OpenCompass configs)
-TASKS_0SHOT="arc_challenge,arc_easy,piqa"
+TASKS_0SHOT="arc_challenge,arc_challenge_llama,arc_easy,piqa"
 TASKS_5SHOT="boolq,winogrande"
 TASKS_10SHOT="hellaswag"
 
@@ -33,7 +33,7 @@ echo "╔═══════════════════════�
 echo "║   lm-evaluation-harness  Qwen3 Comparison                   ║"
 echo "╠══════════════════════════════════════════════════════════════╣"
 echo "║  Few-shot aligned with OpenCompass:                          ║"
-echo "║   0-shot: arc_challenge, arc_easy, piqa                      ║"
+echo "║   0-shot: arc_challenge, arc_challenge_llama, arc_easy, piqa  ║"
 echo "║   5-shot: boolq, winogrande                                  ║"
 echo "║  10-shot: hellaswag                                          ║"
 echo "║  Models: Qwen3-4B / 4B-PTQTP / 1.7B / 1.7B-PTQTP           ║"

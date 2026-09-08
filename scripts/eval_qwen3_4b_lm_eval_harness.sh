@@ -38,7 +38,7 @@ for MODEL in "${MODELS[@]}"; do
     echo "=========================================="
 
     lm_eval --model hf \
-        --model_args "pretrained=${MODEL},trust_remote_code=True,chat_template_kwargs={enable_thinking:False}" \
+        --model_args 'pretrained='"${MODEL}"',trust_remote_code=True,chat_template_kwargs={"enable_thinking":false}' \
         --tasks "$TASKS" \
         --batch_size auto \
         --num_fewshot 0 \
